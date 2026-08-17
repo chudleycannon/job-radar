@@ -4,8 +4,8 @@
   "version": 3,
   "validated": "2026-08-18",
   "harvest": {
-   "attempted": 182,
-   "resolved": 32
+   "attempted": 196,
+   "resolved": 34
   }
  },
  "sources": [
@@ -472,6 +472,14 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/signal-ai?includeCompensation=true",
    "platform": "ashby",
    "sector": "technology"
+  },
+  {
+   "company": "Skyscanner",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/skyscanner?includeCompensation=true",
+   "platform": "ashby",
+   "sector": "media",
+   "country": "UK",
+   "domain": "skyscanner.net"
   },
   {
    "company": "Smarkets",
@@ -1796,6 +1804,14 @@
    "url": "https://snyk.wd103.myworkdayjobs.com/wday/cxs/snyk/External/jobs",
    "platform": "workday",
    "sector": "technology"
+  },
+  {
+   "company": "TalkTalk",
+   "url": "https://talktalk.wd3.myworkdayjobs.com/wday/cxs/talktalk/PXCCareers/jobs",
+   "platform": "workday",
+   "sector": "media",
+   "country": "UK",
+   "domain": "talktalk.co.uk"
   },
   {
    "company": "Trellix",
