@@ -30,7 +30,7 @@ class Salary:
         """The figure to compare against a floor.
 
         Uses the top of the band: a posting advertised at 100k-150k clears a
-        140k floor, because that is a role you would still talk to them about.
+        120k floor, because that is a role you would still talk to them about.
         """
         return self.max if self.max is not None else self.min
 

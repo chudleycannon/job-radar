@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      # No pytest dependency on purpose: the suite runs standalone so that
+      # anyone can check the salary and location logic without installing
+      # anything beyond the tool itself.
+      - run: python3 tests/test_core.py

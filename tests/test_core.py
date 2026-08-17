@@ -19,7 +19,7 @@ def _cfg(**kw) -> Config:
         titles_exclude=["product manager"],
         countries=["UK"],
         relocate_to=["US"],
-        salary_floor=140000,
+        salary_floor=100000,
         salary_currency="GBP",
     )
     base.update(kw)
@@ -45,7 +45,7 @@ def test_day_rate_is_annualised_before_comparison():
 
     Without annualising, "£600 per day" reads as 600 and is dropped by any
     sane floor. With it, £600/day is £132,000 a year, which genuinely is below
-    a £140k floor, and £700/day is £154,000, which is not.
+    a £140k floor, and £700/day is £154,000, which clears £100k.
     """
     s = parse_text("£600 per day")
     assert s.period == "day" and s.max == 600
@@ -54,7 +54,7 @@ def test_day_rate_is_annualised_before_comparison():
 
     better = parse_text("£700 per day")
     assert better.annualised() == 154000
-    assert clears_floor(better, 140000, "GBP")[0] is True
+    assert clears_floor(better, 100000, "GBP")[0] is True
 
     # An hourly rate goes through the same conversion.
     hourly = parse_text("$95 per hour")
@@ -72,17 +72,17 @@ def test_ashby_and_greenhouse_shapes():
 def test_the_salary_rule():
     """Stated and too low is dropped. Unstated is always kept."""
     low = Salary(min=80000, max=90000, currency="GBP", confirmed=True, raw="£80k-£90k")
-    assert clears_floor(low, 140000, "GBP")[0] is False
+    assert clears_floor(low, 100000, "GBP")[0] is False
 
     # Top of the band clears, so it survives.
     spanning = Salary(min=100000, max=150000, currency="GBP", confirmed=True)
-    assert clears_floor(spanning, 140000, "GBP")[0] is True
+    assert clears_floor(spanning, 100000, "GBP")[0] is True
 
-    assert clears_floor(Salary(), 140000, "GBP")[0] is True
+    assert clears_floor(Salary(), 100000, "GBP")[0] is True
 
     # Currencies are not silently converted.
     usd = Salary(min=90000, max=95000, currency="USD", confirmed=True)
-    keep, why = clears_floor(usd, 140000, "GBP")
+    keep, why = clears_floor(usd, 100000, "GBP")
     assert keep is True and "not compared" in why
 
 

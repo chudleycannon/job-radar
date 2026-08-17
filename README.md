@@ -105,7 +105,7 @@ locations:
   exclude: [Paris, Dublin]
 
 salary:
-  floor: 140000
+  floor: 90000
   currency: GBP
 
 dealbreakers:
