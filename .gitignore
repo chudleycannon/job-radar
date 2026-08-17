@@ -1,0 +1,25 @@
+# Your own config and results. The example is committed; yours is not.
+config.yaml
+out/
+scans/
+*.local.yaml
+
+# Maintainer working files. The harvester lives in a separate private repo;
+# these are the artefacts it leaves behind if run here.
+harvest/
+raw/
+*.checkpoint.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store

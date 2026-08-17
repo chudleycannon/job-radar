@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-radar"
+version = "0.1.0"
+description = "Watch employer job boards directly and only be told about roles that pass your own filters."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Callum McDonald" }]
+keywords = ["jobs", "job-search", "ats", "greenhouse", "ashby", "lever", "workday"]
+dependencies = [
+    "requests>=2.28",
+    "PyYAML>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/maccydee/job-radar"
+Issues = "https://github.com/maccydee/job-radar/issues"
+
+[project.scripts]
+job-radar = "jobradar.cli:main"
+
+[tool.setuptools]
+packages = ["jobradar", "jobradar.adapters", "jobradar.output"]
+
+[tool.setuptools.package-data]
+jobradar = ["../sources/*.json"]

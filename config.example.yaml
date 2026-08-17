@@ -1,0 +1,71 @@
+# job-radar config
+#
+# Copy this to config.yaml and edit, or run `job-radar setup` to be asked.
+# This example is set up for an engineering manager in the UK; replace the
+# titles and dealbreakers with your own and it works for any field.
+
+titles:
+  # Matched against the posting title.
+  include:
+    - engineering manager
+    - senior engineering manager
+    - head of engineering
+    - director of engineering
+  # Never show these, even if they match above.
+  exclude:
+    - product manager
+    - programme manager
+    - account manager
+    - sales
+
+locations:
+  countries:
+    - UK
+  remote_ok: true
+  # Somewhere you would move to. Shown, but scored below home.
+  relocate_to: []
+  # Never show roles here.
+  exclude: []
+
+salary:
+  # A role whose STATED pay is below this is hidden.
+  # A role with NO stated pay is shown and marked "unconfirmed salary".
+  # Most employers still publish no figure, so hiding those would throw away
+  # most of the market. Only a stated number can disqualify a role.
+  floor: null
+  currency: GBP
+
+# Read against the job description. A `hard` match hides the role;
+# `hard: false` shows it with a warning instead.
+dealbreakers:
+  - name: coding round
+    pattern: "take.?home|live coding|coding (?:test|assessment|challenge|exercise)"
+    hard: true
+  - name: pre-sales
+    pattern: "pre.?sales|solutions? (?:architect|engineer)|forward deployed"
+    hard: true
+  - name: manages managers
+    pattern: "managing managers|manager of managers|people managers report"
+    hard: false
+
+# Which employers to watch. Empty means all of them.
+# Options: technology, finance, healthcare, public-sector, education,
+#          retail, manufacturing, professional-services, media, transport
+sectors: []
+
+sources:
+  use_bundled: true
+  # Limit the bundled list by country. Empty means all.
+  countries: []
+  # Boards you added yourself, or that `job-radar discover --add` found.
+  extra: []
+
+output:
+  formats: [html, json]
+  dir: out
+
+fetch:
+  # These are other people's servers. Keep this low; it is capped at 12.
+  concurrency: 4
+  timeout: 20
+  retries: 2
