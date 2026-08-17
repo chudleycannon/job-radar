@@ -43,7 +43,8 @@ def cmd_scan(args) -> int:
 
     results = fetch_all(
         srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
-        retries=cfg.retries, user_agent=cfg.user_agent, on_result=tick,
+        retries=cfg.retries, user_agent=cfg.user_agent,
+        search_terms=cfg.titles_include, on_result=tick,
     )
 
     all_jobs, counts, ok = [], {}, 0

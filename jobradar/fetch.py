@@ -102,6 +102,60 @@ def fetch_one(
     return Result(src, error=last, status=status, elapsed=time.time() - t0)
 
 
+def fetch_workday(
+    src: Source,
+    terms: list[str],
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 3,
+) -> Result:
+    """Workday needs its own path, for two reasons.
+
+    Its page size is hard-capped at 20 (asking for 100 returns a 400), and its
+    boards are enormous: Barclays reports 1,055 open roles. Paging through that
+    for every enterprise tenant would be dozens of requests each, per scan, for
+    results almost all of which get discarded by the title filter anyway.
+
+    Workday is also the only platform here with server-side search, so the
+    filtering happens at their end instead: one query per wanted title,
+    shallowly paged. That turns a thousand postings into the handful that
+    matter, in two or three requests rather than fifty.
+    """
+    session = requests.Session()
+    merged: dict[str, dict] = {}
+    total = 0
+    errors = []
+
+    for term in (terms or [""])[:3]:
+        for page in range(max_pages):
+            probe = Source(
+                company=src.company, url=src.url, platform="workday",
+                sector=src.sector, country=src.country, domain=src.domain,
+                method="POST",
+                body={"appliedFacets": {}, "limit": 20,
+                      "offset": page * 20, "searchText": term},
+            )
+            res = fetch_one(probe, timeout=timeout, retries=retries,
+                            user_agent=user_agent, session=session)
+            if not res.ok or not isinstance(res.payload, dict):
+                errors.append(res.error or "bad payload")
+                break
+            posts = res.payload.get("jobPostings") or []
+            total = max(total, int(res.payload.get("total") or 0))
+            for p in posts:
+                key = p.get("externalPath") or p.get("title")
+                if key:
+                    merged.setdefault(key, p)
+            if len(posts) < 20:
+                break
+
+    if not merged and errors:
+        return Result(src, error=errors[0])
+    return Result(src, payload={"jobPostings": list(merged.values()), "total": total})
+
+
 def fetch_all(
     sources: Iterable[Source],
     *,
@@ -109,6 +163,7 @@ def fetch_all(
     timeout: int = 20,
     retries: int = 2,
     user_agent: str = "job-radar/0.1",
+    search_terms: list[str] | None = None,
     on_result: Callable[[Result], None] | None = None,
 ) -> list[Result]:
     sources = list(sources)
@@ -120,7 +175,8 @@ def fetch_all(
             # Stagger the opening burst so we do not hit 200 hosts in the
             # same 50ms and look like something worth blocking.
             delay = (i % max(1, concurrency)) * 0.05
-            futs[ex.submit(_delayed_fetch, src, delay, timeout, retries, user_agent)] = src
+            futs[ex.submit(_delayed_fetch, src, delay, timeout, retries,
+                           user_agent, search_terms or [])] = src
         for f in as_completed(futs):
             res = f.result()
             out.append(res)
@@ -129,9 +185,12 @@ def fetch_all(
     return out
 
 
-def _delayed_fetch(src, delay, timeout, retries, ua) -> Result:
+def _delayed_fetch(src, delay, timeout, retries, ua, terms) -> Result:
     if delay:
         time.sleep(delay)
+    if src.platform == "workday":
+        return fetch_workday(src, terms, timeout=timeout, retries=retries,
+                             user_agent=ua)
     return fetch_one(src, timeout=timeout, retries=retries, user_agent=ua,
                      session=requests.Session())
 
