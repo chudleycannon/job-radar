@@ -121,6 +121,10 @@ def _candidates(target: str) -> list[str]:
         tld = ".".join(root.split(".")[1:]) or "com"
         bases = [
             f"https://{root}",
+            # www is not redundant. Plenty of employers serve nothing on the
+            # apex domain, so dropping it loses them outright: the Bank of
+            # England answers on www and not without it.
+            f"https://www.{root}",
             f"https://careers.{root}",
             f"https://jobs.{root}",
             f"https://{bare}.careers",
@@ -141,7 +145,7 @@ def _candidates(target: str) -> list[str]:
         if u not in seen:
             seen.add(u)
             uniq.append(u)
-    return uniq[:34]
+    return uniq[:40]
 
 
 def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
