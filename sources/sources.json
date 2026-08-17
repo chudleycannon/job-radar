@@ -1,9 +1,17 @@
 {
  "meta": {
-  "note": "seed list ported from the n8n pipeline",
-  "version": 1
+  "note": "ported from the n8n pipeline, then validated and repaired with discover",
+  "version": 2,
+  "validated": "2026-08-18"
  },
  "sources": [
+  {
+   "company": "1Password",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/1password?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "1password.com",
+   "sector": "technology"
+  },
   {
    "company": "Airwallex",
    "url": "https://api.ashbyhq.com/posting-api/job-board/airwallex?includeCompensation=true",
@@ -14,6 +22,13 @@
    "company": "Ashby",
    "url": "https://api.ashbyhq.com/posting-api/job-board/ashby?includeCompensation=true",
    "platform": "ashby",
+   "sector": "technology"
+  },
+  {
+   "company": "Astronomer",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/astronomer?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "astronomer.io",
    "sector": "technology"
   },
   {
@@ -101,6 +116,13 @@
    "sector": "technology"
   },
   {
+   "company": "Deepgram",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/Deepgram?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "deepgram.com",
+   "sector": "technology"
+  },
+  {
    "company": "Deepl",
    "url": "https://api.ashbyhq.com/posting-api/job-board/deepl?includeCompensation=true",
    "platform": "ashby",
@@ -149,6 +171,13 @@
    "sector": "technology"
   },
   {
+   "company": "Freetrade",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/freetrade?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "freetrade.io",
+   "sector": "technology"
+  },
+  {
    "company": "Fundingcircle",
    "url": "https://api.ashbyhq.com/posting-api/job-board/fundingcircle?includeCompensation=true",
    "platform": "ashby",
@@ -191,6 +220,13 @@
    "sector": "technology"
   },
   {
+   "company": "LangChain",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/langchain?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "langchain.com",
+   "sector": "technology"
+  },
+  {
    "company": "Latent Labs",
    "url": "https://api.ashbyhq.com/posting-api/job-board/latentlabs?includeCompensation=true",
    "platform": "ashby",
@@ -200,6 +236,13 @@
    "company": "Legora",
    "url": "https://api.ashbyhq.com/posting-api/job-board/legora?includeCompensation=true",
    "platform": "ashby",
+   "sector": "technology"
+  },
+  {
+   "company": "Lendable",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/lendable?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "lendable.co.uk",
    "sector": "technology"
   },
   {
@@ -218,6 +261,27 @@
    "company": "Lovable",
    "url": "https://api.ashbyhq.com/posting-api/job-board/lovable?includeCompensation=true",
    "platform": "ashby",
+   "sector": "technology"
+  },
+  {
+   "company": "Marshmallow",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/marshmallow?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "marshmallow.com",
+   "sector": "technology"
+  },
+  {
+   "company": "Material Security",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/materialsecurity?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "material.security",
+   "sector": "technology"
+  },
+  {
+   "company": "Materialize",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/materialize?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "materialize.com",
    "sector": "technology"
   },
   {
@@ -254,6 +318,13 @@
    "company": "Notion",
    "url": "https://api.ashbyhq.com/posting-api/job-board/notion?includeCompensation=true",
    "platform": "ashby",
+   "sector": "technology"
+  },
+  {
+   "company": "OakNorth",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/oaknorth?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "oaknorth.co.uk",
    "sector": "technology"
   },
   {
@@ -317,9 +388,23 @@
    "sector": "technology"
   },
   {
+   "company": "Prefect",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/prefect?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "prefect.io",
+   "sector": "technology"
+  },
+  {
    "company": "Quantexa",
    "url": "https://api.ashbyhq.com/posting-api/job-board/quantexa?includeCompensation=true",
    "platform": "ashby",
+   "sector": "technology"
+  },
+  {
+   "company": "Railway",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/railway?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "railway.app",
    "sector": "technology"
   },
   {
@@ -389,6 +474,13 @@
    "sector": "technology"
   },
   {
+   "company": "Socure",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/socure?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "socure.com",
+   "sector": "technology"
+  },
+  {
    "company": "Supabase",
    "url": "https://api.ashbyhq.com/posting-api/job-board/supabase?includeCompensation=true",
    "platform": "ashby",
@@ -425,9 +517,30 @@
    "sector": "technology"
   },
   {
+   "company": "TigerData",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/tigerdata?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "tigerdata.com",
+   "sector": "technology"
+  },
+  {
    "company": "Trainline",
    "url": "https://api.ashbyhq.com/posting-api/job-board/trainline?includeCompensation=true",
    "platform": "ashby",
+   "sector": "technology"
+  },
+  {
+   "company": "UpGuard",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/upguard?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "upguard.com",
+   "sector": "technology"
+  },
+  {
+   "company": "Vanta",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/vanta?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "vanta.com",
    "sector": "technology"
   },
   {
@@ -467,9 +580,10 @@
    "sector": "technology"
   },
   {
-   "company": "Amazon / AWS",
-   "url": "https://www.amazon.jobs/en/search.json?base_query=engineering+manager&result_limit=100&offset=0",
-   "platform": "custom",
+   "company": "Zilch",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/zilch?includeCompensation=true",
+   "platform": "ashby",
+   "domain": "zilch.com",
    "sector": "technology"
   },
   {
@@ -479,27 +593,9 @@
    "sector": "technology"
   },
   {
-   "company": "Microsoft",
-   "url": "https://apply.careers.microsoft.com/api/pcsx/search?domain=microsoft.com&query=engineering%20manager&location=&start=0&num=50",
-   "platform": "custom",
-   "sector": "technology"
-  },
-  {
-   "company": "Netflix",
-   "url": "https://explore.jobs.netflix.net/api/apply/v2/jobs?domain=netflix.com&query=engineering%20manager&start=0&num=50",
-   "platform": "custom",
-   "sector": "technology"
-  },
-  {
    "company": "Roke",
    "url": "https://www.roke.co.uk/wp-json/wp/v2/job?per_page=100",
    "platform": "custom",
-   "sector": "technology"
-  },
-  {
-   "company": "1Password",
-   "url": "https://boards-api.greenhouse.io/v1/boards/1password/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
    "sector": "technology"
   },
   {
@@ -557,12 +653,6 @@
    "sector": "technology"
   },
   {
-   "company": "Astronomer",
-   "url": "https://boards-api.greenhouse.io/v1/boards/astronomer/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Awin",
    "url": "https://boards-api.greenhouse.io/v1/boards/awin/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -612,8 +702,9 @@
   },
   {
    "company": "ClearBank",
-   "url": "https://boards-api.greenhouse.io/v1/boards/clearbank/jobs?content=true&pay_transparency=true",
+   "url": "https://boards-api.greenhouse.io/v1/boards/clear/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
+   "domain": "clear.bank",
    "sector": "technology"
   },
   {
@@ -679,12 +770,6 @@
   {
    "company": "Dataiku",
    "url": "https://boards-api.greenhouse.io/v1/boards/dataiku/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Deepgram",
-   "url": "https://boards-api.greenhouse.io/v1/boards/deepgram/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -779,12 +864,6 @@
    "sector": "technology"
   },
   {
-   "company": "Freetrade",
-   "url": "https://boards-api.greenhouse.io/v1/boards/freetrade/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "GitLab",
    "url": "https://boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -845,20 +924,8 @@
    "sector": "technology"
   },
   {
-   "company": "LangChain",
-   "url": "https://boards-api.greenhouse.io/v1/boards/langchain/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Ledgy",
    "url": "https://boards-api.greenhouse.io/v1/boards/ledgy/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Lendable",
-   "url": "https://boards-api.greenhouse.io/v1/boards/lendable/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -883,24 +950,6 @@
   {
    "company": "Mark43",
    "url": "https://boards-api.greenhouse.io/v1/boards/mark43/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Marshmallow",
-   "url": "https://boards-api.greenhouse.io/v1/boards/marshmallow/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Material Security",
-   "url": "https://boards-api.greenhouse.io/v1/boards/materialsecurity/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Materialize",
-   "url": "https://boards-api.greenhouse.io/v1/boards/materialize/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -941,12 +990,6 @@
    "sector": "technology"
   },
   {
-   "company": "OakNorth",
-   "url": "https://boards-api.greenhouse.io/v1/boards/oaknorth/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Ocado Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/ocadogroup/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -973,12 +1016,6 @@
   {
    "company": "Overstory",
    "url": "https://boards-api.greenhouse.io/v1/boards/overstory/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Paddle",
-   "url": "https://boards-api.greenhouse.io/v1/boards/paddle/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -1025,12 +1062,6 @@
    "sector": "technology"
   },
   {
-   "company": "Prefect",
-   "url": "https://boards-api.greenhouse.io/v1/boards/prefect/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Prolific",
    "url": "https://boards-api.greenhouse.io/v1/boards/prolific/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1039,12 +1070,6 @@
   {
    "company": "Proton",
    "url": "https://boards-api.greenhouse.io/v1/boards/proton/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Railway",
-   "url": "https://boards-api.greenhouse.io/v1/boards/railway/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -1103,12 +1128,6 @@
    "sector": "technology"
   },
   {
-   "company": "Socure",
-   "url": "https://boards-api.greenhouse.io/v1/boards/socure/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Sothebys",
    "url": "https://boards-api.greenhouse.io/v1/boards/sothebys/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1157,12 +1176,6 @@
    "sector": "technology"
   },
   {
-   "company": "Thought Machine",
-   "url": "https://boards-api.greenhouse.io/v1/boards/thought-machine/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Thoughtworks",
    "url": "https://boards-api.greenhouse.io/v1/boards/thoughtworks/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1181,12 +1194,6 @@
    "sector": "technology"
   },
   {
-   "company": "TigerData",
-   "url": "https://boards-api.greenhouse.io/v1/boards/tigerdata/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
    "company": "Toogoodtogo",
    "url": "https://boards-api.greenhouse.io/v1/boards/toogoodtogo/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1201,18 +1208,6 @@
   {
    "company": "Twilio",
    "url": "https://boards-api.greenhouse.io/v1/boards/twilio/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "UpGuard",
-   "url": "https://boards-api.greenhouse.io/v1/boards/upguard/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Vanta",
-   "url": "https://boards-api.greenhouse.io/v1/boards/vanta/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -1273,12 +1268,6 @@
   {
    "company": "Yld",
    "url": "https://boards-api.greenhouse.io/v1/boards/yld/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "technology"
-  },
-  {
-   "company": "Zilch",
-   "url": "https://boards-api.greenhouse.io/v1/boards/zilch/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
   },
@@ -1505,14 +1494,14 @@
    "sector": "technology"
   },
   {
-   "company": "Garrison",
-   "url": "https://evergreenix.wd1.myworkdayjobs.com/wday/cxs/evergreenix/external-careers2/jobs",
+   "company": "Ffive",
+   "url": "https://ffive.wd5.myworkdayjobs.com/wday/cxs/ffive/f5jobs/jobs",
    "platform": "workday",
    "sector": "technology"
   },
   {
-   "company": "Ffive",
-   "url": "https://ffive.wd5.myworkdayjobs.com/wday/cxs/ffive/f5jobs/jobs",
+   "company": "Garrison",
+   "url": "https://evergreenix.wd1.myworkdayjobs.com/wday/cxs/evergreenix/external-careers2/jobs",
    "platform": "workday",
    "sector": "technology"
   },
@@ -1537,12 +1526,6 @@
   {
    "company": "Leidos",
    "url": "https://leidos.wd5.myworkdayjobs.com/wday/cxs/leidos/External/jobs",
-   "platform": "workday",
-   "sector": "technology"
-  },
-  {
-   "company": "Rapid7",
-   "url": "https://mymoose.wd1.myworkdayjobs.com/wday/cxs/mymoose/careers/jobs",
    "platform": "workday",
    "sector": "technology"
   },
@@ -1591,6 +1574,12 @@
   {
    "company": "Qualys",
    "url": "https://qualys.wd5.myworkdayjobs.com/wday/cxs/qualys/Careers/jobs",
+   "platform": "workday",
+   "sector": "technology"
+  },
+  {
+   "company": "Rapid7",
+   "url": "https://mymoose.wd1.myworkdayjobs.com/wday/cxs/mymoose/careers/jobs",
    "platform": "workday",
    "sector": "technology"
   },

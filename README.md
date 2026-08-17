@@ -1,0 +1,220 @@
+# job-radar
+
+Watch employers' job boards directly, and only be told about roles that pass
+your own filters.
+
+Most job tools are built to make you apply to more things. This one is built to
+show you fewer: it reads postings straight from company applicant tracking
+systems, normalises eight different APIs into one shape, and drops anything
+that fails rules you write down once.
+
+```bash
+pip install -e .
+job-radar setup     # answer seven questions
+job-radar scan      # writes out/index.html
+```
+
+Or fork this repo, edit `config.yaml`, and let GitHub Actions run it for you.
+No server, no Docker, free on public repos.
+
+---
+
+## Why go to the boards directly
+
+Aggregators are broad but noisy: reposts, agency duplicates, roles that were
+filled a month ago. Company ATS APIs are the source those aggregators scrape,
+so postings appear there first and appear once.
+
+The trade is coverage. This only sees employers on the list, which is why
+`discover` exists.
+
+---
+
+## What it does
+
+**Reads 274 employer boards** across Greenhouse, Ashby, Lever, Workday,
+Workable, SmartRecruiters, LinkedIn's public endpoint, and bespoke boards at
+Amazon, Netflix, Microsoft and Atlassian.
+
+**Finds new boards for you.** Point `discover` at a company and it follows the
+careers-page redirect chain, extracts the ATS token, and proves it by counting
+live postings.
+
+```
+$ job-radar discover primer.io
+  ashby              39 jobs  [verified]  https://api.ashbyhq.com/posting-api/job-board/primer.io
+                   board names itself 'primer'
+```
+
+That token is `primer.io`, with the dot. It is not guessable, and this is the
+normal case rather than the exception.
+
+**Checks the board is really that company.** A token that responds is not
+proof. Ashby `primer` is a Florida micro-schools operator advertising for
+teachers, not the London payments company. Greenhouse `peak` is a Texas
+physiotherapy chain. Every discovered board is checked against the domain you
+asked for, and a mismatch is reported rather than filed.
+
+**Tells you what is new.** State is diffed between runs, so a scan reports the
+roles that appeared since last time rather than the same list again.
+
+**Says when it has been throttled.** A board that used to return jobs and now
+returns none is reported as suspect rather than empty, because several of these
+APIs answer an empty array when they are rate-limiting you.
+
+---
+
+## The salary rule
+
+This is the one piece of behaviour worth understanding before you trust the
+output.
+
+- A posting with a **stated** salary below your floor is **hidden**. You
+  already know it is too low.
+- A posting with **no stated salary** is **shown**, marked *unconfirmed
+  salary*.
+
+Most employers still publish no figure. On a sample Greenhouse board, 21 of 37
+roles carried a pay range and 16 did not; filtering out the unstated ones would
+have thrown away nearly half the board. So only a number the employer actually
+published can disqualify a role.
+
+Day and hourly rates are annualised before the comparison, because £600 a day
+is £132,000 a year and not £600.
+
+Salaries in a different currency to your floor are never silently converted.
+They are kept and flagged, since a wrong exchange-rate assumption drops real
+jobs quietly.
+
+---
+
+## Configuration
+
+Everything lives in `config.yaml`. `job-radar setup` writes one by asking
+questions; after that, edit it directly.
+
+```yaml
+titles:
+  include: [engineering manager, head of engineering]
+  exclude: [product manager, account manager]
+
+locations:
+  countries: [UK]
+  remote_ok: true
+  relocate_to: [US, CA]
+  exclude: [Paris, Dublin]
+
+salary:
+  floor: 140000
+  currency: GBP
+
+dealbreakers:
+  - name: coding round
+    pattern: "take.?home|live coding|coding (?:test|assessment|challenge)"
+    hard: true
+
+sectors: []          # empty means all
+```
+
+`dealbreakers` are read against the job description, which is the part that
+catches roles that look right in a search result and are wrong in the detail.
+
+Put private settings in `config.local.yaml`, which is gitignored and takes
+precedence. `config.yaml` has to be committed for the Actions path to work.
+
+---
+
+## Running it on GitHub Actions
+
+1. Fork this repo.
+2. Edit `config.yaml`.
+3. Settings → Pages → Source: GitHub Actions.
+
+The scan runs on weekdays, commits its state, posts new roles as an issue, and
+publishes the dashboard to your Pages URL.
+
+Two caveats worth knowing:
+
+**Actions runners share IP ranges** with a very large number of repositories,
+so job boards throttle them sooner than they throttle your laptop. The scan
+flags sources that look throttled; if you see many, run it locally instead.
+
+**State is committed, not cached.** The Actions cache is evicted after seven
+days of no use, which would make every role look new again.
+
+---
+
+## Notes on the APIs
+
+These are the things that cost a debugging session each. They are the reason
+the adapters are shaped the way they are.
+
+| Platform | What bites |
+|---|---|
+| **Greenhouse** | Returns **403 if you attach a body to a GET**. Salary needs `?pay_transparency=true`; `content=true` is a separate parameter and does not imply it. |
+| **Ashby** | Returns **HTTP 200 with an empty array** for a token that does not exist *and* for one being rate-limited. Validate on job count, never status code. Compensation needs `?includeCompensation=true`. |
+| **SmartRecruiters** | Same empty-200 behaviour as Ashby. |
+| **Workday** | **POST**, not GET. Returns **406, not 404**, for a tenant that does not exist, because of wildcard DNS on `*.myworkdayjobs.com`. A non-404 proves nothing. Tenant and site names cannot be guessed: 117 attempts produced zero working tenants. |
+| **Lever** | Returns a bare top-level list rather than an object with a `jobs` key. |
+| **LinkedIn** | The public `jobs-guest` endpoint returns server-rendered HTML cards to a plain GET, no login and no JavaScript. No description or salary, so those roles are leads rather than screenable postings. |
+
+**Tokens rarely match company names.** `mymoose` is Rapid7. `evergreenix` is
+Garrison. `knowbe4` is Egress. `primer.io` is Primer. This is why `discover`
+reads them off the careers page instead of guessing, and why anything it does
+guess is identity-checked before being offered.
+
+---
+
+## What this does not cover
+
+Worth saying plainly, because a tool that quietly fails at something looks
+broken rather than out of scope.
+
+**Roles not posted to an ATS with a public API.** This design covers most
+white-collar hiring. Trades, hospitality, care work and retail floor jobs
+largely do not work this way and are better served elsewhere.
+
+**Employers who block automated requests.** Some large consumer brands put
+their careers site behind bot protection. Tesco answers a CDN 403;
+Sainsbury's replies "You got banned permanently from this server". `discover`
+reports those as blocked and stops. Nothing here attempts to defeat bot
+protection, and it never will.
+
+**Salary you can filter on reliably.** Around a third of postings state one.
+That is the market, not a bug, and the rule above is built around it.
+
+---
+
+## Being a good citizen
+
+Concurrency defaults to 4 and is capped at 12. Requests are staggered, retried
+with backoff, and honour `Retry-After`. The user agent identifies the tool and
+links here.
+
+These are other people's servers, and a job board that starts blocking
+scrapers makes the market worse for the people using this.
+
+The bundled source list is **data**, shipped in the repo. Building it is a
+maintainer operation that runs elsewhere; forking this does not set a crawler
+loose.
+
+---
+
+## Skills
+
+`skills/` holds Claude Code skills that pair with the scanner. `rate-cv` also
+ships as [its own repository](https://github.com/maccydee/rate-cv), which is
+the source of truth; the copy here is synced weekly by a workflow. See
+[skills/README.md](skills/README.md).
+
+---
+
+## Development
+
+```bash
+python3 tests/test_core.py     # no pytest needed
+job-radar validate --file sources/sources.json --report out/validation.json
+job-radar coverage             # where the source list is thin
+```
+
+MIT licensed.

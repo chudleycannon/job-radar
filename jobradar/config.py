@@ -10,7 +10,23 @@ from typing import Any
 
 import yaml
 
-DEFAULT_PATH = Path("config.yaml")
+# config.local.yaml wins if present. That is how you keep your own settings off
+# a public fork: config.yaml is committed so GitHub Actions can read it, and
+# config.local.yaml is gitignored for anything you would rather not publish.
+SEARCH_PATH = [Path("config.local.yaml"), Path("config.yaml")]
+DEFAULT_PATH = SEARCH_PATH[-1]
+
+
+def resolve(path=None) -> Path:
+    if path:
+        return Path(path)
+    env = os.environ.get("JOB_RADAR_CONFIG")
+    if env:
+        return Path(env)
+    for p in SEARCH_PATH:
+        if p.exists():
+            return p
+    return DEFAULT_PATH
 
 
 @dataclass
@@ -83,7 +99,7 @@ def _as_list(v) -> list:
 
 
 def load(path: str | os.PathLike | None = None) -> Config:
-    p = Path(path or os.environ.get("JOB_RADAR_CONFIG") or DEFAULT_PATH)
+    p = resolve(path)
     if not p.exists():
         raise FileNotFoundError(
             f"No config at {p}. Run `job-radar setup` to create one, "

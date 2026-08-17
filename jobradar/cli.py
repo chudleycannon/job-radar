@@ -105,8 +105,11 @@ def cmd_discover(args) -> int:
             _say("  nothing found. Try the careers page URL directly.")
             continue
         for f in found:
+            if f.identity == "blocked":
+                _say(f"  blocked. {f.note}")
+                continue
             mark = {"ok": "verified", "mismatch": "WRONG COMPANY?",
-                    "unchecked": "unverified"}[f.identity]
+                    "unchecked": "unverified"}.get(f.identity, f.identity)
             _say(f"  {f.platform:<16} {f.live_jobs:>4} jobs  [{mark}]  {f.url}")
             if f.note:
                 _say(f"                   {f.note}")

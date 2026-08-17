@@ -74,7 +74,19 @@ class Found:
         ))
 
 
-def _get(url: str, timeout: int = 20) -> requests.Response | None:
+# Some large employers put their careers site behind bot protection. Tesco
+# answers 403 from Akamai; Sainsbury's replies "You got banned permanently from
+# this server". That is a clear no, and the honest thing is to report it as
+# blocked rather than as "no job board found" and rather than working around
+# it. Nothing in this tool tries to defeat bot protection.
+_BLOCKED = re.compile(
+    r"access denied|you got banned|permission to access|cloudflare|"
+    r"captcha|are you a robot|bot detection|request blocked|akamai",
+    re.I,
+)
+
+
+def _get(url: str, timeout: int = 12) -> requests.Response | None:
     try:
         return requests.get(url, timeout=timeout, allow_redirects=True,
                             headers={"User-Agent": UA,
@@ -83,18 +95,53 @@ def _get(url: str, timeout: int = 20) -> requests.Response | None:
         return None
 
 
+def _is_blocked(r: requests.Response | None) -> bool:
+    if r is None:
+        return False
+    if r.status_code in (401, 403, 429):
+        return True
+    return bool(_BLOCKED.search(r.text[:2000])) if r.text else False
+
+
 def _candidates(target: str) -> list[str]:
-    """Careers URLs to try, in order of likelihood."""
-    t = target.strip()
+    """Careers URLs to try, in rough order of likelihood.
+
+    Large employers rarely put the ATS on `<domain>/careers`. They use a
+    careers subdomain, or a separate careers domain entirely, so those are
+    tried too.
+    """
+    t = target.strip().rstrip("/")
     if t.startswith("http"):
         return [t]
+
     if "." in t and " " not in t:
-        base = f"https://{t.lstrip('/')}" if not t.startswith("http") else t
-        return [base.rstrip("/") + p for p in CAREERS_PATHS] + [base]
-    # A bare company name. Guessing a domain is weak, so try the obvious one
-    # and let the caller supply a URL if it misses.
-    slug = re.sub(r"[^a-z0-9]", "", t.lower())
-    return [f"https://{slug}.com{p}" for p in CAREERS_PATHS[:4]]
+        host = t.lstrip("/")
+        root = host.replace("www.", "")
+        bare = root.split(".")[0]
+        tld = ".".join(root.split(".")[1:]) or "com"
+        bases = [
+            f"https://{root}",
+            f"https://careers.{root}",
+            f"https://jobs.{root}",
+            f"https://{bare}.careers",
+            f"https://careers.{bare}.{tld}",
+        ]
+    else:
+        slug = re.sub(r"[^a-z0-9]", "", t.lower())
+        bases = [f"https://{slug}.com", f"https://careers.{slug}.com",
+                 f"https://jobs.{slug}.com"]
+
+    out: list[str] = []
+    for b in bases:
+        out.append(b)
+        out.extend(b + p for p in CAREERS_PATHS)
+
+    seen, uniq = set(), []
+    for u in out:
+        if u not in seen:
+            seen.add(u)
+            uniq.append(u)
+    return uniq[:34]
 
 
 def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
@@ -141,32 +188,69 @@ def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list]:
     return len(jobs), jobs
 
 
-def verify_identity(jobs: list, domain: str | None, company: str) -> tuple[str, str]:
+def _norm(s: str) -> str:
+    """Lowercase alphanumerics only, so 'Checkout.com' and 'checkout.com' and
+    "Sotheby's" and 'sothebys' compare equal."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def verify_identity(jobs: list, domain: str | None, company: str,
+                    platform: str = "") -> tuple[str, str]:
     """Does this board actually belong to who we think?
 
-    Checks the apply URLs and the board's own company name against the domain.
-    Returns (verdict, note). Being unable to tell is reported as `unchecked`,
-    never as `ok`.
+    Compares the board's apply links and its own company name against the
+    domain asked for. Returns (verdict, note). Being unable to tell is
+    reported as `unchecked`, never as `ok`, because a confident wrong answer
+    here is how a Florida schools operator gets filed as a payments company.
     """
+    # Aggregated search endpoints return many employers by design, so there is
+    # no single identity to check against.
+    if platform == "linkedin":
+        return "unchecked", "aggregated search results, many employers"
+
     if not jobs:
         return "unchecked", "no postings to check against"
     apply_hosts = {urlparse(j.url).netloc.lower() for j in jobs if j.url}
-    names = {(j.company or "").lower() for j in jobs if j.company}
+    names = {(j.company or "").strip() for j in jobs if j.company}
+    norm_names = {_norm(n) for n in names if n}
 
     if domain:
         d = domain.lower().replace("www.", "")
-        root = d.split(".")[0]
-        if any(d in h or root in h for h in apply_hosts):
+        root = _norm(d.split(".")[0])
+        if root and any(root in _norm(h) for h in apply_hosts):
             return "ok", f"apply links point at {d}"
-        if any(root in n.replace(" ", "") for n in names):
+        if root and any(root in n or n in root for n in norm_names if n):
             return "ok", f"board names itself {sorted(names)[0]!r}"
 
-    root = re.sub(r"[^a-z0-9]", "", company.lower())
-    if root and any(root in n.replace(" ", "") for n in names):
+    want = _norm(company)
+    if want and any(want in n or n in want for n in norm_names if n):
         return "ok", f"board names itself {sorted(names)[0]!r}"
     if names:
         return "mismatch", f"board names itself {sorted(names)[0]!r}, expected {company!r}"
     return "unchecked", "board publishes no company name"
+
+
+def _guess_tokens(domain: str | None, target: str) -> list[tuple[str, str, str]]:
+    """Obvious token spellings, built into API URLs for the platforms that
+    accept a plain token. Every result is still verified by the caller.
+    """
+    base = (domain or target).lower().replace("www.", "")
+    root = base.split(".")[0]
+    tld_form = base if "." in base else ""
+    candidates = {root, root.replace("-", ""), root.replace("-", "")}
+    if tld_form:
+        candidates.add(tld_form)          # Primer's real Ashby token is "primer.io"
+        candidates.add(tld_form.replace(".", ""))
+    candidates = {c for c in candidates if c and len(c) > 1}
+
+    out: list[tuple[str, str, str]] = []
+    for name in ("greenhouse", "ashby", "lever"):
+        p = adapters.by_name(name)
+        if not p or not p.build:
+            continue
+        for tok in sorted(candidates):
+            out.append((name, tok, p.build(tok)))
+    return out
 
 
 def discover(target: str, company: str | None = None, *, validate: bool = True) -> list[Found]:
@@ -177,23 +261,70 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
         domain = urlparse(target if target.startswith("http") else f"https://{target}").netloc
     name = company or (domain.split(".")[0] if domain else target).replace("-", " ").title()
 
-    for cand in _candidates(target):
-        r = _get(cand)
-        if r is None or r.status_code >= 400:
+    # Candidates are independent, so fetch them together rather than walking a
+    # list of 30 URLs at 10 seconds each. First page that reveals an ATS wins.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    cands = _candidates(target)
+    hits: list[tuple[str, str, str]] = []
+    blocked = 0
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs = {ex.submit(_get, c, 10): c for c in cands}
+        try:
+            for fut in as_completed(futs, timeout=75):
+                r = fut.result()
+                if _is_blocked(r):
+                    blocked += 1
+                    continue
+                if r is None or r.status_code >= 400:
+                    continue
+                got = _scan(r.text, r.url)
+                if got:
+                    hits.extend(got)
+                    break
+        except TimeoutError:
+            pass
+        for f2 in futs:
+            f2.cancel()
+
+    # If the careers page could not be read, fall back to trying the obvious
+    # tokens directly. Guessing used to be unsafe, because a token that
+    # responds is not proof of the right company. It is safe here only because
+    # every hit is identity-checked before it is offered, so the Florida
+    # schools operator sitting on Ashby `primer` gets caught rather than filed.
+    # It does not work for Workday at all: tenant and site names are not
+    # derivable from a company name, and 117 attempts proved it.
+    if not hits:
+        hits.extend(_guess_tokens(domain, target))
+
+    seen_api, checked = set(), []
+    for platform, token, api in hits:
+        if api in seen_api:
             continue
-        for platform, token, api in _scan(r.text, r.url):
-            f = Found(company=name, url=api, platform=platform, token=token, domain=domain)
-            if validate:
-                src = f.to_source()
-                n, jobs = count_jobs(src)
-                f.live_jobs = n
-                if n == 0:
-                    f.note = "responded but published no postings"
-                else:
-                    f.identity, f.note = verify_identity(jobs, domain, name)
-            found.append(f)
-        if found:
-            break
+        seen_api.add(api)
+        f = Found(company=name, url=api, platform=platform, token=token, domain=domain)
+        if validate:
+            n, jobs = count_jobs(f.to_source())
+            f.live_jobs = n
+            if n == 0:
+                f.note = "responded but published no postings"
+            else:
+                f.identity, f.note = verify_identity(jobs, domain, name, f.platform)
+        checked.append(f)
+
+    # Empty boards are noise when they came from guessing rather than from a
+    # link the company actually published.
+    found = [f for f in checked if f.live_jobs > 0 or not validate]
+
+    if not found:
+        if blocked:
+            return [Found(company=name, url="", platform="", token="", domain=domain,
+                          identity="blocked",
+                          note=f"careers site refused automated requests "
+                               f"({blocked} of {len(cands)} URLs blocked), and no "
+                               f"job board was found by name. Apply through their "
+                               f"site directly.")]
+        return []
 
     found.sort(key=lambda f: (-f.live_jobs, f.identity != "ok"))
     return found
@@ -205,7 +336,7 @@ def validate_source(src: Source) -> dict:
     """
     n, jobs = count_jobs(src)
     verdict, note = ("dead", "no postings returned") if n == 0 else \
-        verify_identity(jobs, src.domain, src.company)
+        verify_identity(jobs, src.domain, src.company, src.platform)
     return {
         "company": src.company,
         "url": src.url,

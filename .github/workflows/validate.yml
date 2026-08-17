@@ -1,0 +1,81 @@
+name: validate sources
+
+# The source list is the part of this project that rots. Company tokens get
+# renamed, boards migrate between ATSs, companies get acquired. Without this
+# the list looks maintained while quietly going stale.
+#
+# Runs weekly, checks every bundled source is alive and is still the company it
+# claims to be, and opens a pull request when something has changed. Nothing is
+# removed without a human merging it.
+
+on:
+  schedule:
+    - cron: "0 4 * * 0"   # Sundays, 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e .
+
+      - name: Check every source
+        run: |
+          job-radar validate --file sources/sources.json \
+                             --report out/validation.json \
+                             --prune
+
+      - name: Summarise
+        id: sum
+        run: |
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          r = json.load(open("out/validation.json"))
+          print(f"## Source validation\n")
+          print(f"- checked: **{r['total']}**")
+          print(f"- dead: **{len(r['dead'])}**")
+          print(f"- identity mismatch: **{len(r['mismatch'])}**\n")
+          if r["dead"]:
+              print("### Dead\n")
+              for d in r["dead"][:60]:
+                  print(f"- `{d['company']}` — {d['url']}")
+          if r["mismatch"]:
+              print("\n### Wrong company?\n")
+              print("These boards respond, but do not look like who we think they are.")
+              print("That is how a Florida schools operator ended up filed as a London")
+              print("payments company.\n")
+              for d in r["mismatch"][:60]:
+                  print(f"- `{d['company']}` — {d['note']}")
+          PY
+          echo "dead=$(python3 -c "import json;print(len(json.load(open('out/validation.json'))['dead']))")" >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request
+        if: steps.sum.outputs.dead != '0'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/validate-sources
+          title: "Prune ${{ steps.sum.outputs.dead }} dead source(s)"
+          body: |
+            Weekly source validation. Every bundled board was fetched and
+            checked for live postings and for company identity.
+
+            Dead sources have been removed from `sources/sources.json`.
+            Identity mismatches are listed in the run summary but left in
+            place, because a mismatch needs a human to decide whether the
+            token is wrong or the company simply renamed itself.
+
+            Full report is in the workflow summary.
+          add-paths: sources/sources.json
+          commit-message: "sources: prune dead boards"
+          delete-branch: true

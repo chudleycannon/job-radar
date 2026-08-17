@@ -28,6 +28,17 @@ _RANGE = re.compile(
 )
 _SINGLE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM})", re.I)
 
+# Day and hour rates are small numbers, so the annual patterns above skip them
+# on purpose: a bare "600" in a job description is far more likely to be a
+# headcount than a salary. Once the text says "per day", a small number is
+# meaningful and these looser patterns take over.
+_NUM_RATE = r"\d{1,4}(?:\.\d+)?"
+_RANGE_RATE = re.compile(
+    rf"(?P<c1>[£$€])\s?(?P<lo>{_NUM_RATE})\s*(?:-|–|—|to)\s*(?P<c2>[£$€])?\s?(?P<hi>{_NUM_RATE})",
+    re.I,
+)
+_SINGLE_RATE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM_RATE})", re.I)
+
 _PER_DAY = re.compile(r"\b(per|a|/)\s?day\b|\bday rate\b|\bdaily\b|\bpd\b", re.I)
 _PER_HOUR = re.compile(r"\b(per|an|/)\s?h(ou)?r\b|\bhourly\b", re.I)
 
@@ -68,8 +79,9 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
         return Salary(raw=t.strip()[:120])
 
     period = _period(t)
+    rng, single = (_RANGE_RATE, _SINGLE_RATE) if period != "year" else (_RANGE, _SINGLE)
 
-    m = _RANGE.search(t)
+    m = rng.search(t)
     if m:
         lo, hi = _to_float(m.group("lo")), _to_float(m.group("hi"))
         cur = _CUR.get((m.group("c1") or m.group("c2") or "").lower()) or default_currency
@@ -79,7 +91,7 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
                 raw=m.group(0).strip(), confirmed=True,
             )
 
-    m = _SINGLE.search(t)
+    m = single.search(t)
     if m:
         v = _to_float(m.group("v"))
         cur = _CUR.get((m.group("c") or "").lower()) or default_currency

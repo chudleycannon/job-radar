@@ -1,11 +1,17 @@
-# Your own config and results. The example is committed; yours is not.
-config.yaml
-out/
-scans/
+# Your own settings, kept out of the repo.
+#
+# Note what is NOT ignored: config.yaml and state/. Both have to be committed
+# for the GitHub Actions path to work, because a fresh runner has no memory.
+# If you want a private config on a public fork, put it in config.local.yaml,
+# which the CLI prefers over config.yaml and which is ignored here.
+config.local.yaml
 *.local.yaml
 
+# Scan output. Regenerated every run; publish it via Pages rather than commits.
+out/
+
 # Maintainer working files. The harvester lives in a separate private repo;
-# these are the artefacts it leaves behind if run here.
+# these are what it leaves behind if it is run from here.
 harvest/
 raw/
 *.checkpoint.json

@@ -1,0 +1,54 @@
+name: sync vendored skills
+
+# rate-cv ships in two places: its own repository, and vendored into
+# skills/rate-cv here so that cloning job-radar gives you a working set rather
+# than a scanner and a list of things to install separately.
+#
+# Its own repository is the source of truth. This job checks the copy still
+# matches and opens a pull request when it does not, because two copies of the
+# same skill that nobody diffs is how they quietly stop agreeing.
+
+on:
+  schedule:
+    - cron: "30 4 * * 0"   # Sundays, just after source validation
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch upstream rate-cv
+        run: |
+          git clone --depth 1 https://github.com/maccydee/rate-cv.git /tmp/rate-cv
+          echo "REV=$(git -C /tmp/rate-cv rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      - name: Copy over the vendored version
+        run: |
+          rm -rf skills/rate-cv
+          mkdir -p skills/rate-cv
+          rsync -a --exclude '.git' --exclude '.github' /tmp/rate-cv/ skills/rate-cv/
+          sed -i -E "s|\| \`rate-cv\` \| \[maccydee/rate-cv\]\(https://github.com/maccydee/rate-cv\) \| \`[^\`]*\` \||| \`rate-cv\` | [maccydee/rate-cv](https://github.com/maccydee/rate-cv) | \`${REV}\` ||" skills/README.md || true
+
+      - name: Open a pull request if it drifted
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/sync-rate-cv
+          title: "Sync vendored rate-cv to ${{ env.REV }}"
+          body: |
+            The vendored copy of `rate-cv` no longer matches
+            [maccydee/rate-cv](https://github.com/maccydee/rate-cv).
+
+            This pull request replaces `skills/rate-cv/` with upstream at
+            `${{ env.REV }}`. If the diff contains changes that were made here
+            rather than upstream, that is the bug: edits belong in the source
+            repository, not in this copy.
+          add-paths: |
+            skills/**
+          commit-message: "skills: sync rate-cv to ${{ env.REV }}"
+          delete-branch: true
