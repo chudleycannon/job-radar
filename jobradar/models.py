@@ -49,9 +49,33 @@ class Salary:
             return t * working_days * hours_per_day
         return t
 
+    SYMBOLS = {"GBP": "£", "USD": "$", "EUR": "€"}
+
     def label(self) -> str:
+        """What to show the reader.
+
+        Built from the numbers rather than from whatever string the platform
+        supplied, because those strings are often just a heading: Greenhouse
+        returns things like "Annual Salary:" and "Local Pay Range" in the same
+        field as the figures, and showing that tells the reader nothing.
+        """
         if not self.confirmed:
             return "unconfirmed salary"
+
+        sym = self.SYMBOLS.get((self.currency or "").upper(), "")
+        cur = "" if sym else (self.currency + " " if self.currency else "")
+        per = {"day": "/day", "hour": "/hr"}.get(self.period, "")
+
+        def fmt(v: float) -> str:
+            if self.period == "year" and v >= 10_000:
+                return f"{sym}{cur}{v / 1000:,.0f}k"
+            return f"{sym}{cur}{v:,.0f}"
+
+        if self.min is not None and self.max is not None and self.max != self.min:
+            return f"{fmt(self.min)} - {fmt(self.max)}{per}"
+        v = self.top
+        if v is not None:
+            return f"{fmt(v)}{per}"
         return self.raw or "salary stated"
 
 

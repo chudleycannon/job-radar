@@ -1,0 +1,1873 @@
+{
+ "runs": 2,
+ "seen": {
+  "00a3afb7dbe2f96a": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Research Data Platform"
+  },
+  "00cca642ed2248f2": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Continuous Deployment and Change Safety"
+  },
+  "00f6bf7baad7a3d0": {
+   "company": "HID",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Ecosystem Integration Engineering Manager"
+  },
+  "019d5de5e80f8fd3": {
+   "company": "Plaid",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Dashboard Foundations"
+  },
+  "02a9a1748e48f714": {
+   "company": "Storiogroup",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager - Domain Platform Engineering & AI"
+  },
+  "02e1e979da9af1f8": {
+   "company": "Deepgram",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Console Team (Product-Led Growth Strategy)"
+  },
+  "04191c8605c2e194": {
+   "company": "Waymo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, London"
+  },
+  "05404f788255b9ac": {
+   "company": "CLEAR - Corporate",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering (Core Platform)"
+  },
+  "06aa4a801ad57582": {
+   "company": "Vanta",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Core Platform"
+  },
+  "084448959bd38b72": {
+   "company": "Datadog",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager I, Commercial Audit"
+  },
+  "08c1e79973b164e4": {
+   "company": "Legora",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "090c508e04a8ad96": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Bedrock"
+  },
+  "09e7fc45e8e30cf2": {
+   "company": "Mistral AI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Inference"
+  },
+  "0af0c02e89859d10": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, AI Engineering: Chat"
+  },
+  "0c15957c0211b326": {
+   "company": "Airbnb",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Media Foundation"
+  },
+  "0d0b5b24884e69f9": {
+   "company": "Cursor",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, ML"
+  },
+  "0d9347d13c729826": {
+   "company": "Canva",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (BE) - Ecosystem Distribution"
+  },
+  "0dcfca9956f3e340": {
+   "company": "LangChain",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, AI Observability & Evals Platform (San Francisco, CA)"
+  },
+  "0dd183ce38879c48": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, Network Security"
+  },
+  "0e5e92113b732704": {
+   "company": "Prolific ",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "0ef3fd48d61a9a72": {
+   "company": "Prolific ",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Platform Engineering Manager"
+  },
+  "0fbc86b19ddcdeae": {
+   "company": "Ashby",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Americas"
+  },
+  "11125386b75ecf11": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "(GCC) Global Capability Center Engineering Manager"
+  },
+  "117f917f1b4d0a3d": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Travel FX App"
+  },
+  "11e379b56f36596d": {
+   "company": "Perplexity",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (API Platform)"
+  },
+  "129b1d7e0f357395": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager - Agentic Analytics"
+  },
+  "1314c230d6a4eb52": {
+   "company": "Cherry Ventures",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Heath Tech (London)"
+  },
+  "147ea642d8f0af1d": {
+   "company": "Scale AI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, UAE"
+  },
+  "1740de36a41eed50": {
+   "company": "Airbnb",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Payments"
+  },
+  "18afc78efc202962": {
+   "company": "Crowdstrike",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Sr. Engineering Manager, CoreAPI and Cloud Provisioning (Hybrid, Sunnyvale)"
+  },
+  "1aa6a3d02d6dd6b2": {
+   "company": "Qurated",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "1b1fd28187a02370": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Data Engineering Manager (Data & AI)"
+  },
+  "1d585bc132fb2a37": {
+   "company": "Sanity",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, Content Agent"
+  },
+  "1ef618a9077a5908": {
+   "company": "Via",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Mobile Engineering Manager"
+  },
+  "1f6a86f798c0c5f7": {
+   "company": "Xero",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "1fc4d54747e6b7eb": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager \u2013 United Kingdom"
+  },
+  "2017b360db4bea11": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - AI Payments App"
+  },
+  "232940220f49c104": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - OpenBMC Platform"
+  },
+  "235d206440d99dbc": {
+   "company": "Fivetran ",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Metadata"
+  },
+  "24763ae275a5aaba": {
+   "company": "Deliveroo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "256f9ee9c36da4ff": {
+   "company": "Flow Traders",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Research Engineering"
+  },
+  "25b16590af527ac0": {
+   "company": "CLEAR - Corporate",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Infrastructure"
+  },
+  "261b79965da39089": {
+   "company": "Spiko",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "26782701cad9de0a": {
+   "company": "CLEAR - Corporate",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "26a6efe561490e43": {
+   "company": "Modal Labs",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Systems Engineering Manager"
+  },
+  "29280600f5f36805": {
+   "company": "Atlassian",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager \u2013 Incident Response"
+  },
+  "29d092ab70db6008": {
+   "company": "Cisco",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Software Engineering Manager (Hybrid)"
+  },
+  "2b20ce7e8cfa0af9": {
+   "company": "Vercel",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, CDN"
+  },
+  "2d1aef96ca323d84": {
+   "company": "Recursion",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Machine Learning"
+  },
+  "2d7004073d9c2b7c": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, AI Agents"
+  },
+  "2dfe72b9692e2185": {
+   "company": "Fundingcircle",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "2e08253e162c3a24": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Security Engineering Manager, Secure Frameworks"
+  },
+  "2faaf9bc57c3039a": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager - OLTP"
+  },
+  "303a0919ff608200": {
+   "company": "Wave",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager-Database Reliability"
+  },
+  "3094a0efc8631f6c": {
+   "company": "Notion",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Mobile AI"
+  },
+  "340398717f4f2cd4": {
+   "company": "Spotify",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Music"
+  },
+  "340f0eaaa128c006": {
+   "company": "Spotify",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Data Platform"
+  },
+  "34c095ce245c7f2d": {
+   "company": "Multiverse",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager - Enterprise Trust & Reliability"
+  },
+  "34df557381d4c286": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - AI-native email App"
+  },
+  "3514f724bf1b28bb": {
+   "company": "Canva",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager- Specialist Experience & Platform"
+  },
+  "3582a5dee66e03c5": {
+   "company": "Paddle",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (Subscriptions)"
+  },
+  "35c56d5ea2145e2a": {
+   "company": "Cursor",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Core Services"
+  },
+  "35e44e930a04cb91": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Cybersecurity Products"
+  },
+  "38538f50dd619b1e": {
+   "company": "Isomorphic Labs",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Security Engineering Manager, London or Lausanne"
+  },
+  "38e9edff78bf9015": {
+   "company": "Canva",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Systems Engineering Manager - Identity & Access Management"
+  },
+  "39a10e21da6f40b0": {
+   "company": "Spotify",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Machine Learning Engineering Manager, Personalization"
+  },
+  "39b2c13405b38df1": {
+   "company": "TigerData",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Tiger Cloud Apps"
+  },
+  "39bd45fd0f13fb31": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, AI Enterprise"
+  },
+  "3b8490ff9ebceb5a": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Knowledge Engineering Manager (all genders)"
+  },
+  "3e366b3cf568edfa": {
+   "company": "Megaport",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (NetAuto)"
+  },
+  "3e6bd21c0674555b": {
+   "company": "Airbnb",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Guest & Host"
+  },
+  "40c4d9272a19611c": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, AI Platform"
+  },
+  "41a1f6c6c011f040": {
+   "company": "MongoDB",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Director of Engineering, Developer Productivity"
+  },
+  "4521c59b2994af5b": {
+   "company": "Amey",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Principal Engineering Manager"
+  },
+  "45e449dcdab67078": {
+   "company": "Permutive",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (Data Foundations)"
+  },
+  "46c8f95591a62add": {
+   "company": "Ashby",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - UK"
+  },
+  "46f85109adc289e7": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Multimodal (API)"
+  },
+  "477b1e76e5194c0e": {
+   "company": "Smart Bricks",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "485371e9eada0181": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, GRC Platform"
+  },
+  "48841fef5429a10f": {
+   "company": "Scale AI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, Physical AI"
+  },
+  "497ab64e5c7d6110": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Safeguards Review Tooling"
+  },
+  "4ad803e620f4cd9e": {
+   "company": "Malt",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager - Compliance"
+  },
+  "4b4213363eebbcf2": {
+   "company": "Multiverse",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager"
+  },
+  "4b6da88a77682fcc": {
+   "company": "Sotheby's",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "4c2c27dbd7c26665": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Full Stack Engineering Manager"
+  },
+  "4cf45a6c8ad9e1ef": {
+   "company": "Discord",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Safety"
+  },
+  "4d6f3406d357b9b0": {
+   "company": "Checkout.com",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager - Data Platform"
+  },
+  "4e0b26cf61201def": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "AI Native Software Engineering Manager"
+  },
+  "4e67835ce603affd": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Research Productivity"
+  },
+  "4ed5289ad4cf98dc": {
+   "company": "Xero",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Data"
+  },
+  "4f339adb6dfe9933": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "P10K - Accenture - Forward Deployed Engineering Manager"
+  },
+  "4f4c5787b487eb8b": {
+   "company": "Canva",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Production Engineering Manager"
+  },
+  "509575346309bb5c": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "5132a13bc06ccbdc": {
+   "company": "Deepl",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager | Payments, Abuse, and Conversion"
+  },
+  "52d15ab14a21c3d2": {
+   "company": "Coinbase",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Core Automation (Platform)"
+  },
+  "52e5eb4dde3b70bc": {
+   "company": "Sanity",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, Web"
+  },
+  "54341d74dbc415df": {
+   "company": "dunnhumby",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Full Stack"
+  },
+  "54876bade17a0639": {
+   "company": "Diligent Corporation",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager (Hands On)"
+  },
+  "55fb1bacf14f6d0b": {
+   "company": "CLEAR - Corporate",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, CLEAR1 (B2B)"
+  },
+  "56597ce12a722256": {
+   "company": "Airbnb",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Cloud & Data Security"
+  },
+  "576dce9f31811ff0": {
+   "company": "Plaid",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, AI Applications"
+  },
+  "57fd84acea67197a": {
+   "company": "Perk",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - London"
+  },
+  "58c5f74f891fd827": {
+   "company": "LangChain",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, AI Observability & Evals Platform (New York, NY)"
+  },
+  "595ca0ea88d281fe": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - Image and Data Compression Libraries"
+  },
+  "5995161d96b36581": {
+   "company": "Fonoa",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager"
+  },
+  "5f43e07d9132a2ff": {
+   "company": "Wayve",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Runtime Platform, Robot Software"
+  },
+  "61e16592ce76a26c": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Agentic GenAI Platform"
+  },
+  "622af37f7381fd3b": {
+   "company": "Addepar",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - Data Platform"
+  },
+  "634bcc866fd0accd": {
+   "company": "Odevo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager"
+  },
+  "63655e0208f88846": {
+   "company": "Cursor",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Agent & Product Security"
+  },
+  "643f2a97c31a99ba": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Dedicated Integrations"
+  },
+  "656543fa7a372ac8": {
+   "company": "Precisely International Jobs",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Platform Engineering Manager"
+  },
+  "665e7bc5e906a2d8": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Stock Trading App"
+  },
+  "67076dcad57db814": {
+   "company": "FanDuel",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Platform Engineering Manager"
+  },
+  "67eb2b92f563cddb": {
+   "company": "DoiT",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - Select by DoiT"
+  },
+  "68225973436a1473": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Premium"
+  },
+  "696fe8f94bcdb36f": {
+   "company": "Omnea",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "69a6e7ac1a4a1e73": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, Robotics Neural Reconstruction and Real2Sim Applications"
+  },
+  "6a9757bff5930c85": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "AI Engineering / Agentic AI Engineering Manager"
+  },
+  "6b81b9181b24108c": {
+   "company": "Flo Health",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Data Science Team"
+  },
+  "6c4bb2734cd3f73d": {
+   "company": "Nscale",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Software Engineering Manager - Fleet Management"
+  },
+  "6d1a57d90ffd59be": {
+   "company": "Deliveroo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Event Streaming Systems"
+  },
+  "6eb3baaada972fb5": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Security"
+  },
+  "742170832d1f3ee3": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Data Foundations"
+  },
+  "744fc9db8959c038": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, Security Factory"
+  },
+  "748e20562927d99a": {
+   "company": "Griffin",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "74e28a416f79ba31": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Data Engineering Experience"
+  },
+  "778a48cd4e1fce0d": {
+   "company": "LangChain",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, Database (SmithDB)"
+  },
+  "78132a1da69443af": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, GPU (ML Accelerator)"
+  },
+  "7a1cc5d51e2c74c0": {
+   "company": "TigerData",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Database"
+  },
+  "7a2f509642c6180e": {
+   "company": "Flo Health",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - AI platform"
+  },
+  "7b5c0e0b42529599": {
+   "company": "Swap",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering - Agentic Commerce"
+  },
+  "7b62ec92a9e6abd8": {
+   "company": "Perplexity",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (TLM, Agents)"
+  },
+  "7b6c42e4d4587865": {
+   "company": "Fundingcircle",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Data Engineering Manager"
+  },
+  "7badc5cbefa7ba3d": {
+   "company": "Plentific",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager"
+  },
+  "7bf1251d7735a8a7": {
+   "company": "Watershed",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering manager, cloud infrastructure"
+  },
+  "7cad87da7bb276d9": {
+   "company": "Ashby",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Canada"
+  },
+  "7f22ce704e26bceb": {
+   "company": "Crowdstrike",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Network Engineering Manager - Backbone and Cloud (Remote)"
+  },
+  "7f4dcba51c88a17c": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering Operations"
+  },
+  "7f9ada8d73023415": {
+   "company": "SumUp",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "7fe2b9f6a8d25e2f": {
+   "company": "Thought Machine",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "805c22fe1aa04dac": {
+   "company": "Synthesia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Application Security Engineering Manager"
+  },
+  "80bd7bcfc8b5a0e1": {
+   "company": "Hp",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "MEMS Engineering Manager 1"
+  },
+  "817d4ee9fcf0c784": {
+   "company": "Discord",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Platform Security"
+  },
+  "8280b9e6ad11cb89": {
+   "company": "Clearbank",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "82e6db463e4cdce1": {
+   "company": "Crowdstrike",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Data Platform (Hybrid, GBR)"
+  },
+  "837ef866dbd40d61": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Data & AI Engineering Manager/Consultant"
+  },
+  "89887c492801e617": {
+   "company": "Yuno",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Payments Integrations"
+  },
+  "8a289d2fd7bc7f9b": {
+   "company": "Cursor",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Evals"
+  },
+  "8a917af0b47d9b2f": {
+   "company": "Datadog",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager I, Threat Detection"
+  },
+  "8e20eb1436ced402": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Cooperative Systems"
+  },
+  "8e40f1bb4c501def": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Product and Manufacturing Test Engineering Manager"
+  },
+  "8e982cca550013dc": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Switchboard"
+  },
+  "8fe96deae566976a": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "9044af8ddff22e72": {
+   "company": "Temporal",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering, Compute"
+  },
+  "9061d6b91e6c2dfd": {
+   "company": "Adobe",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager | iOS Video Applications"
+  },
+  "914519e99f4ba9e1": {
+   "company": "Scale AI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, Public Sector"
+  },
+  "94bf76b54c6c5a71": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, LLM Performance"
+  },
+  "96b12dd9b473c159": {
+   "company": "Affinidi",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (m/f/d)"
+  },
+  "989c81097006ecf8": {
+   "company": "Okta",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Performance & Resilience (Auth0)"
+  },
+  "9925ba22d3d99552": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, AI Agents"
+  },
+  "99952c5165e42dc3": {
+   "company": "Discord",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, Safety"
+  },
+  "9a601bc9cc98569d": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Agent Context"
+  },
+  "9df89fac1c1dd1eb": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, DRIVE OS Communication Infrastructure"
+  },
+  "9e7e69d97f7a3a85": {
+   "company": "Awin ",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Billing & Payments (f/m/d)"
+  },
+  "a07b9a1a1330c412": {
+   "company": "Slice",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Services"
+  },
+  "a18f4d13a3bd690a": {
+   "company": "Arm",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Staff Engineering Manager"
+  },
+  "a2bdbcf8b9668b3f": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Safeguards Interventions"
+  },
+  "a2c8987f3864954c": {
+   "company": "Deepl",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager | Enterprise Acceleration"
+  },
+  "a2dd787781ce659b": {
+   "company": "CMC Markets",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Security Platform Engineering Manager"
+  },
+  "a32cb6ca3937b503": {
+   "company": "Semgrep",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Software Supply Chain Security"
+  },
+  "a4bb88ccd68bb484": {
+   "company": "Cohere",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, GPU Infrastructure"
+  },
+  "a58e3da54f575ebc": {
+   "company": "Vanta",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Reporting"
+  },
+  "a67bd1992f50b6a6": {
+   "company": "Supabase",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "a766a97dc1d4099b": {
+   "company": "Wheely",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering"
+  },
+  "a8a4ddc1af5544bf": {
+   "company": "Fin",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Customer Agent"
+  },
+  "a9aa388cd1007896": {
+   "company": "Xero",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "ab0772f40423aba5": {
+   "company": "Zopa",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (London)"
+  },
+  "abb53bfa6df002a6": {
+   "company": "Discord",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Notifications"
+  },
+  "ae519a9590db264d": {
+   "company": "Trainline",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "MLOps Engineering Manager"
+  },
+  "aeb7672f44405831": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Online Data Systems"
+  },
+  "b025584f9d91562d": {
+   "company": "Yuno",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager \u2013 Data Platform"
+  },
+  "b0edcc4e3d40d263": {
+   "company": "incident.io",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering"
+  },
+  "b0f06aa64a2fa3f2": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering - Application, Cloud and Offensive Security"
+  },
+  "b12d595e1f106ed4": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Growth"
+  },
+  "b2179ee7f86f43b9": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Core Experimentation"
+  },
+  "b4920e82ab3cace2": {
+   "company": "Deliveroo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Agent Experience"
+  },
+  "b591f67d6c17322d": {
+   "company": "1Password",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Compute Services"
+  },
+  "b59c572f2f5cd751": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Connectivity - London"
+  },
+  "b601a94bc96690ca": {
+   "company": "BLACKLANE",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Platform"
+  },
+  "b71977dd5f9189b4": {
+   "company": "Airwallex",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Global Treasury and Payment Network"
+  },
+  "b7cc10b23e1be6ce": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Growth"
+  },
+  "b96dfbbf7ae76c0b": {
+   "company": "Moody's Corporation",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager"
+  },
+  "babd99e7dc4b29bc": {
+   "company": "Scale AI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Infrastructure"
+  },
+  "bac574f16eeb90fd": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Distillation & Detection Platform"
+  },
+  "bcbf1eca62544fda": {
+   "company": "Vertical Aerospace",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering Capability"
+  },
+  "bd0a240dbf65fab1": {
+   "company": "Cursor",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Infrastructure"
+  },
+  "bd2df2fd7b088e08": {
+   "company": "Stripe",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "ARG Engineering Manager"
+  },
+  "bd48a84f02caf712": {
+   "company": "Incident",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering"
+  },
+  "bd8e855c1c49237f": {
+   "company": "Hpe",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Hardware Engineering Manager"
+  },
+  "bf64aad321018d17": {
+   "company": "Lightdash",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "c1c82e24a9cbb590": {
+   "company": "Graphcore",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Manufacturing Test Engineering Manager"
+  },
+  "c2104d17380796a5": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Inference"
+  },
+  "c30a14555a23ffef": {
+   "company": "Notion",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Search & Context Platform"
+  },
+  "c34818a86619a0bb": {
+   "company": "DoiT",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Analytics House"
+  },
+  "c3577d95febf5a92": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Artifacts"
+  },
+  "c381e5a9cd110f4e": {
+   "company": "Pythia Sports",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "c3c26d21b2291cdf": {
+   "company": "Netskope",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Sr. Engineering Manager, Data Security"
+  },
+  "c3d2324ed782427f": {
+   "company": "Amazon",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Data and Analytics, Network Flow and Technologies"
+  },
+  "c85eaebfbd48aeb5": {
+   "company": "Via",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager"
+  },
+  "cb98562a52e78a62": {
+   "company": "Crowdstrike",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Production Services Infrastructure (Remote)"
+  },
+  "cc227fac6ba07ed3": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Data Engineering Manager, Product"
+  },
+  "cd8ea05e64a74974": {
+   "company": "Scale AI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Global Public Sector"
+  },
+  "cdb96c673df8bdfe": {
+   "company": "Airwallex",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, AI Tooling"
+  },
+  "cdc1e3ec0498cc7b": {
+   "company": "Awin ",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering - Developer Experience & Platform (f/m/d)"
+  },
+  "cf1d7d88f5d2d5ea": {
+   "company": "Airwallex",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Data Knowledge Platform"
+  },
+  "d0bd05e67a639b1b": {
+   "company": "Addepar",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - Workflow Platform"
+  },
+  "d1f4fb2717112f29": {
+   "company": "CoreWeave",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Kubernetes Infrastructure (Bare Metal)"
+  },
+  "d2f5e512f776c03e": {
+   "company": "Crowdstrike",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - Cloud Security (Hybrid)"
+  },
+  "d46877b2c48f7ee8": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Enterprise"
+  },
+  "d7411610c0ac9cde": {
+   "company": "Monzo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager"
+  },
+  "d7bd1ff7ab693fa4": {
+   "company": "Asana",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Consumption Based Billing & Licensing"
+  },
+  "d8980adbd8fc6f03": {
+   "company": "Broadcom",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering \u2013 vSphere Kubernetes Service"
+  },
+  "d9beb0adac356f29": {
+   "company": "Contentful",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Content API (f/m/d)"
+  },
+  "db80185f7c9bf2d8": {
+   "company": "Discord",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Revenue"
+  },
+  "dc33a8b08ad8bf2e": {
+   "company": "Accenture",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Industrial & Automotive Manufacturing Engineering Manager"
+  },
+  "dd6feb6176da51f7": {
+   "company": "Nvidia",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - GPU Communications Libraries"
+  },
+  "e00d3a68e6ba4eb3": {
+   "company": "ServiceNow",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Software Engineering Manager | Applied AI Engineering"
+  },
+  "e01b5584e6577e79": {
+   "company": "Deliveroo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Brand Ads and Promotions"
+  },
+  "e15dd04cc7a3cdde": {
+   "company": "SentinelOne",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Developer Tooling"
+  },
+  "e201f82f1b66c464": {
+   "company": "Clearbank",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Customer and Regulatory Reporting"
+  },
+  "e2e253fec2f59849": {
+   "company": "Semgrep",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Guardian"
+  },
+  "e2e9006ab5642bf3": {
+   "company": "J. PAO & CO. LIMITED",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "e2ed7fa7436aa878": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Director of Engineering, AI Functions"
+  },
+  "e4551d79b6ac9e1d": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Search"
+  },
+  "e491b87d0d97720e": {
+   "company": "Jane Street",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Linux Engineering Manager"
+  },
+  "e4d81081c0860e23": {
+   "company": "Canva",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (Android / React Native) - Native Features"
+  },
+  "e6c318d207f42142": {
+   "company": "1Password",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Authentication Services"
+  },
+  "e865a4a907567fb5": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Wealth Management App"
+  },
+  "eafc217778e5b34d": {
+   "company": "BJAK",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Head of Engineering"
+  },
+  "ebbf7a2fa8b7f24c": {
+   "company": "Semgrep",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, AI Workflows"
+  },
+  "ecd6328f82ac4820": {
+   "company": "Snowflake",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager \u2013 Snowtrail"
+  },
+  "ecf4d4a65bb2bd58": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Identity & Access Platform"
+  },
+  "ee77833dac6574e2": {
+   "company": "Databricks",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, CustomerLake Profile Agents"
+  },
+  "eeeaf18de341b6ec": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager, Non-Linear Productivity"
+  },
+  "ef135c1a537ddeff": {
+   "company": "Overstory",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Machine Learning"
+  },
+  "ef569fbb87f0635a": {
+   "company": "Fin",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, AI Models Infrastructure"
+  },
+  "efc0b340d1bc4119": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Model Flywheel"
+  },
+  "f144d4410654e9f2": {
+   "company": "Mark43",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Integrations"
+  },
+  "f2b1334abacff96f": {
+   "company": "Vertical Aerospace",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior V&V Engineering Manager"
+  },
+  "f463ea6aef6cec5b": {
+   "company": "Black & Veatch",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Project Engineering Manager"
+  },
+  "f4b6985568b6333c": {
+   "company": "Checkout.com",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager"
+  },
+  "f4b702c57e122259": {
+   "company": "Ocado Group",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Robotics Hardware Engineering Manager"
+  },
+  "f520f39929ca6ca4": {
+   "company": "Plaid",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Europe"
+  },
+  "f5611474647207f2": {
+   "company": "OpenAI",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, MLE"
+  },
+  "f57893c2533d6788": {
+   "company": "Sanity",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager, AI Growth"
+  },
+  "f7464f86e0febaf2": {
+   "company": "Zopa",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Mobile Engineering Manager"
+  },
+  "f7e872dd4fb7f39c": {
+   "company": "Watershed",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering manager, reporting"
+  },
+  "f808b3f4d28d6f35": {
+   "company": "Paddle",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager (Platform - Application Excellence)"
+  },
+  "f8f5fcebb7f867e8": {
+   "company": "Twilio",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Senior Engineering Manager V&V Media"
+  },
+  "fb01a41a02f78970": {
+   "company": "Anthropic",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, UI Platform"
+  },
+  "fcbec61e037e6d35": {
+   "company": "Cisco",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Software Engineering Manager - ASIC Simulation - San Jose, CA"
+  },
+  "fcdcf3ef7d5d3140": {
+   "company": "GitLab",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Tenant Scale:Git"
+  },
+  "fed84d59951b9fa4": {
+   "company": "Xero",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager - Multiple Roles"
+  },
+  "ff67627f017901e5": {
+   "company": "Deliveroo",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Analytics Engineering Manager"
+  },
+  "ffe67ac7063bc463": {
+   "company": "Cursor",
+   "first_seen": "2026-08-17",
+   "last_seen": "2026-08-17",
+   "title": "Engineering Manager, Desktop"
+  }
+ },
+ "source_counts": {
+  "https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs": 142,
+  "https://adobe.wd5.myworkdayjobs.com/wday/cxs/adobe/external_experienced/jobs": 145,
+  "https://api.ashbyhq.com/posting-api/job-board/1password?includeCompensation=true": 58,
+  "https://api.ashbyhq.com/posting-api/job-board/Deepgram?includeCompensation=true": 81,
+  "https://api.ashbyhq.com/posting-api/job-board/airwallex?includeCompensation=true": 619,
+  "https://api.ashbyhq.com/posting-api/job-board/ashby?includeCompensation=true": 61,
+  "https://api.ashbyhq.com/posting-api/job-board/astronomer?includeCompensation=true": 27,
+  "https://api.ashbyhq.com/posting-api/job-board/attio?includeCompensation=true": 35,
+  "https://api.ashbyhq.com/posting-api/job-board/beamery?includeCompensation=true": 7,
+  "https://api.ashbyhq.com/posting-api/job-board/bjakcareer?includeCompensation=true": 1626,
+  "https://api.ashbyhq.com/posting-api/job-board/causaly?includeCompensation=true": 8,
+  "https://api.ashbyhq.com/posting-api/job-board/checkout.com?includeCompensation=true": 179,
+  "https://api.ashbyhq.com/posting-api/job-board/clearbank?includeCompensation=true": 10,
+  "https://api.ashbyhq.com/posting-api/job-board/clickhouse?includeCompensation=true": 174,
+  "https://api.ashbyhq.com/posting-api/job-board/cognition?includeCompensation=true": 84,
+  "https://api.ashbyhq.com/posting-api/job-board/cohere?includeCompensation=true": 144,
+  "https://api.ashbyhq.com/posting-api/job-board/comind?includeCompensation=true": 12,
+  "https://api.ashbyhq.com/posting-api/job-board/confluent?includeCompensation=true": 30,
+  "https://api.ashbyhq.com/posting-api/job-board/corti?includeCompensation=true": 7,
+  "https://api.ashbyhq.com/posting-api/job-board/cursor?includeCompensation=true": 115,
+  "https://api.ashbyhq.com/posting-api/job-board/cyberhaven?includeCompensation=true": 11,
+  "https://api.ashbyhq.com/posting-api/job-board/deepl?includeCompensation=true": 56,
+  "https://api.ashbyhq.com/posting-api/job-board/deliveroo?includeCompensation=true": 167,
+  "https://api.ashbyhq.com/posting-api/job-board/docker?includeCompensation=true": 57,
+  "https://api.ashbyhq.com/posting-api/job-board/elevenlabs?includeCompensation=true": 255,
+  "https://api.ashbyhq.com/posting-api/job-board/elliptic?includeCompensation=true": 31,
+  "https://api.ashbyhq.com/posting-api/job-board/faculty?includeCompensation=true": 67,
+  "https://api.ashbyhq.com/posting-api/job-board/fleek?includeCompensation=true": 11,
+  "https://api.ashbyhq.com/posting-api/job-board/fonoa?includeCompensation=true": 31,
+  "https://api.ashbyhq.com/posting-api/job-board/freetrade?includeCompensation=true": 9,
+  "https://api.ashbyhq.com/posting-api/job-board/fundingcircle?includeCompensation=true": 27,
+  "https://api.ashbyhq.com/posting-api/job-board/granola?includeCompensation=true": 17,
+  "https://api.ashbyhq.com/posting-api/job-board/griffin?includeCompensation=true": 3,
+  "https://api.ashbyhq.com/posting-api/job-board/humaans?includeCompensation=true": 16,
+  "https://api.ashbyhq.com/posting-api/job-board/immersivelabs?includeCompensation=true": 10,
+  "https://api.ashbyhq.com/posting-api/job-board/improbable?includeCompensation=true": 6,
+  "https://api.ashbyhq.com/posting-api/job-board/incident?includeCompensation=true": 17,
+  "https://api.ashbyhq.com/posting-api/job-board/langchain?includeCompensation=true": 108,
+  "https://api.ashbyhq.com/posting-api/job-board/latentlabs?includeCompensation=true": 10,
+  "https://api.ashbyhq.com/posting-api/job-board/legora?includeCompensation=true": 273,
+  "https://api.ashbyhq.com/posting-api/job-board/lendable?includeCompensation=true": 71,
+  "https://api.ashbyhq.com/posting-api/job-board/lightdash?includeCompensation=true": 5,
+  "https://api.ashbyhq.com/posting-api/job-board/linear?includeCompensation=true": 33,
+  "https://api.ashbyhq.com/posting-api/job-board/lovable?includeCompensation=true": 75,
+  "https://api.ashbyhq.com/posting-api/job-board/marshmallow?includeCompensation=true": 14,
+  "https://api.ashbyhq.com/posting-api/job-board/materialize?includeCompensation=true": 5,
+  "https://api.ashbyhq.com/posting-api/job-board/materialsecurity?includeCompensation=true": 5,
+  "https://api.ashbyhq.com/posting-api/job-board/mistral.ai?includeCompensation=true": 166,
+  "https://api.ashbyhq.com/posting-api/job-board/modal?includeCompensation=true": 31,
+  "https://api.ashbyhq.com/posting-api/job-board/multiverse?includeCompensation=true": 27,
+  "https://api.ashbyhq.com/posting-api/job-board/n8n?includeCompensation=true": 34,
+  "https://api.ashbyhq.com/posting-api/job-board/nabla?includeCompensation=true": 14,
+  "https://api.ashbyhq.com/posting-api/job-board/notion?includeCompensation=true": 131,
+  "https://api.ashbyhq.com/posting-api/job-board/oaknorth?includeCompensation=true": 27,
+  "https://api.ashbyhq.com/posting-api/job-board/omnea?includeCompensation=true": 41,
+  "https://api.ashbyhq.com/posting-api/job-board/openai?includeCompensation=true": 737,
+  "https://api.ashbyhq.com/posting-api/job-board/paddle?includeCompensation=true": 19,
+  "https://api.ashbyhq.com/posting-api/job-board/perk?includeCompensation=true": 137,
+  "https://api.ashbyhq.com/posting-api/job-board/permutive?includeCompensation=true": 6,
+  "https://api.ashbyhq.com/posting-api/job-board/perplexity?includeCompensation=true": 101,
+  "https://api.ashbyhq.com/posting-api/job-board/photoroom?includeCompensation=true": 16,
+  "https://api.ashbyhq.com/posting-api/job-board/plaid?includeCompensation=true": 101,
+  "https://api.ashbyhq.com/posting-api/job-board/pleo?includeCompensation=true": 37,
+  "https://api.ashbyhq.com/posting-api/job-board/poolside?includeCompensation=true": 15,
+  "https://api.ashbyhq.com/posting-api/job-board/prefect?includeCompensation=true": 6,
+  "https://api.ashbyhq.com/posting-api/job-board/quantexa?includeCompensation=true": 27,
+  "https://api.ashbyhq.com/posting-api/job-board/railway?includeCompensation=true": 8,
+  "https://api.ashbyhq.com/posting-api/job-board/ramp?includeCompensation=true": 136,
+  "https://api.ashbyhq.com/posting-api/job-board/rasa?includeCompensation=true": 2,
+  "https://api.ashbyhq.com/posting-api/job-board/redis?includeCompensation=true": 20,
+  "https://api.ashbyhq.com/posting-api/job-board/replit?includeCompensation=true": 79,
+  "https://api.ashbyhq.com/posting-api/job-board/sana-roles?includeCompensation=true": 31,
+  "https://api.ashbyhq.com/posting-api/job-board/sanity?includeCompensation=true": 27,
+  "https://api.ashbyhq.com/posting-api/job-board/semgrep?includeCompensation=true": 15,
+  "https://api.ashbyhq.com/posting-api/job-board/siena?includeCompensation=true": 19,
+  "https://api.ashbyhq.com/posting-api/job-board/signal-ai?includeCompensation=true": 4,
+  "https://api.ashbyhq.com/posting-api/job-board/smarkets?includeCompensation=true": 9,
+  "https://api.ashbyhq.com/posting-api/job-board/snowflake?includeCompensation=true": 382,
+  "https://api.ashbyhq.com/posting-api/job-board/socure?includeCompensation=true": 101,
+  "https://api.ashbyhq.com/posting-api/job-board/supabase?includeCompensation=true": 54,
+  "https://api.ashbyhq.com/posting-api/job-board/swap?includeCompensation=true": 5,
+  "https://api.ashbyhq.com/posting-api/job-board/synthesia?includeCompensation=true": 64,
+  "https://api.ashbyhq.com/posting-api/job-board/temporal?includeCompensation=true": 54,
+  "https://api.ashbyhq.com/posting-api/job-board/tesslcareers?includeCompensation=true": 9,
+  "https://api.ashbyhq.com/posting-api/job-board/thought-machine?includeCompensation=true": 40,
+  "https://api.ashbyhq.com/posting-api/job-board/tigerdata?includeCompensation=true": 21,
+  "https://api.ashbyhq.com/posting-api/job-board/trainline?includeCompensation=true": 45,
+  "https://api.ashbyhq.com/posting-api/job-board/upguard?includeCompensation=true": 18,
+  "https://api.ashbyhq.com/posting-api/job-board/vanta?includeCompensation=true": 97,
+  "https://api.ashbyhq.com/posting-api/job-board/vertical-aerospace?includeCompensation=true": 21,
+  "https://api.ashbyhq.com/posting-api/job-board/watershed?includeCompensation=true": 36,
+  "https://api.ashbyhq.com/posting-api/job-board/weaviate?includeCompensation=true": 1,
+  "https://api.ashbyhq.com/posting-api/job-board/xero?includeCompensation=true": 114,
+  "https://api.ashbyhq.com/posting-api/job-board/zego?includeCompensation=true": 3,
+  "https://api.ashbyhq.com/posting-api/job-board/ziina?includeCompensation=true": 14,
+  "https://api.ashbyhq.com/posting-api/job-board/zilch?includeCompensation=true": 10,
+  "https://api.lever.co/v0/postings/binance?mode=json": 271,
+  "https://api.lever.co/v0/postings/malt?mode=json": 31,
+  "https://api.lever.co/v0/postings/megaport?mode=json": 40,
+  "https://api.lever.co/v0/postings/moonpig?mode=json": 15,
+  "https://api.lever.co/v0/postings/scottlogic?mode=json": 31,
+  "https://api.lever.co/v0/postings/sophos?mode=json": 111,
+  "https://api.lever.co/v0/postings/spotify?mode=json": 105,
+  "https://api.lever.co/v0/postings/storiogroup?mode=json": 10,
+  "https://api.lever.co/v0/postings/sysdig?mode=json": 15,
+  "https://api.lever.co/v0/postings/yuno?mode=json": 42,
+  "https://api.lever.co/v0/postings/zopa?mode=json": 30,
+  "https://api.smartrecruiters.com/v1/companies/Canva/postings?limit=100": 100,
+  "https://api.smartrecruiters.com/v1/companies/Version1/postings?limit=100&country=gb": 93,
+  "https://api.smartrecruiters.com/v1/companies/Wise/postings?limit=100": 100,
+  "https://api.smartrecruiters.com/v1/companies/servicenow/postings?limit=100": 100,
+  "https://apply.workable.com/api/v1/widget/accounts/bridewell": 7,
+  "https://apply.workable.com/api/v1/widget/accounts/hack-the-box-ltd": 50,
+  "https://apply.workable.com/api/v1/widget/accounts/ripjar": 6,
+  "https://apply.workable.com/api/v1/widget/accounts/senseon": 1,
+  "https://apply.workable.com/api/v1/widget/accounts/starling-bank": 82,
+  "https://apply.workable.com/api/v1/widget/accounts/universalquantum": 29,
+  "https://aviva.wd1.myworkdayjobs.com/wday/cxs/aviva/External/jobs": 34,
+  "https://barclays.wd3.myworkdayjobs.com/wday/cxs/barclays/External_Career_Site_Barclays/jobs": 94,
+  "https://boards-api.greenhouse.io/v1/boards/ably30/jobs?content=true&pay_transparency=true": 7,
+  "https://boards-api.greenhouse.io/v1/boards/abnormalsecurity/jobs?content=true&pay_transparency=true": 69,
+  "https://boards-api.greenhouse.io/v1/boards/addepar1/jobs?content=true&pay_transparency=true": 121,
+  "https://boards-api.greenhouse.io/v1/boards/affinidi/jobs?content=true&pay_transparency=true": 8,
+  "https://boards-api.greenhouse.io/v1/boards/airbnb/jobs?content=true&pay_transparency=true": 192,
+  "https://boards-api.greenhouse.io/v1/boards/aiven36/jobs?content=true&pay_transparency=true": 34,
+  "https://boards-api.greenhouse.io/v1/boards/alphafmcroles/jobs?content=true&pay_transparency=true": 79,
+  "https://boards-api.greenhouse.io/v1/boards/anthropic/jobs?content=true&pay_transparency=true": 460,
+  "https://boards-api.greenhouse.io/v1/boards/asana/jobs?content=true&pay_transparency=true": 129,
+  "https://boards-api.greenhouse.io/v1/boards/awin/jobs?content=true&pay_transparency=true": 49,
+  "https://boards-api.greenhouse.io/v1/boards/banyansoftware/jobs?content=true&pay_transparency=true": 54,
+  "https://boards-api.greenhouse.io/v1/boards/blackforestlabs/jobs?content=true&pay_transparency=true": 13,
+  "https://boards-api.greenhouse.io/v1/boards/blacklane/jobs?content=true&pay_transparency=true": 12,
+  "https://boards-api.greenhouse.io/v1/boards/capitalontap/jobs?content=true&pay_transparency=true": 38,
+  "https://boards-api.greenhouse.io/v1/boards/careem/jobs?content=true&pay_transparency=true": 24,
+  "https://boards-api.greenhouse.io/v1/boards/chainguard/jobs?content=true&pay_transparency=true": 87,
+  "https://boards-api.greenhouse.io/v1/boards/cherryventures/jobs?content=true&pay_transparency=true": 12,
+  "https://boards-api.greenhouse.io/v1/boards/clear/jobs?content=true&pay_transparency=true": 37,
+  "https://boards-api.greenhouse.io/v1/boards/cleo/jobs?content=true&pay_transparency=true": 4,
+  "https://boards-api.greenhouse.io/v1/boards/cloudflare/jobs?content=true&pay_transparency=true": 297,
+  "https://boards-api.greenhouse.io/v1/boards/cockroachlabs/jobs?content=true&pay_transparency=true": 27,
+  "https://boards-api.greenhouse.io/v1/boards/cognism/jobs?content=true&pay_transparency=true": 15,
+  "https://boards-api.greenhouse.io/v1/boards/coinbase/jobs?content=true&pay_transparency=true": 169,
+  "https://boards-api.greenhouse.io/v1/boards/complyadvantage/jobs?content=true&pay_transparency=true": 24,
+  "https://boards-api.greenhouse.io/v1/boards/contentful/jobs?content=true&pay_transparency=true": 26,
+  "https://boards-api.greenhouse.io/v1/boards/coreweave/jobs?content=true&pay_transparency=true": 265,
+  "https://boards-api.greenhouse.io/v1/boards/databricks/jobs?content=true&pay_transparency=true": 806,
+  "https://boards-api.greenhouse.io/v1/boards/datadog/jobs?content=true&pay_transparency=true": 420,
+  "https://boards-api.greenhouse.io/v1/boards/dataiku/jobs?content=true&pay_transparency=true": 22,
+  "https://boards-api.greenhouse.io/v1/boards/deepmind/jobs?content=true&pay_transparency=true": 10,
+  "https://boards-api.greenhouse.io/v1/boards/dexory/jobs?content=true&pay_transparency=true": 33,
+  "https://boards-api.greenhouse.io/v1/boards/diligentcorporation/jobs?content=true&pay_transparency=true": 113,
+  "https://boards-api.greenhouse.io/v1/boards/discord/jobs?content=true&pay_transparency=true": 51,
+  "https://boards-api.greenhouse.io/v1/boards/doitintl/jobs?content=true&pay_transparency=true": 84,
+  "https://boards-api.greenhouse.io/v1/boards/dunnhumby/jobs?content=true&pay_transparency=true": 66,
+  "https://boards-api.greenhouse.io/v1/boards/elastic/jobs?content=true&pay_transparency=true": 251,
+  "https://boards-api.greenhouse.io/v1/boards/equalexperts/jobs?content=true&pay_transparency=true": 15,
+  "https://boards-api.greenhouse.io/v1/boards/fanduel/jobs?content=true&pay_transparency=true": 94,
+  "https://boards-api.greenhouse.io/v1/boards/figma/jobs?content=true&pay_transparency=true": 164,
+  "https://boards-api.greenhouse.io/v1/boards/fivetran/jobs?content=true&pay_transparency=true": 237,
+  "https://boards-api.greenhouse.io/v1/boards/flohealth/jobs?content=true&pay_transparency=true": 37,
+  "https://boards-api.greenhouse.io/v1/boards/flowtraders/jobs?content=true&pay_transparency=true": 46,
+  "https://boards-api.greenhouse.io/v1/boards/form3/jobs?content=true&pay_transparency=true": 7,
+  "https://boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true&pay_transparency=true": 199,
+  "https://boards-api.greenhouse.io/v1/boards/gocardless/jobs?content=true&pay_transparency=true": 24,
+  "https://boards-api.greenhouse.io/v1/boards/grafanalabs/jobs?content=true&pay_transparency=true": 143,
+  "https://boards-api.greenhouse.io/v1/boards/graphcore/jobs?content=true&pay_transparency=true": 216,
+  "https://boards-api.greenhouse.io/v1/boards/helsing/jobs?content=true&pay_transparency=true": 128,
+  "https://boards-api.greenhouse.io/v1/boards/hudl/jobs?content=true&pay_transparency=true": 27,
+  "https://boards-api.greenhouse.io/v1/boards/intercom/jobs?content=true&pay_transparency=true": 118,
+  "https://boards-api.greenhouse.io/v1/boards/isomorphiclabs/jobs?content=true&pay_transparency=true": 25,
+  "https://boards-api.greenhouse.io/v1/boards/janestreet/jobs?content=true&pay_transparency=true": 233,
+  "https://boards-api.greenhouse.io/v1/boards/knowbe4/jobs?content=true&pay_transparency=true": 76,
+  "https://boards-api.greenhouse.io/v1/boards/ledgy/jobs?content=true&pay_transparency=true": 15,
+  "https://boards-api.greenhouse.io/v1/boards/liberis/jobs?content=true&pay_transparency=true": 43,
+  "https://boards-api.greenhouse.io/v1/boards/lighthouse/jobs?content=true&pay_transparency=true": 54,
+  "https://boards-api.greenhouse.io/v1/boards/lpc/jobs?content=true&pay_transparency=true": 115,
+  "https://boards-api.greenhouse.io/v1/boards/mark43/jobs?content=true&pay_transparency=true": 31,
+  "https://boards-api.greenhouse.io/v1/boards/mercury/jobs?content=true&pay_transparency=true": 59,
+  "https://boards-api.greenhouse.io/v1/boards/mongodb/jobs?content=true&pay_transparency=true": 404,
+  "https://boards-api.greenhouse.io/v1/boards/monzo/jobs?content=true&pay_transparency=true": 78,
+  "https://boards-api.greenhouse.io/v1/boards/netcraft/jobs?content=true&pay_transparency=true": 22,
+  "https://boards-api.greenhouse.io/v1/boards/netskope/jobs?content=true&pay_transparency=true": 155,
+  "https://boards-api.greenhouse.io/v1/boards/nscaleoperationsukltd/jobs?content=true&pay_transparency=true": 276,
+  "https://boards-api.greenhouse.io/v1/boards/ocadogroup/jobs?content=true&pay_transparency=true": 56,
+  "https://boards-api.greenhouse.io/v1/boards/okta/jobs?content=true&pay_transparency=true": 339,
+  "https://boards-api.greenhouse.io/v1/boards/onetrust/jobs?content=true&pay_transparency=true": 87,
+  "https://boards-api.greenhouse.io/v1/boards/orcasecurity/jobs?content=true&pay_transparency=true": 11,
+  "https://boards-api.greenhouse.io/v1/boards/overstory/jobs?content=true&pay_transparency=true": 11,
+  "https://boards-api.greenhouse.io/v1/boards/physicsx/jobs?content=true&pay_transparency=true": 41,
+  "https://boards-api.greenhouse.io/v1/boards/planetscale/jobs?content=true&pay_transparency=true": 10,
+  "https://boards-api.greenhouse.io/v1/boards/polyai/jobs?content=true&pay_transparency=true": 15,
+  "https://boards-api.greenhouse.io/v1/boards/pqshield/jobs?content=true&pay_transparency=true": 10,
+  "https://boards-api.greenhouse.io/v1/boards/preciselyinternationaljobs/jobs?content=true&pay_transparency=true": 25,
+  "https://boards-api.greenhouse.io/v1/boards/precisionaq/jobs?content=true&pay_transparency=true": 50,
+  "https://boards-api.greenhouse.io/v1/boards/precisionmedicinegroup/jobs?content=true&pay_transparency=true": 196,
+  "https://boards-api.greenhouse.io/v1/boards/prolific/jobs?content=true&pay_transparency=true": 26,
+  "https://boards-api.greenhouse.io/v1/boards/proton/jobs?content=true&pay_transparency=true": 75,
+  "https://boards-api.greenhouse.io/v1/boards/recordedfuture/jobs?content=true&pay_transparency=true": 47,
+  "https://boards-api.greenhouse.io/v1/boards/recursionpharmaceuticals/jobs?content=true&pay_transparency=true": 16,
+  "https://boards-api.greenhouse.io/v1/boards/riskledger/jobs?content=true&pay_transparency=true": 5,
+  "https://boards-api.greenhouse.io/v1/boards/riverlane/jobs?content=true&pay_transparency=true": 23,
+  "https://boards-api.greenhouse.io/v1/boards/saltsecurity/jobs?content=true&pay_transparency=true": 9,
+  "https://boards-api.greenhouse.io/v1/boards/scaleai/jobs?content=true&pay_transparency=true": 210,
+  "https://boards-api.greenhouse.io/v1/boards/secretariatadvisorsllc/jobs?content=true&pay_transparency=true": 50,
+  "https://boards-api.greenhouse.io/v1/boards/sentinellabs/jobs?content=true&pay_transparency=true": 210,
+  "https://boards-api.greenhouse.io/v1/boards/skyscanner/jobs?content=true&pay_transparency=true": 11,
+  "https://boards-api.greenhouse.io/v1/boards/slice/jobs?content=true&pay_transparency=true": 43,
+  "https://boards-api.greenhouse.io/v1/boards/sothebys/jobs?content=true&pay_transparency=true": 63,
+  "https://boards-api.greenhouse.io/v1/boards/sourcegraph91/jobs?content=true&pay_transparency=true": 8,
+  "https://boards-api.greenhouse.io/v1/boards/speechmatics/jobs?content=true&pay_transparency=true": 12,
+  "https://boards-api.greenhouse.io/v1/boards/stabilityai/jobs?content=true&pay_transparency=true": 5,
+  "https://boards-api.greenhouse.io/v1/boards/stripe/jobs?content=true&pay_transparency=true": 575,
+  "https://boards-api.greenhouse.io/v1/boards/sumup/jobs?content=true&pay_transparency=true": 378,
+  "https://boards-api.greenhouse.io/v1/boards/tanium/jobs?content=true&pay_transparency=true": 51,
+  "https://boards-api.greenhouse.io/v1/boards/tenableinc/jobs?content=true&pay_transparency=true": 45,
+  "https://boards-api.greenhouse.io/v1/boards/thoughtworks/jobs?content=true&pay_transparency=true": 47,
+  "https://boards-api.greenhouse.io/v1/boards/threatlocker/jobs?content=true&pay_transparency=true": 38,
+  "https://boards-api.greenhouse.io/v1/boards/tide/jobs?content=true&pay_transparency=true": 90,
+  "https://boards-api.greenhouse.io/v1/boards/toogoodtogo/jobs?content=true&pay_transparency=true": 67,
+  "https://boards-api.greenhouse.io/v1/boards/truelayer/jobs?content=true&pay_transparency=true": 8,
+  "https://boards-api.greenhouse.io/v1/boards/twilio/jobs?content=true&pay_transparency=true": 157,
+  "https://boards-api.greenhouse.io/v1/boards/vercel/jobs?content=true&pay_transparency=true": 84,
+  "https://boards-api.greenhouse.io/v1/boards/via/jobs?content=true&pay_transparency=true": 150,
+  "https://boards-api.greenhouse.io/v1/boards/wavemm1/jobs?content=true&pay_transparency=true": 68,
+  "https://boards-api.greenhouse.io/v1/boards/waymo/jobs?content=true&pay_transparency=true": 373,
+  "https://boards-api.greenhouse.io/v1/boards/wayve/jobs?content=true&pay_transparency=true": 109,
+  "https://boards-api.greenhouse.io/v1/boards/wheely/jobs?content=true&pay_transparency=true": 34,
+  "https://boards-api.greenhouse.io/v1/boards/wizinc/jobs?content=true&pay_transparency=true": 117,
+  "https://boards-api.greenhouse.io/v1/boards/wpp/jobs?content=true&pay_transparency=true": 224,
+  "https://boards-api.greenhouse.io/v1/boards/wppmedia/jobs?content=true&pay_transparency=true": 1190,
+  "https://boards-api.greenhouse.io/v1/boards/yld/jobs?content=true&pay_transparency=true": 7,
+  "https://boards-api.greenhouse.io/v1/boards/zscaler/jobs?content=true&pay_transparency=true": 332,
+  "https://broadcom.wd1.myworkdayjobs.com/wday/cxs/broadcom/External_Career/jobs": 41,
+  "https://cisco.wd5.myworkdayjobs.com/wday/cxs/cisco/Cisco_Careers/jobs": 115,
+  "https://crowdstrike.wd5.myworkdayjobs.com/wday/cxs/crowdstrike/crowdstrikecareers/jobs": 88,
+  "https://darktrace.wd3.myworkdayjobs.com/wday/cxs/darktrace/DarktaceExternal/jobs": 32,
+  "https://entrust.wd1.myworkdayjobs.com/wday/cxs/entrust/EntrustCareers/jobs": 53,
+  "https://evergreenix.wd1.myworkdayjobs.com/wday/cxs/evergreenix/external-careers2/jobs": 10,
+  "https://ffive.wd5.myworkdayjobs.com/wday/cxs/ffive/f5jobs/jobs": 63,
+  "https://hp.wd5.myworkdayjobs.com/wday/cxs/hp/ExternalCareerSite/jobs": 108,
+  "https://hpe.wd5.myworkdayjobs.com/wday/cxs/hpe/Jobsathpe/jobs": 141,
+  "https://lbg.wd3.myworkdayjobs.com/wday/cxs/lbg/lbg_Careers/jobs": 11,
+  "https://leidos.wd5.myworkdayjobs.com/wday/cxs/leidos/External/jobs": 157,
+  "https://mymoose.wd1.myworkdayjobs.com/wday/cxs/mymoose/careers/jobs": 3,
+  "https://newday.wd3.myworkdayjobs.com/wday/cxs/newday/NewDay/jobs": 1,
+  "https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs": 153,
+  "https://ofcom.wd3.myworkdayjobs.com/wday/cxs/ofcom/Ofcom_Careers/jobs": 3,
+  "https://ordnancesurvey.wd3.myworkdayjobs.com/wday/cxs/ordnancesurvey/OS_Careers/jobs": 0,
+  "https://paloaltonetworks.wd5.myworkdayjobs.com/wday/cxs/paloaltonetworks/panwexternalcareers/jobs": 113,
+  "https://proofpoint.wd5.myworkdayjobs.com/wday/cxs/proofpoint/proofpointcareers/jobs": 94,
+  "https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/Global_Experienced_Careers/jobs": 92,
+  "https://qualys.wd5.myworkdayjobs.com/wday/cxs/qualys/Careers/jobs": 39,
+  "https://rbs.wd3.myworkdayjobs.com/wday/cxs/rbs/RBS/jobs": 7,
+  "https://redhat.wd5.myworkdayjobs.com/wday/cxs/redhat/Jobs/jobs": 23,
+  "https://rollsroyce.wd3.myworkdayjobs.com/wday/cxs/rollsroyce/professional/jobs": 154,
+  "https://salesforce.wd12.myworkdayjobs.com/wday/cxs/salesforce/External_Career_Site/jobs": 140,
+  "https://santander.wd3.myworkdayjobs.com/wday/cxs/santander/SantanderCareers/jobs": 75,
+  "https://sky.wd3.myworkdayjobs.com/wday/cxs/sky/sky_careers/jobs": 11,
+  "https://snyk.wd103.myworkdayjobs.com/wday/cxs/snyk/External/jobs": 6,
+  "https://trellix.wd1.myworkdayjobs.com/wday/cxs/trellix/EnterpriseCareers/jobs": 22,
+  "https://workday.wd5.myworkdayjobs.com/wday/cxs/workday/Workday/jobs": 94,
+  "https://www.atlassian.com/endpoint/careers/listings": 272,
+  "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=%22engineering%20manager%22%20AI%20platform&location=United%20Kingdom&f_TPR=r604800&start=0": 10,
+  "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=detection%20engineering%20manager&location=United%20Kingdom&f_TPR=r604800&start=0": 10,
+  "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=engineering%20manager%20devsecops%20appsec&location=United%20Kingdom&f_TPR=r604800&start=0": 10,
+  "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=engineering%20manager%20security&location=United%20Kingdom&f_TPR=r604800&start=0": 10,
+  "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=head%20of%20engineering&location=United%20Kingdom&f_TPR=r604800&start=0": 10,
+  "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=senior%20engineering%20manager&location=United%20Kingdom&f_TPR=r604800&start=0": 10,
+  "https://www.roke.co.uk/wp-json/wp/v2/job?per_page=100": 34
+ },
+ "updated": "2026-08-17"
+}

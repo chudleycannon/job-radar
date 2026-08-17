@@ -29,7 +29,7 @@ def write_markdown(path: Path, new: list[Job], seen: list[Job], meta: dict) -> P
     def block(js: list[Job]) -> str:
         out = []
         for j in js:
-            pay = j.salary.raw if j.salary.confirmed else "unconfirmed salary"
+            pay = j.salary.label()
             loc = j.location or "location not stated"
             out.append(f"- **[{j.title}]({j.url})** · {j.company} · {loc} · {pay} · score {j.score:.0f}")
             if j.flags:

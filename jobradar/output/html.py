@@ -112,7 +112,7 @@ a{color:var(--accent)}
 def _row(j: Job, is_new: bool) -> str:
     tags = []
     if j.salary.confirmed:
-        tags.append(f'<span class="tag pay">{_h.escape(j.salary.raw or "pay stated")}</span>')
+        tags.append(f'<span class="tag pay">{_h.escape(j.salary.label())}</span>')
     else:
         tags.append('<span class="tag unc">unconfirmed salary</span>')
     for r in j.reasons[:3]:

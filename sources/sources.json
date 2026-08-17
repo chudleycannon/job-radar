@@ -1,8 +1,12 @@
 {
  "meta": {
-  "note": "ported from the n8n pipeline, then validated and repaired with discover",
-  "version": 2,
-  "validated": "2026-08-18"
+  "note": "ported from an n8n pipeline, validated and repaired with discover, then extended by harvesting UK employers outside technology",
+  "version": 3,
+  "validated": "2026-08-18",
+  "harvest": {
+   "attempted": 182,
+   "resolved": 32
+  }
  },
  "sources": [
   {
@@ -301,6 +305,14 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/multiverse?includeCompensation=true",
    "platform": "ashby",
    "sector": "technology"
+  },
+  {
+   "company": "Multiverse",
+   "url": "https://api.ashbyhq.com/posting-api/job-board/stackfuel?includeCompensation=true",
+   "platform": "ashby",
+   "sector": "education",
+   "country": "UK",
+   "domain": "multiverse.io"
   },
   {
    "company": "N8N",
@@ -665,6 +677,22 @@
    "sector": "technology"
   },
   {
+   "company": "Baringa",
+   "url": "https://boards-api.greenhouse.io/v1/boards/baringa/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "services",
+   "country": "UK",
+   "domain": "baringa.com"
+  },
+  {
+   "company": "BearingPoint",
+   "url": "https://boards-api.greenhouse.io/v1/boards/bearingpoint/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "services",
+   "country": "UK",
+   "domain": "bearingpoint.com"
+  },
+  {
    "company": "Black Forest Labs",
    "url": "https://boards-api.greenhouse.io/v1/boards/blackforestlabs/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1020,6 +1048,14 @@
    "sector": "technology"
   },
   {
+   "company": "OVO Energy",
+   "url": "https://boards-api.greenhouse.io/v1/boards/ovoenergy/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "ovoenergy.com"
+  },
+  {
    "company": "PhysicsX",
    "url": "https://boards-api.greenhouse.io/v1/boards/physicsx/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1078,6 +1114,14 @@
    "url": "https://boards-api.greenhouse.io/v1/boards/recordedfuture/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
+  },
+  {
+   "company": "Rightmove",
+   "url": "https://boards-api.greenhouse.io/v1/boards/rightmovecareers/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "services",
+   "country": "UK",
+   "domain": "rightmove.co.uk"
   },
   {
    "company": "Riskledger",
@@ -1176,6 +1220,14 @@
    "sector": "technology"
   },
   {
+   "company": "Tes",
+   "url": "https://boards-api.greenhouse.io/v1/boards/tes/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "education",
+   "country": "UK",
+   "domain": "tes.com"
+  },
+  {
    "company": "Thoughtworks",
    "url": "https://boards-api.greenhouse.io/v1/boards/thoughtworks/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1210,6 +1262,14 @@
    "url": "https://boards-api.greenhouse.io/v1/boards/twilio/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "technology"
+  },
+  {
+   "company": "University of Warwick",
+   "url": "https://boards-api.greenhouse.io/v1/boards/warwick/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "education",
+   "country": "UK",
+   "domain": "warwick.ac.uk"
   },
   {
    "company": "Vercel",
@@ -1302,6 +1362,14 @@
    "sector": "technology"
   },
   {
+   "company": "Octopus Energy",
+   "url": "https://api.lever.co/v0/postings/octoenergy?mode=json",
+   "platform": "lever",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "octopus.energy"
+  },
+  {
    "company": "Scott Logic",
    "url": "https://api.lever.co/v0/postings/scottlogic?mode=json",
    "platform": "lever",
@@ -1386,6 +1454,14 @@
    "sector": "technology"
   },
   {
+   "company": "Informa",
+   "url": "https://api.smartrecruiters.com/v1/companies/InformaGroupPlc/postings?limit=100",
+   "platform": "smartrecruiters",
+   "sector": "media",
+   "country": "UK",
+   "domain": "informa.com"
+  },
+  {
    "company": "ServiceNow",
    "url": "https://api.smartrecruiters.com/v1/companies/servicenow/postings?limit=100",
    "platform": "smartrecruiters",
@@ -1464,6 +1540,14 @@
    "sector": "technology"
   },
   {
+   "company": "BP",
+   "url": "https://bpinternational.wd3.myworkdayjobs.com/wday/cxs/bpinternational/bpCareers/jobs",
+   "platform": "workday",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "bp.com"
+  },
+  {
    "company": "Broadcom",
    "url": "https://broadcom.wd1.myworkdayjobs.com/wday/cxs/broadcom/External_Career/jobs",
    "platform": "workday",
@@ -1488,6 +1572,14 @@
    "sector": "technology"
   },
   {
+   "company": "Diageo",
+   "url": "https://diageo.wd3.myworkdayjobs.com/wday/cxs/diageo/Diageo_Careers/jobs",
+   "platform": "workday",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "diageo.com"
+  },
+  {
    "company": "Entrust",
    "url": "https://entrust.wd1.myworkdayjobs.com/wday/cxs/entrust/EntrustCareers/jobs",
    "platform": "workday",
@@ -1500,10 +1592,26 @@
    "sector": "technology"
   },
   {
+   "company": "Financial Conduct Authority",
+   "url": "https://fca.wd3.myworkdayjobs.com/wday/cxs/fca/FCA_Careers/jobs",
+   "platform": "workday",
+   "sector": "publicsector",
+   "country": "UK",
+   "domain": "fca.org.uk"
+  },
+  {
    "company": "Garrison",
    "url": "https://evergreenix.wd1.myworkdayjobs.com/wday/cxs/evergreenix/external-careers2/jobs",
    "platform": "workday",
    "sector": "technology"
+  },
+  {
+   "company": "Hargreaves Lansdown",
+   "url": "https://hargreaveslansdown.wd3.myworkdayjobs.com/wday/cxs/hargreaveslansdown/HargreavesLansdown/jobs",
+   "platform": "workday",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "hl.co.uk"
   },
   {
    "company": "Hp",
@@ -1518,6 +1626,30 @@
    "sector": "technology"
   },
   {
+   "company": "Johnson Matthey",
+   "url": "https://matthey.wd3.myworkdayjobs.com/wday/cxs/matthey/Ext_Career_Site/jobs",
+   "platform": "workday",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "matthey.com"
+  },
+  {
+   "company": "Kainos",
+   "url": "https://kainos.wd3.myworkdayjobs.com/wday/cxs/kainos/Kainos/jobs",
+   "platform": "workday",
+   "sector": "services",
+   "country": "UK",
+   "domain": "kainos.com"
+  },
+  {
+   "company": "Knight Frank",
+   "url": "https://knightfrank.wd103.myworkdayjobs.com/wday/cxs/knightfrank/KF/jobs",
+   "platform": "workday",
+   "sector": "services",
+   "country": "UK",
+   "domain": "knightfrank.com"
+  },
+  {
    "company": "Lbg",
    "url": "https://lbg.wd3.myworkdayjobs.com/wday/cxs/lbg/lbg_Careers/jobs",
    "platform": "workday",
@@ -1528,6 +1660,30 @@
    "url": "https://leidos.wd5.myworkdayjobs.com/wday/cxs/leidos/External/jobs",
    "platform": "workday",
    "sector": "technology"
+  },
+  {
+   "company": "Linklaters",
+   "url": "https://linklaters.wd3.myworkdayjobs.com/wday/cxs/linklaters/Linklaters/jobs",
+   "platform": "workday",
+   "sector": "services",
+   "country": "UK",
+   "domain": "linklaters.com"
+  },
+  {
+   "company": "Lloyds Banking Group",
+   "url": "https://lbg.wd3.myworkdayjobs.com/wday/cxs/lbg/LBG_Careers/jobs",
+   "platform": "workday",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "lloydsbankinggroup.com"
+  },
+  {
+   "company": "London Stock Exchange Group",
+   "url": "https://lseg.wd3.myworkdayjobs.com/wday/cxs/lseg/Careers/jobs",
+   "platform": "workday",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "lseg.com"
   },
   {
    "company": "Newday",
@@ -1564,6 +1720,14 @@
    "url": "https://proofpoint.wd5.myworkdayjobs.com/wday/cxs/proofpoint/proofpointcareers/jobs",
    "platform": "workday",
    "sector": "technology"
+  },
+  {
+   "company": "Prudential",
+   "url": "https://prudential.wd3.myworkdayjobs.com/wday/cxs/prudential/prudential/jobs",
+   "platform": "workday",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "prudentialplc.com"
   },
   {
    "company": "Pwc",
@@ -1614,6 +1778,14 @@
    "sector": "technology"
   },
   {
+   "company": "Shell",
+   "url": "https://shell.wd3.myworkdayjobs.com/wday/cxs/shell/shellcareers/jobs",
+   "platform": "workday",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "shell.com"
+  },
+  {
    "company": "Sky",
    "url": "https://sky.wd3.myworkdayjobs.com/wday/cxs/sky/sky_careers/jobs",
    "platform": "workday",
@@ -1630,6 +1802,22 @@
    "url": "https://trellix.wd1.myworkdayjobs.com/wday/cxs/trellix/EnterpriseCareers/jobs",
    "platform": "workday",
    "sector": "technology"
+  },
+  {
+   "company": "Unilever",
+   "url": "https://unilever.wd3.myworkdayjobs.com/wday/cxs/unilever/Unilever_Experienced_Professionals/jobs",
+   "platform": "workday",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "unilever.com"
+  },
+  {
+   "company": "Weir Group",
+   "url": "https://weir.wd3.myworkdayjobs.com/wday/cxs/weir/Weir_External_Careers/jobs",
+   "platform": "workday",
+   "sector": "industry",
+   "country": "UK",
+   "domain": "global.weir"
   },
   {
    "company": "Workday",
