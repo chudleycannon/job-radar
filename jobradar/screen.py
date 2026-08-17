@@ -22,8 +22,16 @@ from .salary import clears_floor
 
 # Locations that read as "somewhere else" unless the user says otherwise.
 _COUNTRY_HINTS = {
-    "UK": r"united kingdom|\buk\b|england|scotland|wales|london|manchester|bristol|"
-          r"birmingham|leeds|edinburgh|glasgow|cambridge|oxford|reading|milton keynes",
+    # The postcode pattern matters more than the city list. Employers who
+    # advertise nationally list towns, not cities: NHS Jobs gives locations
+    # like "Dorchester DT1 2JY", and a city-only regex reads every one of them
+    # as an unrecognised country and drops the role.
+    "UK": r"united kingdom|\buk\b|england|scotland|wales|northern ireland|"
+          r"london|manchester|bristol|birmingham|leeds|edinburgh|glasgow|"
+          r"cambridge|oxford|reading|milton keynes|cardiff|belfast|liverpool|"
+          r"newcastle|sheffield|nottingham|southampton|brighton|york|bath|"
+          # Lowercase on purpose: _country_of lowercases before matching.
+          r"\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b",
     "US": r"united states|\busa?\b|new york|san francisco|seattle|austin|boston|chicago|"
           r"los angeles|denver|atlanta",
     "IE": r"\bireland\b|dublin",

@@ -458,3 +458,78 @@ def parse_generic(payload: Any, src: Source) -> Iterator[Job]:
                 source_id=src.key,
             )
         return  # only the first plausible list
+
+
+# --------------------------------------------------------------------------
+# NHS Jobs
+# --------------------------------------------------------------------------
+_NHS_PANEL = re.compile(r'<li class="nhsuk-list-panel search-result.*?(?=<li class="nhsuk-list-panel|</ul>)', re.S)
+_NHS_TITLE = re.compile(r'data-test="search-result-job-title"[^>]*>\s*(.*?)\s*</a>', re.S)
+_NHS_HREF = re.compile(r'href="(/candidate/jobadvert/[^"?]+)')
+_NHS_EMPLOYER = re.compile(
+    r'data-test="search-result-location">.*?<h3[^>]*>\s*(.*?)\s*<div class="location-font-size">\s*(.*?)\s*</div>',
+    re.S)
+_NHS_FIELD = re.compile(
+    r'data-test="search-result-{}"[^>]*>.*?<strong[^>]*>\s*(.*?)\s*</strong>', re.S)
+
+
+def _nhs_field(block: str, name: str) -> str:
+    m = re.compile(
+        rf'data-test="search-result-{name}"[^>]*>.*?<strong[^>]*>\s*(.*?)\s*</strong>',
+        re.S).search(block)
+    return _text(m.group(1)) if m else ""
+
+
+def parse_nhs(payload: Any, src: Source) -> Iterator[Job]:
+    """NHS Jobs search results.
+
+    NHS Jobs is the reason a whole sector was invisible: trusts do not use any
+    of the commercial applicant tracking systems, so no amount of adding
+    employer names reached them. There is a JSON API at /api/v1/search_json but
+    it sits behind an auth token, and the .rss path returns HTML rather than a
+    feed, so the search page is the route.
+
+    It is worth the parsing. Postings carry Agenda for Change bands, so unlike
+    most of the market these roles nearly always state a salary, which means
+    the pay filter actually bites here rather than falling through to
+    "unconfirmed".
+    """
+    text = payload if isinstance(payload, str) else ""
+    base = "https://www.jobs.nhs.uk"
+
+    for block in _NHS_PANEL.findall(text):
+        t = _NHS_TITLE.search(block)
+        h = _NHS_HREF.search(block)
+        if not (t and h):
+            continue
+
+        emp = _NHS_EMPLOYER.search(block)
+        employer = _text(emp.group(1)) if emp else "NHS"
+        location = _text(emp.group(2)) if emp else ""
+
+        pay = _nhs_field(block, "salary")
+        posted = _nhs_field(block, "publicationDate")
+        closing = _nhs_field(block, "closingDate")
+        jobtype = _nhs_field(block, "jobType")
+        pattern = _nhs_field(block, "workingPattern")
+
+        desc = " ".join(x for x in (jobtype, pattern, pay) if x)
+        job = Job(
+            company=employer,
+            title=_text(t.group(1)),
+            url=base + h.group(1),
+            platform="nhs",
+            location=location,
+            remote=_remote(location, _text(t.group(1)), pattern),
+            department=None,
+            posted_at=_iso(posted),
+            description=desc,
+            salary=parse_text(pay),
+            source_id=src.key,
+        )
+        if closing:
+            job.flags.append(f"closes {closing}")
+        # The search page carries no duties text, so a dealbreaker scan here
+        # would be scanning three metadata fields and calling it clean.
+        job.flags.append("not screened: search listing only, open the advert")
+        yield job

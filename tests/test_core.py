@@ -162,6 +162,19 @@ def test_source_key_keeps_the_query_string():
     assert a.key != b.key
 
 
+def test_uk_postcodes_count_as_uk():
+    """Employers hiring nationally list towns, not cities. NHS Jobs gives
+    "Dorchester DT1 2JY"; a city-only regex read every such role as an
+    unrecognised country and dropped it."""
+    from jobradar.screen import _country_of
+    assert _country_of("Dorchester DT1 2JY") == "UK"
+    assert _country_of("Coventry CV2 2DX") == "UK"
+    assert _country_of("Ipswich IP4 5SW") == "UK"
+    # and must not swallow other countries' formats
+    assert _country_of("Austin, TX 78701") == "US"
+    assert _country_of("Hong Kong") == "HK"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

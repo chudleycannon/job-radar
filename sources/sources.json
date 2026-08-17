@@ -1456,6 +1456,62 @@
    "sector": "technology"
   },
   {
+   "company": "NHS Jobs: data manager",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=data+manager",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: digital manager",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=digital+manager",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: engineering manager",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=engineering+manager",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: head of engineering",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=head+of+engineering",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: informatics manager",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=informatics+manager",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: IT manager",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=IT+manager",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: programme manager",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=programme+manager",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
+   "company": "NHS Jobs: software",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=software",
+   "platform": "nhs",
+   "sector": "healthcare",
+   "country": "UK"
+  },
+  {
    "company": "Canva",
    "url": "https://api.smartrecruiters.com/v1/companies/Canva/postings?limit=100",
    "platform": "smartrecruiters",

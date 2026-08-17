@@ -32,7 +32,7 @@ The trade is coverage. This only sees employers on the list, which is why
 
 ## What it does
 
-**Reads 294 employer boards** across Greenhouse, Ashby, Lever, Workday,
+**Reads 302 sources** across Greenhouse, Ashby, Lever, Workday,
 Workable, SmartRecruiters and LinkedIn's public endpoint. Mostly technology
 companies, plus a first pass at UK finance, industry, professional services,
 education, media and the public sector: Barclays, Lloyds, Santander, BP,
@@ -163,6 +163,7 @@ the adapters are shaped the way they are.
 | **Workday** | **POST**, not GET. Returns **406, not 404**, for a tenant that does not exist, because of wildcard DNS on `*.myworkdayjobs.com`. A non-404 proves nothing. Tenant and site names cannot be guessed: 117 attempts produced zero working tenants. |
 | **Lever** | Returns a bare top-level list rather than an object with a `jobs` key. |
 | **LinkedIn** | The public `jobs-guest` endpoint returns server-rendered HTML cards to a plain GET, no login and no JavaScript. No description or salary, so those roles are leads rather than screenable postings. |
+| **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
 
 **Tokens rarely match company names.** `mymoose` is Rapid7. `evergreenix` is
 Garrison. `knowbe4` is Egress. `primer.io` is Primer. This is why `discover`
@@ -181,11 +182,12 @@ white-collar hiring. Trades, hospitality, care work and retail floor jobs
 largely do not work this way and are better served elsewhere.
 
 **Whole sectors on platforms not yet supported.** Harvesting UK employers
-resolved 34 boards from 196 attempted, and healthcare resolved **zero of 25**:
-NHS trusts use NHS Jobs and TRAC, and private providers run bespoke sites.
-Adapters for NHS Jobs, Civil Service Jobs, SuccessFactors and Oracle would do
-far more for coverage than another hundred technology companies, and they are
-the obvious next contribution.
+resolved 34 boards from 196 attempted, and healthcare resolved **zero of 25**,
+because NHS trusts use NHS Jobs rather than any commercial applicant tracking
+system. That is now fixed: there is an NHS Jobs adapter, which also picks up
+the private providers who advertise there. TRAC, Civil Service Jobs,
+SuccessFactors and Oracle are still missing, and an adapter for any of them
+would do more for coverage than another hundred technology companies.
 
 **Employers who block automated requests.** Some large consumer brands put
 their careers site behind bot protection. Tesco answers a CDN 403;

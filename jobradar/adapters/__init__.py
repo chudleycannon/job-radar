@@ -99,6 +99,18 @@ REGISTRY: list[Platform] = [
         note="public guest endpoint, HTML cards, no description or salary",
     ),
     Platform(
+        "nhs",
+        r"jobs\.nhs\.uk/candidate/search",
+        platforms.parse_nhs,
+        build=lambda kw: (
+            "https://www.jobs.nhs.uk/candidate/search/results?keyword="
+            + kw.replace(" ", "+")
+        ),
+        verified=True,
+        note="search page, not a board; JSON API is auth-gated and .rss returns HTML. "
+             "Salary is usually stated because trusts publish Agenda for Change bands",
+    ),
+    Platform(
         "recruitee",
         r"\.recruitee\.com/api/offers",
         platforms.parse_recruitee,

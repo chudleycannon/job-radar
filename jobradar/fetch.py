@@ -156,6 +156,43 @@ def fetch_workday(
     return Result(src, payload={"jobPostings": list(merged.values()), "total": total})
 
 
+def fetch_nhs(
+    src: Source,
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 5,
+) -> Result:
+    """NHS Jobs returns ten results a page and has no page-size parameter.
+
+    The search is already narrowed by keyword in the source URL, so a handful
+    of pages is plenty; walking all 10,000 results would be both slow and
+    pointless when the title filter discards almost all of them.
+    """
+    session = requests.Session()
+    parts: list[str] = []
+    sep = "&" if "?" in src.url else "?"
+
+    for page in range(1, max_pages + 1):
+        probe = Source(company=src.company, url=f"{src.url}{sep}page={page}",
+                       platform="nhs", sector=src.sector, country=src.country)
+        res = fetch_one(probe, timeout=timeout, retries=retries,
+                        user_agent=user_agent, session=session)
+        if not res.ok or not isinstance(res.payload, str):
+            break
+        if "search-result" not in res.payload:
+            break
+        parts.append(res.payload)
+        # A short page means the results ran out.
+        if res.payload.count('data-test="search-result"') < 10:
+            break
+
+    if not parts:
+        return Result(src, error="no pages returned")
+    return Result(src, payload="".join(parts))
+
+
 def fetch_all(
     sources: Iterable[Source],
     *,
@@ -191,6 +228,8 @@ def _delayed_fetch(src, delay, timeout, retries, ua, terms) -> Result:
     if src.platform == "workday":
         return fetch_workday(src, terms, timeout=timeout, retries=retries,
                              user_agent=ua)
+    if src.platform == "nhs":
+        return fetch_nhs(src, timeout=timeout, retries=retries, user_agent=ua)
     return fetch_one(src, timeout=timeout, retries=retries, user_agent=ua,
                      session=requests.Session())
 
