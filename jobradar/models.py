@@ -93,6 +93,8 @@ class Job:
     salary: Salary = field(default_factory=Salary)
     sector: str | None = None
     country: str | None = None
+    city: str = ""
+    work_mode: str = "unstated"   # remote | hybrid | office | unstated
     source_id: str = ""
 
     # populated downstream

@@ -35,3 +35,7 @@ venv/
 # this is the upstream repo and the maintainer's own search history has no
 # business being in it.
 state/
+
+# Generated design previews. These embed real scan results, so they must not
+# be committed to a public repo. The generators next to them are source.
+design/*.html

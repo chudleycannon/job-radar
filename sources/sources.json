@@ -20,7 +20,7 @@
    "company": "Airwallex",
    "url": "https://api.ashbyhq.com/posting-api/job-board/airwallex?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Ashby",
@@ -57,19 +57,19 @@
    "company": "Causaly",
    "url": "https://api.ashbyhq.com/posting-api/job-board/causaly?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "healthcare"
   },
   {
    "company": "Checkout.com",
    "url": "https://api.ashbyhq.com/posting-api/job-board/checkout.com?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Clearbank",
    "url": "https://api.ashbyhq.com/posting-api/job-board/clearbank?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "ClickHouse",
@@ -136,7 +136,7 @@
    "company": "Deliveroo",
    "url": "https://api.ashbyhq.com/posting-api/job-board/deliveroo?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "retail"
   },
   {
    "company": "Docker",
@@ -154,7 +154,7 @@
    "company": "Elliptic",
    "url": "https://api.ashbyhq.com/posting-api/job-board/elliptic?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Faculty",
@@ -179,7 +179,7 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/freetrade?includeCompensation=true",
    "platform": "ashby",
    "domain": "freetrade.io",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Fundingcircle",
@@ -197,13 +197,13 @@
    "company": "Griffin",
    "url": "https://api.ashbyhq.com/posting-api/job-board/griffin?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Humaans",
    "url": "https://api.ashbyhq.com/posting-api/job-board/humaans?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "healthcare"
   },
   {
    "company": "Immersive Labs",
@@ -247,7 +247,7 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/lendable?includeCompensation=true",
    "platform": "ashby",
    "domain": "lendable.co.uk",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Lightdash",
@@ -272,7 +272,7 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/marshmallow?includeCompensation=true",
    "platform": "ashby",
    "domain": "marshmallow.com",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Material Security",
@@ -304,7 +304,7 @@
    "company": "Multiverse",
    "url": "https://api.ashbyhq.com/posting-api/job-board/multiverse?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "education"
   },
   {
    "company": "Multiverse",
@@ -337,7 +337,7 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/oaknorth?includeCompensation=true",
    "platform": "ashby",
    "domain": "oaknorth.co.uk",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Omnea",
@@ -355,7 +355,7 @@
    "company": "Paddle",
    "url": "https://api.ashbyhq.com/posting-api/job-board/paddle?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Perk",
@@ -385,13 +385,13 @@
    "company": "Plaid",
    "url": "https://api.ashbyhq.com/posting-api/job-board/plaid?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Pleo",
    "url": "https://api.ashbyhq.com/posting-api/job-board/pleo?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Poolside",
@@ -410,7 +410,7 @@
    "company": "Quantexa",
    "url": "https://api.ashbyhq.com/posting-api/job-board/quantexa?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Railway",
@@ -477,7 +477,7 @@
    "company": "Skyscanner",
    "url": "https://api.ashbyhq.com/posting-api/job-board/skyscanner?includeCompensation=true",
    "platform": "ashby",
-   "sector": "media",
+   "sector": "travel",
    "country": "UK",
    "domain": "skyscanner.net"
   },
@@ -534,7 +534,7 @@
    "company": "Thought Machine",
    "url": "https://api.ashbyhq.com/posting-api/job-board/thought-machine?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "TigerData",
@@ -547,7 +547,7 @@
    "company": "Trainline",
    "url": "https://api.ashbyhq.com/posting-api/job-board/trainline?includeCompensation=true",
    "platform": "ashby",
-   "sector": "technology"
+   "sector": "travel"
   },
   {
    "company": "UpGuard",
@@ -604,7 +604,7 @@
    "url": "https://api.ashbyhq.com/posting-api/job-board/zilch?includeCompensation=true",
    "platform": "ashby",
    "domain": "zilch.com",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Metro Bank",
@@ -654,7 +654,7 @@
    "company": "Airbnb",
    "url": "https://boards-api.greenhouse.io/v1/boards/airbnb/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "travel"
   },
   {
    "company": "Aiven",
@@ -696,7 +696,7 @@
    "company": "Baringa",
    "url": "https://boards-api.greenhouse.io/v1/boards/baringa/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "services",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "baringa.com"
   },
@@ -704,7 +704,7 @@
    "company": "BearingPoint",
    "url": "https://boards-api.greenhouse.io/v1/boards/bearingpoint/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "services",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "bearingpoint.com"
   },
@@ -724,7 +724,7 @@
    "company": "Capital on Tap",
    "url": "https://boards-api.greenhouse.io/v1/boards/capitalontap/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Careem",
@@ -749,19 +749,19 @@
    "url": "https://boards-api.greenhouse.io/v1/boards/clear/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "domain": "clear.bank",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Cleo",
    "url": "https://boards-api.greenhouse.io/v1/boards/cleo/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Cloudflare",
    "url": "https://boards-api.greenhouse.io/v1/boards/cloudflare/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "telecoms"
   },
   {
    "company": "CockroachDB",
@@ -779,13 +779,13 @@
    "company": "Coinbase",
    "url": "https://boards-api.greenhouse.io/v1/boards/coinbase/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "ComplyAdvantage",
    "url": "https://boards-api.greenhouse.io/v1/boards/complyadvantage/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Contentful",
@@ -863,13 +863,13 @@
    "company": "Equal Experts",
    "url": "https://boards-api.greenhouse.io/v1/boards/equalexperts/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "professional-services"
   },
   {
    "company": "Exscientia/Recursion",
    "url": "https://boards-api.greenhouse.io/v1/boards/recursionpharmaceuticals/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "healthcare"
   },
   {
    "company": "Fanduel",
@@ -905,7 +905,7 @@
    "company": "Form3",
    "url": "https://boards-api.greenhouse.io/v1/boards/form3/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "GitLab",
@@ -917,7 +917,7 @@
    "company": "GoCardless",
    "url": "https://boards-api.greenhouse.io/v1/boards/gocardless/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Google DeepMind",
@@ -1013,7 +1013,7 @@
    "company": "Monzo",
    "url": "https://boards-api.greenhouse.io/v1/boards/monzo/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Netcraft",
@@ -1037,7 +1037,7 @@
    "company": "Ocado Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/ocadogroup/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "retail"
   },
   {
    "company": "Okta",
@@ -1135,7 +1135,7 @@
    "company": "Rightmove",
    "url": "https://boards-api.greenhouse.io/v1/boards/rightmovecareers/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "services",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "rightmove.co.uk"
   },
@@ -1179,7 +1179,7 @@
    "company": "Skyscanner",
    "url": "https://boards-api.greenhouse.io/v1/boards/skyscanner/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "travel"
   },
   {
    "company": "Slice",
@@ -1215,13 +1215,13 @@
    "company": "Stripe",
    "url": "https://boards-api.greenhouse.io/v1/boards/stripe/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Sumup",
    "url": "https://boards-api.greenhouse.io/v1/boards/sumup/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Tanium",
@@ -1247,7 +1247,7 @@
    "company": "Thoughtworks",
    "url": "https://boards-api.greenhouse.io/v1/boards/thoughtworks/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "professional-services"
   },
   {
    "company": "ThreatLocker",
@@ -1259,7 +1259,7 @@
    "company": "Tide",
    "url": "https://boards-api.greenhouse.io/v1/boards/tide/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Toogoodtogo",
@@ -1365,7 +1365,7 @@
    "company": "Binance",
    "url": "https://api.lever.co/v0/postings/binance?mode=json",
    "platform": "lever",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Malt",
@@ -1377,7 +1377,7 @@
    "company": "Megaport",
    "url": "https://api.lever.co/v0/postings/megaport?mode=json",
    "platform": "lever",
-   "sector": "technology"
+   "sector": "telecoms"
   },
   {
    "company": "Moonpig",
@@ -1397,7 +1397,7 @@
    "company": "Scott Logic",
    "url": "https://api.lever.co/v0/postings/scottlogic?mode=json",
    "platform": "lever",
-   "sector": "technology"
+   "sector": "professional-services"
   },
   {
    "company": "Sophos",
@@ -1409,7 +1409,7 @@
    "company": "Spotify",
    "url": "https://api.lever.co/v0/postings/spotify?mode=json",
    "platform": "lever",
-   "sector": "technology"
+   "sector": "media"
   },
   {
    "company": "Storiogroup",
@@ -1433,7 +1433,7 @@
    "company": "Zopa",
    "url": "https://api.lever.co/v0/postings/zopa?mode=json",
    "platform": "lever",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "LinkedIn: detection eng",
@@ -1547,7 +1547,7 @@
    "company": "Serco",
    "url": "https://careers.serco.com/gb/en/search-results?s=1",
    "platform": "phenom",
-   "sector": "publicsector",
+   "sector": "public-sector",
    "country": "UK",
    "domain": "serco.com"
   },
@@ -1555,7 +1555,7 @@
    "company": "Thales",
    "url": "https://careers.thalesgroup.com/global/en/search-results",
    "platform": "phenom",
-   "sector": "publicsector",
+   "sector": "public-sector",
    "country": "UK",
    "domain": "thalesgroup.com"
   },
@@ -1563,7 +1563,7 @@
    "company": "Transport for London",
    "url": "https://london-gov.jobs2web.com/tfl/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "sector": "publicsector",
+   "sector": "public-sector",
    "country": "UK",
    "domain": "tfl.gov.uk"
   },
@@ -1597,7 +1597,7 @@
    "company": "Wise",
    "url": "https://api.smartrecruiters.com/v1/companies/Wise/postings?limit=100",
    "platform": "smartrecruiters",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Bridewell",
@@ -1627,7 +1627,7 @@
    "company": "Starling Bank",
    "url": "https://apply.workable.com/api/v1/widget/accounts/starling-bank",
    "platform": "workable",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Universal Quantum",
@@ -1639,7 +1639,7 @@
    "company": "Accenture",
    "url": "https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "professional-services"
   },
   {
    "company": "Adobe",
@@ -1657,7 +1657,7 @@
    "company": "Barclays",
    "url": "https://barclays.wd3.myworkdayjobs.com/wday/cxs/barclays/External_Career_Site_Barclays/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "BP",
@@ -1672,6 +1672,14 @@
    "url": "https://broadcom.wd1.myworkdayjobs.com/wday/cxs/broadcom/External_Career/jobs",
    "platform": "workday",
    "sector": "technology"
+  },
+  {
+   "company": "Cancer Research UK",
+   "url": "https://cancerresearchuk.wd3.myworkdayjobs.com/wday/cxs/cancerresearchuk/External_Careers/jobs",
+   "platform": "workday",
+   "sector": "charity",
+   "country": "UK",
+   "domain": "cancerresearchuk.org"
   },
   {
    "company": "Cisco",
@@ -1715,7 +1723,7 @@
    "company": "Financial Conduct Authority",
    "url": "https://fca.wd3.myworkdayjobs.com/wday/cxs/fca/FCA_Careers/jobs",
    "platform": "workday",
-   "sector": "publicsector",
+   "sector": "public-sector",
    "country": "UK",
    "domain": "fca.org.uk"
   },
@@ -1757,7 +1765,7 @@
    "company": "Kainos",
    "url": "https://kainos.wd3.myworkdayjobs.com/wday/cxs/kainos/Kainos/jobs",
    "platform": "workday",
-   "sector": "services",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "kainos.com"
   },
@@ -1765,7 +1773,7 @@
    "company": "Knight Frank",
    "url": "https://knightfrank.wd103.myworkdayjobs.com/wday/cxs/knightfrank/KF/jobs",
    "platform": "workday",
-   "sector": "services",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "knightfrank.com"
   },
@@ -1785,7 +1793,7 @@
    "company": "Linklaters",
    "url": "https://linklaters.wd3.myworkdayjobs.com/wday/cxs/linklaters/Linklaters/jobs",
    "platform": "workday",
-   "sector": "services",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "linklaters.com"
   },
@@ -1821,7 +1829,7 @@
    "company": "Ofcom",
    "url": "https://ofcom.wd3.myworkdayjobs.com/wday/cxs/ofcom/Ofcom_Careers/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "public-sector"
   },
   {
    "company": "Ordnancesurvey",
@@ -1853,7 +1861,7 @@
    "company": "Pwc",
    "url": "https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/Global_Experienced_Careers/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "professional-services"
   },
   {
    "company": "Qualys",
@@ -1883,7 +1891,7 @@
    "company": "Rollsroyce",
    "url": "https://rollsroyce.wd3.myworkdayjobs.com/wday/cxs/rollsroyce/professional/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "public-sector"
   },
   {
    "company": "Salesforce",
@@ -1895,7 +1903,7 @@
    "company": "Santander",
    "url": "https://santander.wd3.myworkdayjobs.com/wday/cxs/santander/SantanderCareers/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "finance"
   },
   {
    "company": "Shell",
@@ -1909,7 +1917,7 @@
    "company": "Sky",
    "url": "https://sky.wd3.myworkdayjobs.com/wday/cxs/sky/sky_careers/jobs",
    "platform": "workday",
-   "sector": "technology"
+   "sector": "media"
   },
   {
    "company": "Snyk",
@@ -1921,7 +1929,7 @@
    "company": "TalkTalk",
    "url": "https://talktalk.wd3.myworkdayjobs.com/wday/cxs/talktalk/PXCCareers/jobs",
    "platform": "workday",
-   "sector": "media",
+   "sector": "telecoms",
    "country": "UK",
    "domain": "talktalk.co.uk"
   },

@@ -13,8 +13,19 @@ name: scan
 #    again.
 
 on:
-  schedule:
-    - cron: "0 7 * * 1-5"   # 07:00 UTC, weekdays
+  # The schedule is commented out ON THIS REPOSITORY on purpose.
+  #
+  # This repo is public, and a scan publishes what it found: the state commit,
+  # the issue, and the dashboard artifact are all readable by anyone, including
+  # unauthenticated strangers via the API. That is fine for a tool and wrong
+  # for the maintainer's own job search.
+  #
+  # If you have forked this, uncomment the two lines below. Do it knowing that
+  # on a public fork your search becomes public too; see the README. On a
+  # private fork it stays yours, and Actions is free there as well.
+  #
+  # schedule:
+  #   - cron: "0 7 * * 1-5"   # 07:00 UTC, weekdays
   workflow_dispatch:
 
 permissions:

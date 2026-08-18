@@ -145,6 +145,74 @@ def _countries_in(location: str) -> set[str]:
     return found
 
 
+# Whether a role is remote, hybrid or office-based is rarely a field. Ashby
+# and Workable expose it; the rest bury it in prose or omit it. So this reads
+# the flag where there is one and the text where there is not, and reports
+# "unstated" rather than guessing, which is over half of postings.
+_HYBRID = re.compile(
+    r"\bhybrid\b|\d\s*days?\s*(?:a week\s*)?(?:in|per week in)\s*(?:the\s*)?office|"
+    r"\b\d+\s*days? on[- ]?site", re.I)
+_ONSITE = re.compile(
+    r"\bon[- ]?site\b|\bin[- ]person\b|\boffice[- ]based\b|100% in office|"
+    r"\bfull[- ]?time in the office\b", re.I)
+_REMOTE_TXT = re.compile(
+    r"\bfully remote\b|\b100% remote\b|\bremote[- ]first\b|\bwork from anywhere\b|"
+    r"\bremote\b", re.I)
+
+# Bits that are not a city: countries, regions and the wrapper words postings
+# put in front of a place.
+_NOT_A_CITY = re.compile(
+    r"^(?:remote|hybrid|on[- ]?site|anywhere|global|worldwide|europe|emea|americas?|apac|"
+    r"united kingdom|uk|england|scotland|wales|northern ireland|united states|usa?|"
+    r"canada|australia|ireland|germany|france|spain|netherlands|india|singapore|"
+    r"various|multiple locations|flexible|tbc|n/?a)$", re.I)
+
+
+def work_mode(job: Job) -> str:
+    """remote | hybrid | office | unstated.
+
+    Hybrid is checked first on purpose: a posting saying "remote/hybrid" is
+    describing a hybrid job, and reading the word "remote" first would file it
+    wrongly in the more attractive bucket.
+    """
+    blob = f"{job.title} {job.location} {(job.description or '')[:2500]}"
+    if _HYBRID.search(blob):
+        return "hybrid"
+    if _ONSITE.search(blob):
+        return "office"
+    if job.remote is True or _REMOTE_TXT.search(blob):
+        return "remote"
+    return "unstated"
+
+
+def city_of(location: str) -> str:
+    """The town, where a posting names one. Empty when it does not."""
+    if not location:
+        return ""
+    first = re.split(r"[|/]", location)[0]
+    first = re.sub(r"^\s*(?:remote|hybrid|on[- ]?site)\s*[-–—:,]\s*", "", first, flags=re.I)
+    part = first.split(",")[0].strip(" -–—")
+    # Snowflake ship "US-CA-Menlo Park"; LinkedIn ship "London Area". Both are
+    # the same city as everyone else's, so normalise rather than splitting the
+    # filter into near-duplicates.
+    part = re.sub(r"^[A-Z]{2}-[A-Z]{2}-", "", part)
+    part = re.sub(r"\s+Area$", "", part, flags=re.I)
+    part = re.sub(r"\s*\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b\s*$", "", part, flags=re.I)
+    if not part or _NOT_A_CITY.match(part) or len(part) > 34:
+        return ""
+    return part.strip()
+
+
+def enrich(job: Job) -> Job:
+    """Fill the derived fields the dashboard filters on."""
+    job.work_mode = work_mode(job)
+    found = _countries_in(job.location)
+    job.country = job.country or (sorted(found)[0] if len(found) == 1 else
+                                  ("multiple" if found else None))
+    job.city = city_of(job.location)
+    return job
+
+
 def match(job: Job, cfg: Config) -> tuple[bool, str]:
     """Title and location gate. Returns (keep, reason_if_dropped)."""
     inc, exc = cfg.title_include_re(), cfg.title_exclude_re()
@@ -311,6 +379,7 @@ def run(jobs: list[Job], cfg: Config) -> tuple[list[Job], dict[str, int]]:
         dropped[key] = dropped.get(key, 0) + 1
 
     for j in jobs:
+        enrich(j)
         ok, why = match(j, cfg)
         if not ok:
             drop(why)
