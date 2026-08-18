@@ -19,6 +19,7 @@ the API will not tell you.
 from __future__ import annotations
 
 import random
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -193,6 +194,61 @@ def fetch_nhs(
     return Result(src, payload="".join(parts))
 
 
+def fetch_phenom(
+    src: Source,
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 4,
+) -> Result:
+    """Phenom's search page embeds only the first ten results, but the site is
+    driven by a `/widgets` POST endpoint that returns fifty at a time and
+    reports the true total. Serco publish 359 roles; ten of them is not a
+    useful view of an employer.
+    """
+    from urllib.parse import urlparse
+
+    session = requests.Session()
+    host = urlparse(src.url).netloc
+    country = "gb"
+    m = re.search(r"//[^/]+/([a-z]{2})/", src.url)
+    if m:
+        country = m.group(1)
+
+    merged: dict[str, dict] = {}
+    total = 0
+    for page in range(max_pages):
+        probe = Source(
+            company=src.company, url=f"https://{host}/widgets", platform="phenom",
+            sector=src.sector, country=src.country, method="POST",
+            body={"lang": "en_gb", "deviceType": "desktop", "country": country,
+                  "pageName": "search-results", "ddoKey": "refineSearch",
+                  "from": page * 50, "size": 50, "jobs": True, "counts": True,
+                  "all_fields": [], "keywords": "", "global": True,
+                  "siteType": "external", "clearAll": False},
+        )
+        res = fetch_one(probe, timeout=timeout, retries=retries,
+                        user_agent=user_agent, session=session)
+        if not res.ok or not isinstance(res.payload, dict):
+            break
+        er = res.payload.get("refineSearch") or {}
+        jobs = (er.get("data") or {}).get("jobs") or []
+        total = max(total, int(er.get("totalHits") or 0))
+        for j in jobs:
+            key = j.get("jobSeqNo") or j.get("jobId") or j.get("applyUrl")
+            if key:
+                merged.setdefault(key, j)
+        if len(jobs) < 50:
+            break
+
+    if not merged:
+        # Fall back to the ten embedded in the page rather than returning none.
+        return fetch_one(src, timeout=timeout, retries=retries, user_agent=user_agent)
+    return Result(src, payload={"refineSearch": {"data": {"jobs": list(merged.values())},
+                                                 "totalHits": total}})
+
+
 def fetch_all(
     sources: Iterable[Source],
     *,
@@ -230,6 +286,8 @@ def _delayed_fetch(src, delay, timeout, retries, ua, terms) -> Result:
                              user_agent=ua)
     if src.platform == "nhs":
         return fetch_nhs(src, timeout=timeout, retries=retries, user_agent=ua)
+    if src.platform == "phenom":
+        return fetch_phenom(src, timeout=timeout, retries=retries, user_agent=ua)
     return fetch_one(src, timeout=timeout, retries=retries, user_agent=ua,
                      session=requests.Session())
 

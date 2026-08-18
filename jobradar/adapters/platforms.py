@@ -11,10 +11,11 @@ debugging session to find out.
 from __future__ import annotations
 
 import html
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Iterator
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from ..models import Job, Salary, Source
 from ..salary import from_ashby, from_greenhouse, parse_text
@@ -560,3 +561,202 @@ def parse_nhs(payload: Any, src: Source) -> Iterator[Job]:
         # would be scanning three metadata fields and calling it clean.
         job.flags.append("not screened: search listing only, open the advert")
         yield job
+
+
+# --------------------------------------------------------------------------
+# Phenom People
+# --------------------------------------------------------------------------
+_PHENOM_DDO = re.compile(r"phApp\.ddo\s*=\s*(\{.*?\});\s*(?:phApp|</script>|window\.)", re.S)
+
+
+def parse_phenom(payload: Any, src: Source) -> Iterator[Job]:
+    """Phenom renders in the browser, but it also embeds the whole result set
+    as JSON in the page under `phApp.ddo`, so there is no need to render
+    anything: the jobs are already there in the HTML we fetched.
+
+    Used by large employers who otherwise look unreachable. Serco and Thales
+    both sit here. `descriptionTeaser` often carries a salary line even though
+    there is no salary field.
+    """
+    blocks = []
+    if isinstance(payload, dict):
+        # The /widgets POST API, which pages properly.
+        er = payload.get("refineSearch") or payload.get("eagerLoadRefineSearch") or {}
+        blocks.append((er.get("data") or {}).get("jobs") or er.get("jobs") or [])
+    else:
+        text = payload if isinstance(payload, str) else ""
+        for m in _PHENOM_DDO.finditer(text):
+            try:
+                ddo = json.loads(m.group(1))
+            except (ValueError, TypeError):
+                continue
+            er = ddo.get("eagerLoadRefineSearch") or {}
+            blocks.append((er.get("data") or {}).get("jobs") or er.get("jobs") or [])
+            break
+
+    for jobs in blocks:
+        for j in jobs:
+            title = _text(j.get("title"))
+            url = j.get("applyUrl") or j.get("imApplyUrl") or ""
+            if not (title and url):
+                continue
+            loc = _text(j.get("cityStateCountry") or j.get("location") or j.get("country"))
+            teaser = _text(j.get("descriptionTeaser"))
+            yield Job(
+                company=src.company,
+                title=title,
+                url=url,
+                platform="phenom",
+                location=loc,
+                remote=_remote(loc, title, j.get("jobType")),
+                department=_text(j.get("category")) or None,
+                posted_at=_iso(j.get("postedDate") or j.get("dateCreated")),
+                description=teaser,
+                salary=parse_text(teaser),
+                source_id=src.key,
+            )
+
+
+# --------------------------------------------------------------------------
+# SuccessFactors RMK (jobs2web)
+# --------------------------------------------------------------------------
+_RMK_LINK = re.compile(
+    r'<a[^>]*class="[^"]*jobTitle-link[^"]*"[^>]*href="([^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S)
+_RMK_ANY = re.compile(r'href="((?:/[a-z0-9_-]+)?/job/[^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S | re.I)
+
+
+def parse_rmk(payload: Any, src: Source) -> Iterator[Job]:
+    """SAP SuccessFactors Recruiting Marketing, still served from jobs2web
+    hostnames. Server-rendered, so it parses without a browser.
+
+    Transport for London sit here, and so do many public bodies that look like
+    they have no machine-readable board at all. The href carries a tenant
+    prefix (`/tfl/job/...`) rather than a bare `/job/`, and the location is in
+    the slug ahead of the title rather than in its own field.
+    """
+    text = payload if isinstance(payload, str) else ""
+    base = f"https://{urlparse(src.url).netloc}"
+
+    pairs = _RMK_LINK.findall(text) or _RMK_ANY.findall(text)
+    seen = set()
+    for path, title in pairs:
+        title = _text(title)
+        if not title or path in seen:
+            continue
+        seen.add(path)
+        # "/tfl/job/Palestra-House,-Southwark,-SE1-Assistant-Safety-Manager/1349"
+        slug = path.rsplit("/job/", 1)[-1]
+        slug = re.sub(r"/\d+/?$", "", slug)
+        slug = _text(unquote(slug).replace("-", " "))
+        # The title repeats at the end of the slug; what precedes it is where.
+        loc = slug
+        low, tl = slug.lower(), title.lower()
+        if tl and tl in low:
+            loc = slug[: low.rindex(tl)].strip(" ,-")
+        yield Job(
+            company=src.company,
+            title=title,
+            url=path if path.startswith("http") else base + path,
+            platform="rmk",
+            location=loc,
+            remote=_remote(loc, title),
+            description="",
+            salary=Salary(),
+            source_id=src.key,
+            flags=["not screened: search listing only, open the advert"],
+        )
+
+
+# --------------------------------------------------------------------------
+# Avature
+# --------------------------------------------------------------------------
+# Avature serves absolute hrefs, not paths.
+_AV_LINK = re.compile(r'href="(https?://[^"]*?/JobDetail/[^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S)
+
+
+def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
+    """Avature's hosted careers site. Server-rendered links to /JobDetail/,
+    with the location usually in the slug rather than a separate field.
+    """
+    text = payload if isinstance(payload, str) else ""
+    seen = set()
+    for url, title in _AV_LINK.findall(text):
+        title = _text(title)
+        if not title or url in seen:
+            continue
+        seen.add(url)
+        # The slug carries the location when the markup does not.
+        slug = url.rsplit("/JobDetail/", 1)[-1].replace("-", " ")
+        yield Job(
+            company=src.company,
+            title=title,
+            url=url,
+            platform="avature",
+            location="",
+            remote=_remote(slug, title),
+            description=_text(slug),
+            salary=Salary(),
+            source_id=src.key,
+            flags=["not screened: search listing only, open the advert"],
+        )
+
+
+# --------------------------------------------------------------------------
+# iCIMS
+# --------------------------------------------------------------------------
+_ICIMS_ITEM = re.compile(r'<div class="row">(.*?)(?=<div class="row">|</body>)', re.S)
+_ICIMS_LINK = re.compile(
+    r'<a[^>]+href="(https?://[^"]*?/jobs/\d+/[^"?]+[^"]*)"[^>]*class="iCIMS_Anchor"[^>]*>(.*?)</a>',
+    re.S)
+_ICIMS_LOC = re.compile(
+    r'field-label">Job Locations?</span>\s*<span[^>]*>\s*(.*?)\s*</span>', re.S)
+
+
+def parse_icims(payload: Any, src: Source) -> Iterator[Job]:
+    """iCIMS renders its results into an iframe, so the plain search page comes
+    back as a shell with no jobs in it. Adding `in_iframe=1` returns the
+    server-rendered list instead, which is the whole trick.
+
+    Locations arrive pipe-separated in a single span ("UK-London |
+    UK-Wolverhampton"), and the leading country code makes them read oddly, so
+    they are tidied here rather than left to confuse the location filter.
+    """
+    text = payload if isinstance(payload, str) else ""
+    seen = set()
+
+    for block in _ICIMS_ITEM.findall(text):
+        lm = _ICIMS_LINK.search(block)
+        if not lm:
+            continue
+        # The anchor wraps a screen-reader label ("Title") before the heading,
+        # which _text would otherwise fold into the job title.
+        inner = re.sub(r'<span[^>]*class="[^"]*sr-only[^"]*"[^>]*>.*?</span>', " ",
+                       lm.group(2), flags=re.S)
+        url, title = lm.group(1), _text(inner)
+        if not title or url in seen:
+            continue
+        seen.add(url)
+
+        loc = ""
+        lo = _ICIMS_LOC.search(block)
+        if lo:
+            parts = [p.strip() for p in _text(lo.group(1)).split("|") if p.strip()]
+            # "UK-Kent-Chatham" reads better, and filters better, as "Chatham, UK"
+            tidy = []
+            for p in parts:
+                bits = [b for b in p.split("-") if b]
+                tidy.append(f"{', '.join(bits[1:])}, {bits[0]}" if len(bits) > 1 else p)
+            loc = " / ".join(tidy)
+
+        yield Job(
+            company=src.company,
+            title=title,
+            url=url,
+            platform="icims",
+            location=loc,
+            remote=_remote(loc, title),
+            description="",
+            salary=Salary(),
+            source_id=src.key,
+            flags=["not screened: search listing only, open the advert"],
+        )

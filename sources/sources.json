@@ -1,7 +1,7 @@
 {
  "meta": {
   "note": "ported from an n8n pipeline, validated and repaired with discover, then extended by harvesting UK employers outside technology",
-  "version": 3,
+  "version": 4,
   "validated": "2026-08-18",
   "harvest": {
    "attempted": 196,
@@ -605,6 +605,14 @@
    "platform": "ashby",
    "domain": "zilch.com",
    "sector": "technology"
+  },
+  {
+   "company": "Metro Bank",
+   "url": "https://metrobank.avature.net/amazingcareers/SearchJobs/?jobRecordsPerPage=50",
+   "platform": "avature",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "metrobankonline.co.uk"
   },
   {
    "company": "Atlassian",
@@ -1346,6 +1354,14 @@
    "sector": "technology"
   },
   {
+   "company": "OSB Group",
+   "url": "https://careers-osb.icims.com/jobs/search?ss=1&in_iframe=1",
+   "platform": "icims",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "osb.co.uk"
+  },
+  {
    "company": "Binance",
    "url": "https://api.lever.co/v0/postings/binance?mode=json",
    "platform": "lever",
@@ -1526,6 +1542,30 @@
    "sector": "finance",
    "country": "UK",
    "domain": "thephoenixgroup.com"
+  },
+  {
+   "company": "Serco",
+   "url": "https://careers.serco.com/gb/en/search-results?s=1",
+   "platform": "phenom",
+   "sector": "publicsector",
+   "country": "UK",
+   "domain": "serco.com"
+  },
+  {
+   "company": "Thales",
+   "url": "https://careers.thalesgroup.com/global/en/search-results",
+   "platform": "phenom",
+   "sector": "publicsector",
+   "country": "UK",
+   "domain": "thalesgroup.com"
+  },
+  {
+   "company": "Transport for London",
+   "url": "https://london-gov.jobs2web.com/tfl/search/?q=&sortColumn=referencedate&sortDirection=desc",
+   "platform": "rmk",
+   "sector": "publicsector",
+   "country": "UK",
+   "domain": "tfl.gov.uk"
   },
   {
    "company": "Canva",

@@ -48,6 +48,11 @@ SIGNATURES: list[tuple[str, str]] = [
     # Oracle needs the whole host, not a short token, and the host bears no
     # relation to the company name.
     ("oracle", r"([a-z0-9-]+\.fa\.[a-z0-9]+\.oraclecloud\.com)"),
+    # These three are whole-host platforms too: the careers hostname is the
+    # identifier and nothing shorter works.
+    ("avature", r"([a-z0-9-]+\.avature\.net/[a-z0-9-]+)"),
+    ("rmk", r"([a-z0-9-]+\.jobs2web\.com/[a-z0-9-]+)"),
+    ("icims", r"([a-z0-9-]+)\.icims\.com"),
 ]
 
 # Workday needs two captures (tenant, site) and its own URL shape.
@@ -162,6 +167,13 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
             continue
         api = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
         hits.append(("workday", f"{tenant}/{site}", api))
+
+    # Phenom does not expose a token at all; the careers host itself is the
+    # source, and it is recognisable from the assets it loads.
+    if re.search(r"phenompeople|phApp\.ddo", blob, re.I):
+        host = urlparse(final_url).netloc
+        if host:
+            hits.append(("phenom", host, f"https://{host}/gb/en/search-results?s=1"))
 
     for platform, pat in SIGNATURES:
         for m in re.finditer(pat, blob, re.I):

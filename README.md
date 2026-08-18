@@ -9,7 +9,7 @@ your own filters.
 
 Most job tools are built to make you apply to more things. This one is built to
 show you fewer: it reads postings straight from company applicant tracking
-systems, normalises eight different APIs into one shape, and drops anything
+systems, normalises thirteen different APIs into one shape, and drops anything
 that fails rules you write down once.
 
 ```bash
@@ -36,7 +36,7 @@ The trade is coverage. This only sees employers on the list, which is why
 
 ## What it does
 
-**Reads 304 sources** across Greenhouse, Ashby, Lever, Workday,
+**Reads 309 sources** across Greenhouse, Ashby, Lever, Workday,
 Workable, SmartRecruiters and LinkedIn's public endpoint. Mostly technology
 companies, plus a first pass at UK finance, industry, professional services,
 education, media and the public sector: Barclays, Lloyds, Santander, BP,
@@ -167,6 +167,10 @@ the adapters are shaped the way they are.
 | **Workday** | **POST**, not GET. Returns **406, not 404**, for a tenant that does not exist, because of wildcard DNS on `*.myworkdayjobs.com`. A non-404 proves nothing. Tenant and site names cannot be guessed: 117 attempts produced zero working tenants. |
 | **Lever** | Returns a bare top-level list rather than an object with a `jobs` key. |
 | **LinkedIn** | The public `jobs-guest` endpoint returns server-rendered HTML cards to a plain GET, no login and no JavaScript. No description or salary, so those roles are leads rather than screenable postings. |
+| **Phenom** | Renders in the browser, but the search page embeds only the first ten results as JSON under `phApp.ddo`. The site is really driven by a `/widgets` POST endpoint returning fifty at a time with a true total, which is the one worth using: Serco publish 359 roles. |
+| **SuccessFactors RMK** | Still served from `jobs2web.com` hostnames. Server-rendered, so no browser needed, but hrefs carry a tenant prefix (`/tfl/job/...`) rather than a bare `/job/`, and the location sits in the URL slug ahead of the title rather than in its own field. |
+| **iCIMS** | The plain search page is an empty shell that renders into an iframe. Adding **`in_iframe=1`** returns the server-rendered list. That single parameter is the whole difference between "no jobs" and a working board. |
+| **Avature** | Absolute hrefs to `/JobDetail/`, and the location is only in the slug. |
 | **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. |
 | **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
 
