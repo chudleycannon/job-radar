@@ -29,3 +29,9 @@ venv/
 
 # OS
 .DS_Store
+
+# Your scan history. NOT ignored for forks that use the Actions path, which
+# have to commit it: see the note in the README. It is ignored here because
+# this is the upstream repo and the maintainer's own search history has no
+# business being in it.
+state/

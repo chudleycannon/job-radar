@@ -152,6 +152,18 @@ flags sources that look throttled; if you see many, run it locally instead.
 **State is committed, not cached.** The Actions cache is evicted after seven
 days of no use, which would make every role look new again.
 
+**On a public fork, your search is public.** `config.yaml` has to be committed
+for the workflow to read it, and `state/` gets committed on every run, so
+anyone can see the titles you search for, your salary floor, your
+dealbreakers, and every role you have been shown. That is fine for some people
+and not for others. If it is not fine for you, make the fork **private** (the
+Actions path works the same, and private repos get 2,000 free minutes a
+month), or skip Actions and run it locally with your settings in
+`config.local.yaml`, which is gitignored.
+
+This repository ships with no `state/` for that reason: it is the maintainer's
+copy, not a scan history.
+
 ---
 
 ## Notes on the APIs
