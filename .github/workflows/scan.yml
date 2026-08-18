@@ -93,13 +93,36 @@ jobs:
             echo "nothing new"
           fi
 
+      # Always kept, and private: workflow artifacts are only visible to people
+      # who can see the repo. This is the default way to get your dashboard.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard
+          path: out
+          retention-days: 14
+
+      # Only built when you have opted in to publishing (see below).
       - uses: actions/upload-pages-artifact@v3
+        if: vars.PUBLISH_PAGES == 'true'
         with:
           path: out
 
   publish:
-    # Serves the dashboard at https://<you>.github.io/job-radar/
-    # Needs Pages enabled once: Settings > Pages > Source: GitHub Actions.
+    # OFF by default, and deliberately so.
+    #
+    # A GitHub Pages site is served to anyone who knows the URL. There is no
+    # login on it, and making the repository private does not change that:
+    # private-repo Pages needs a paid plan, and even then the site itself is
+    # still public unless you are on Enterprise with access control.
+    #
+    # So publishing means putting the roles you are looking at, and the
+    # filters that produced them, on the open web. Some people want exactly
+    # that. Nobody should get it by accident.
+    #
+    # To turn it on:
+    #   gh variable set PUBLISH_PAGES --body true
+    #   then Settings > Pages > Source: GitHub Actions
+    if: vars.PUBLISH_PAGES == 'true'
     needs: scan
     runs-on: ubuntu-latest
     environment:

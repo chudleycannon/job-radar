@@ -138,12 +138,51 @@ precedence. `config.yaml` has to be committed for the Actions path to work.
 
 1. Fork this repo.
 2. Edit `config.yaml`.
-3. Settings → Pages → Source: GitHub Actions.
 
-The scan runs on weekdays, commits its state, posts new roles as an issue, and
-publishes the dashboard to your Pages URL.
+That is it. The scan runs on weekdays, commits its state, posts new roles as
+an issue, and attaches the dashboard as a workflow artifact you can download.
 
-Two caveats worth knowing:
+### How you get the dashboard, and who else can see it
+
+There are three ways, and the difference between them is who is allowed to
+look:
+
+| | Who can see it | Cost |
+|---|---|---|
+| **Workflow artifact** (default) | anyone who can see the repo | free, public or private repo |
+| **Issue per run** | anyone who can see the repo | free, public or private repo |
+| **GitHub Pages** (opt in) | **anyone on the internet with the URL** | free on public repos only |
+
+**Pages is off by default and you should think before turning it on.** A Pages
+site has no login. Making your fork private does not fix that: private-repo
+Pages needs a paid plan, and even then the published site is still world
+readable unless you are on Enterprise with access control. Publishing means
+putting the roles you are looking at, and the filters that produced them, on
+the open web under your own username.
+
+If that is fine by you:
+
+```bash
+gh variable set PUBLISH_PAGES --body true
+```
+
+then Settings → Pages → Source: GitHub Actions. Each fork serves its own site
+at `https://<you>.github.io/job-radar/`; there is no shared host and nothing
+to run.
+
+**If you want it private, use a private fork.** Artifacts and issues both work
+there, on the free plan, and neither is visible to anyone who cannot already
+see your repo. Private repos get 2,000 free Actions minutes a month, which is
+far more than a daily scan uses.
+
+### Two caveats worth knowing
+
+**On a public fork, your search is public** even without Pages. `config.yaml`
+has to be committed for the workflow to read it, and `state/` is committed on
+every run, so the titles you search for, your salary floor, your dealbreakers
+and every role you have been shown are all readable. A private fork, or
+running locally with your settings in the gitignored `config.local.yaml`,
+avoids that.
 
 **Actions runners share IP ranges** with a very large number of repositories,
 so job boards throttle them sooner than they throttle your laptop. The scan
@@ -151,18 +190,6 @@ flags sources that look throttled; if you see many, run it locally instead.
 
 **State is committed, not cached.** The Actions cache is evicted after seven
 days of no use, which would make every role look new again.
-
-**On a public fork, your search is public.** `config.yaml` has to be committed
-for the workflow to read it, and `state/` gets committed on every run, so
-anyone can see the titles you search for, your salary floor, your
-dealbreakers, and every role you have been shown. That is fine for some people
-and not for others. If it is not fine for you, make the fork **private** (the
-Actions path works the same, and private repos get 2,000 free minutes a
-month), or skip Actions and run it locally with your settings in
-`config.local.yaml`, which is gitignored.
-
-This repository ships with no `state/` for that reason: it is the maintainer's
-copy, not a scan history.
 
 ---
 
