@@ -248,6 +248,36 @@ That is the market, not a bug, and the rule above is built around it.
 
 ---
 
+## robots.txt, and what this tool does about it
+
+**It does not check robots.txt, and some of what it fetches is disallowed by
+it.** That is a deliberate choice and you should know about it before you run
+this.
+
+Most sources here are public JSON APIs that applicant tracking systems publish
+for exactly this purpose, and those are not contentious. The exceptions are
+the sources parsed from HTML. Checked against each host's robots.txt for a
+generic agent:
+
+| Source | robots.txt |
+|---|---|
+| NHS Jobs, Serco and Thales (Phenom), Transport for London (SuccessFactors), Metro Bank (Avature), OSB Group (iCIMS) | allowed |
+| **LinkedIn** (`jobs-guest` endpoint) | **`Disallow: /`** |
+
+So the six bundled LinkedIn searches fetch a path LinkedIn's robots.txt tells
+crawlers not to. They are public pages served without a login, and this reads
+them at a handful of requests per run rather than at crawl scale, but that
+does not make it permitted.
+
+**What that means for you.** LinkedIn may block the IP you run this from, and
+they take a harder line on scraping than most. If that matters to you, delete
+the six `linkedin` entries from `sources/sources.json`, or set
+`sources.use_bundled: false` and list your own. Everything else in the tool
+works without them.
+
+If you are running this at work, on shared infrastructure, or anywhere the
+consequences are not purely yours, read that table before you press go.
+
 ## Being a good citizen
 
 Concurrency defaults to 4 and is capped at 12. Requests are staggered, retried

@@ -96,7 +96,9 @@ REGISTRY: list[Platform] = [
         r"linkedin\.com/jobs-guest",
         platforms.parse_linkedin,
         verified=True,
-        note="public guest endpoint, HTML cards, no description or salary",
+        note="public guest endpoint, HTML cards, no description or salary. "
+             "NOTE: LinkedIn's robots.txt is Disallow:/ for all agents, so this "
+             "source is fetched in spite of it. See the README before using it.",
     ),
     Platform(
         "nhs",
