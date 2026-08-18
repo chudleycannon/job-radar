@@ -1,5 +1,9 @@
 # job-radar
 
+[![tests](https://github.com/maccydee/job-radar/actions/workflows/test.yml/badge.svg)](https://github.com/maccydee/job-radar/actions/workflows/test.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 Watch employers' job boards directly, and only be told about roles that pass
 your own filters.
 
