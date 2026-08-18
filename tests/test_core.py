@@ -202,6 +202,54 @@ def test_wizard_config_is_valid_yaml_with_regex_dealbreakers():
     assert len(cfg.dealbreakers) == len(COMMON_DEALBREAKERS)
 
 
+
+def test_ambiguous_city_names_resolve_to_the_right_country():
+    """City names are not unique across countries, and getting this wrong
+    marked 59 of 296 American roles as British.
+
+    "New York City" contains "york". There is a Cambridge in Massachusetts, a
+    Birmingham in Alabama, a Manchester in New Hampshire, a Reading in
+    Pennsylvania and a Newcastle in Australia. An explicit country name beats
+    a US state code beats a city name.
+    """
+    from jobradar.screen import _country_of, _countries_in
+    # the report that started it
+    assert _country_of("San Francisco, CA | New York City, NY") == "US"
+    assert _country_of("New York, New York, USA") == "US"
+    # US cities that collide with UK ones
+    for loc in ("Cambridge, MA", "Birmingham, AL", "Manchester, NH",
+                "Reading, PA", "Bath, ME", "Boston, MA"):
+        assert _country_of(loc) == "US", loc
+    # explicit country wins over a colliding city name
+    assert _country_of("Newcastle, Australia") == "AU"
+    assert _country_of("Paris, TX") == "US"
+    # and the genuine UK cases still work
+    for loc in ("London", "York, England", "Manchester, UK", "Dorchester DT1 2JY"):
+        assert _country_of(loc) == "UK", loc
+
+
+def test_commas_bind_a_place_to_its_qualifier():
+    """Splitting on commas severed "Cambridge, MA" from the state code that
+    identifies it, so the fragment "Cambridge" read as UK. Only a pipe or a
+    slash separates genuinely distinct locations."""
+    from jobradar.screen import _countries_in
+    assert _countries_in("Cambridge, MA") == {"US"}
+    assert _countries_in("San Francisco, CA | New York City, NY") == {"US"}
+    assert _countries_in("Boston, MA | London") == {"UK", "US"}
+    assert _countries_in("Hong Kong / United Kingdom / Singapore") == {"HK", "SG", "UK"}
+
+
+def test_us_role_is_dropped_for_a_uk_only_search():
+    """The end-to-end version of the bug: a San Francisco posting scored 90
+    and gave 'in UK' as a reason."""
+    cfg = _cfg(countries=["UK"], relocate_to=[])
+    j = _job(title="Engineering Manager",
+             location="San Francisco, CA | New York City, NY")
+    keep, why = match(j, cfg)
+    assert keep is False
+    assert "outside target countries" in why
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

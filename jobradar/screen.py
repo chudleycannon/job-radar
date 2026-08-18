@@ -20,56 +20,76 @@ from .config import Config
 from .models import Job
 from .salary import clears_floor
 
-# Locations that read as "somewhere else" unless the user says otherwise.
-_COUNTRY_HINTS = {
-    # The postcode pattern matters more than the city list. Employers who
-    # advertise nationally list towns, not cities: NHS Jobs gives locations
-    # like "Dorchester DT1 2JY", and a city-only regex reads every one of them
-    # as an unrecognised country and drops the role.
-    "UK": r"united kingdom|\buk\b|england|scotland|wales|northern ireland|"
-          r"london|manchester|bristol|birmingham|leeds|edinburgh|glasgow|"
-          r"cambridge|oxford|reading|milton keynes|cardiff|belfast|liverpool|"
-          r"newcastle|sheffield|nottingham|southampton|brighton|york|bath|"
-          # Lowercase on purpose: _country_of lowercases before matching.
+# Working out which country a posting is in is the single most load-bearing
+# thing in this file, and it is harder than it looks, because city names are
+# not unique across countries. "New York City" contains "york"; there is a
+# Cambridge in Massachusetts, a Birmingham in Alabama, a Manchester in New
+# Hampshire and a Newcastle in Australia. Matching city names against a flat
+# list and taking the first hit marked 59 of 296 American roles as British.
+#
+# So the signals are tiered. An explicit country name always beats a city
+# name, and a US state code beats both, because ", NY" is unambiguous in a way
+# that "york" never is.
+
+# Tier 1: the location says which country outright.
+_COUNTRY_MARKERS = {
+    "UK": r"united kingdom|\buk\b|\bg\.?b\.?\b|\bengland\b|\bscotland\b|\bwales\b|"
+          r"northern ireland|\bbritain\b",
+    "US": r"united states|\bu\.?s\.?a\.?\b|\bus\b|\bamericas?\b",
+    "IE": r"\bireland\b(?!,? *north)",
+    "DE": r"\bgermany\b", "FR": r"\bfrance\b", "ES": r"\bspain\b",
+    "NL": r"netherlands", "CA": r"\bcanada\b", "AU": r"\baustralia\b",
+    "NZ": r"new zealand", "AE": r"\buae\b|united arab emirates",
+    "SG": r"\bsingapore\b", "HK": r"hong kong", "IN": r"\bindia\b",
+    "JP": r"\bjapan\b", "CN": r"\bchina\b", "PL": r"\bpoland\b",
+    "PT": r"\bportugal\b", "SE": r"\bsweden\b", "CH": r"switzerland",
+    "IL": r"\bisrael\b", "BR": r"\bbrazil\b", "MX": r"\bmexico\b",
+    "ZA": r"south africa", "ID": r"\bindonesia\b", "TH": r"\bthailand\b",
+    "MY": r"\bmalaysia\b", "PH": r"philippines", "IT": r"\bitaly\b",
+    "BE": r"\bbelgium\b", "AT": r"\baustria\b", "DK": r"\bdenmark\b",
+    "NO": r"\bnorway\b", "FI": r"\bfinland\b", "CZ": r"czech",
+    "RO": r"\bromania\b", "TR": r"\bturkey\b", "AR": r"\bargentina\b",
+    "VN": r"\bvietnam\b", "KR": r"south korea",
+}
+
+# Tier 2: a US state code after a comma ("San Francisco, CA"). Case-sensitive
+# on purpose, so it cannot fire on the word "ca" inside ordinary prose.
+_US_STATE = re.compile(
+    r",\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|"
+    r"MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|"
+    r"WA|WV|WI|WY|DC)\b"
+)
+
+# Tier 3: city names, consulted only when nothing above fired. UK entries that
+# collide with a bigger foreign city are guarded rather than dropped, since
+# "London" and "Manchester" are still the common case in a UK-facing tool.
+_CITY_HINTS = {
+    "UK": r"\blondon\b(?!,? *(?:ontario|ky|oh))|\bmanchester\b|\bbristol\b|"
+          r"\bbirmingham\b|\bleeds\b|\bedinburgh\b|\bglasgow\b|"
+          r"\bcambridge\b|\boxford\b|\breading\b|milton keynes|\bcardiff\b|"
+          r"\bbelfast\b|\bliverpool\b|\bnewcastle\b|\bsheffield\b|"
+          r"\bnottingham\b|\bsouthampton\b|\bbrighton\b|(?<!new )\byork\b|"
+          r"\bbath\b|\bleicester\b|\bcoventry\b|\bderby\b|\bswindon\b|"
+          r"\bipswich\b|\bnorwich\b|\bexeter\b|\bplymouth\b|"
+          # A UK postcode is a strong signal on its own: employers hiring
+          # nationally list towns, not cities.
           r"\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b",
-    "US": r"united states|\busa?\b|new york|san francisco|seattle|austin|boston|chicago|"
-          r"los angeles|denver|atlanta",
-    "IE": r"\bireland\b|dublin",
-    "DE": r"\bgermany\b|berlin|munich|hamburg",
-    "FR": r"\bfrance\b|paris",
-    "ES": r"\bspain\b|madrid|barcelona",
-    "NL": r"netherlands|amsterdam",
-    "CA": r"\bcanada\b|toronto|vancouver|montreal",
-    "AU": r"\baustralia\b|sydney|melbourne",
-    "AE": r"\buae\b|dubai|abu dhabi",
-    "NZ": r"new zealand|auckland|wellington",
-    "SG": r"\bsingapore\b",
-    "HK": r"hong kong",
-    "IN": r"\bindia\b|bangalore|bengaluru|hyderabad|mumbai|pune|gurgaon|noida",
-    "JP": r"\bjapan\b|tokyo",
-    "CN": r"\bchina\b|beijing|shanghai|shenzhen",
-    "PL": r"\bpoland\b|warsaw|krakow|wroclaw",
-    "PT": r"\bportugal\b|lisbon|porto",
-    "SE": r"\bsweden\b|stockholm",
-    "CH": r"switzerland|zurich|geneva",
-    "IL": r"\bisrael\b|tel aviv",
-    "BR": r"\bbrazil\b|sao paulo",
-    "MX": r"\bmexico\b",
-    "ZA": r"south africa|cape town|johannesburg",
-    "ID": r"\bindonesia\b|jakarta",
-    "TH": r"\bthailand\b|bangkok",
-    "MY": r"\bmalaysia\b|kuala lumpur",
-    "PH": r"philippines|manila",
-    "IT": r"\bitaly\b|milan|rome",
-    "BE": r"\bbelgium\b|brussels",
-    "AT": r"\baustria\b|vienna",
-    "DK": r"\bdenmark\b|copenhagen",
-    "NO": r"\bnorway\b|oslo",
-    "FI": r"\bfinland\b|helsinki",
-    "CZ": r"czech|prague",
-    "RO": r"\bromania\b|bucharest",
-    "TR": r"\bturkey\b|istanbul",
-    "AR": r"\bargentina\b|buenos aires",
+    "US": r"san francisco|new york|seattle|austin|boston|chicago|los angeles|"
+          r"denver|atlanta|palo alto|mountain view|menlo park|san jose|"
+          r"washington,? d\.?c|bellevue|redmond|sunnyvale",
+    "IE": r"\bdublin\b(?!,? *(?:oh|ca))", "DE": r"\bberlin\b|munich|hamburg|cologne",
+    "FR": r"\bparis\b(?!,? *(?:tx|tn))", "ES": r"\bmadrid\b|barcelona",
+    "NL": r"amsterdam|rotterdam|utrecht", "CA": r"\btoronto\b|vancouver|montreal|ottawa",
+    "AU": r"\bsydney\b|melbourne|brisbane|perth", "NZ": r"auckland|wellington",
+    "AE": r"\bdubai\b|abu dhabi", "IN": r"bangalore|bengaluru|hyderabad|mumbai|pune|gurgaon|noida",
+    "JP": r"\btokyo\b", "CN": r"beijing|shanghai|shenzhen", "PL": r"warsaw|krakow|wroclaw",
+    "PT": r"\blisbon\b|\bporto\b", "SE": r"stockholm", "CH": r"zurich|geneva",
+    "IL": r"tel aviv", "BR": r"sao paulo", "ZA": r"cape town|johannesburg",
+    "ID": r"jakarta", "TH": r"bangkok", "MY": r"kuala lumpur", "PH": r"manila",
+    "IT": r"\bmilan\b|\brome\b", "BE": r"brussels", "AT": r"\bvienna\b",
+    "DK": r"copenhagen", "NO": r"\boslo\b", "FI": r"helsinki", "CZ": r"prague",
+    "RO": r"bucharest", "TR": r"istanbul", "AR": r"buenos aires", "SG": r"\bsingapore\b",
+    "HK": r"hong kong", "KR": r"\bseoul\b", "VN": r"hanoi|ho chi minh",
 }
 
 # "Remote" with nothing else attached. Anything more specific than this names
@@ -81,13 +101,32 @@ _GENERIC_REMOTE = re.compile(
     re.I,
 )
 
-_SPLIT = re.compile(r"[;,/|]| or | and |\bor\b")
+# Deliberately NOT splitting on commas. A comma binds a place to its
+# qualifier ("Cambridge, MA"), and splitting there throws away the state code
+# that identifies the country. Postings separate genuinely distinct locations
+# with a pipe or a slash.
+_SPLIT = re.compile(r"[;|/]| or |\bor\b")
 
 
 def _country_of(location: str) -> str | None:
-    l = (location or "").lower()
-    for code, pat in _COUNTRY_HINTS.items():
-        if re.search(pat, l):
+    """Best single guess at the country a location string refers to.
+
+    Tiered deliberately: an explicit country name beats a US state code beats
+    a city name. Returns None when nothing identifies it, which callers treat
+    as unknown rather than as a match.
+    """
+    if not location:
+        return None
+    raw = location
+    low = raw.lower()
+
+    for code, pat in _COUNTRY_MARKERS.items():
+        if re.search(pat, low):
+            return code
+    if _US_STATE.search(raw):
+        return "US"
+    for code, pat in _CITY_HINTS.items():
+        if re.search(pat, low):
             return code
     return None
 
