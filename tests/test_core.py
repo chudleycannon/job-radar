@@ -175,6 +175,33 @@ def test_uk_postcodes_count_as_uk():
     assert _country_of("Hong Kong") == "HK"
 
 
+
+def test_wizard_config_is_valid_yaml_with_regex_dealbreakers():
+    """The default config the wizard writes must actually load.
+
+    Dealbreakers are regexes. YAML processes backslash escapes inside
+    double-quoted scalars, so a pattern containing \\w was a parse error the
+    moment the file was read back: `setup --defaults` then `scan` crashed for
+    every new user. Single-quoted YAML takes the string literally.
+    """
+    import tempfile, yaml
+    from jobradar.setup_wizard import write_config, DEFAULTS, COMMON_DEALBREAKERS
+    from jobradar.config import load as load_cfg
+
+    answers = dict(DEFAULTS)
+    answers["dealbreakers"] = dict(COMMON_DEALBREAKERS)   # every pattern, \w and all
+    d = Path(tempfile.mkdtemp()) / "config.yaml"
+    write_config(d, answers)
+
+    raw = yaml.safe_load(d.read_text())
+    assert len(raw["dealbreakers"]) == len(COMMON_DEALBREAKERS)
+    cfg = load_cfg(d)
+    # and the patterns must still compile after the round trip
+    for db in cfg.dealbreakers:
+        db.compiled()
+    assert len(cfg.dealbreakers) == len(COMMON_DEALBREAKERS)
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

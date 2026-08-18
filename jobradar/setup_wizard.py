@@ -84,8 +84,18 @@ def write_config(path: Path, answers: dict) -> Path:
         return "\n" + "\n".join(f"{indent}- {_q(i)}" for i in items)
 
     def _q(v):
+        """Quote for YAML using SINGLE quotes.
+
+        This matters more than it looks. Dealbreakers are regexes, and YAML
+        processes backslash escapes inside double-quoted scalars, so a pattern
+        containing \\w or \\b is a parse error the moment the file is read
+        back. Single-quoted YAML takes the string literally; the only escaping
+        needed is doubling an internal quote.
+        """
         s = str(v)
-        return f'"{s}"' if re.search(r"[:#{}\[\],&*?|>'\"%@`]|^\s|\s$", s) else s
+        if re.search(r"[:#{}\[\],&*?|>'\"%@`\\]|^\s|\s$", s):
+            return "'" + s.replace("'", "''") + "'"
+        return s
 
     dealbreakers = answers.get("dealbreakers") or {}
     db_block = "\n".join(
