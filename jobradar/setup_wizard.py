@@ -270,4 +270,8 @@ def run(path: Path, non_interactive: bool = False) -> int:
     write_config(path, a)
     print(f"\nWrote {path}")
     print("Run `job-radar scan` when you are ready.")
+    print()
+    print("One more thing worth knowing: once you have applied to something,")
+    print("record it with `job-radar applied <url>`. Roles you have settled")
+    print("stop coming back, and the rest show you where they stand.")
     return 0

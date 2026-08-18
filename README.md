@@ -98,6 +98,36 @@ jobs quietly.
 
 ---
 
+## Remembering what you already did
+
+A scanner that forgets is a scanner that shows you the same job every week.
+This one keeps a record of what happened next, and the roles you have settled
+stop coming back.
+
+```bash
+job-radar applied https://job-boards.greenhouse.io/example/jobs/123456
+job-radar applied "Example Corp" --status rejected --note "coding round"
+job-radar applied <url> --status interviewing --date 2026-08-19
+```
+
+That writes `applications.local.yaml`, which is gitignored, so your history
+stays yours even on a public fork. You can hand-edit it instead; see
+[`applications.example.yaml`](applications.example.yaml).
+
+Statuses run `interested → applied → submitted → interviewing → offer`, plus
+`rejected`, `withdrawn` and `closed`.
+
+**The three settled ones are hidden from results** rather than shown again.
+Everything else gets a status pill on the dashboard, so a role you are three
+rounds into is obvious at a glance instead of sitting anonymously in a list of
+three hundred.
+
+Matching is by URL when you give one. Otherwise it uses the company name and a
+loose title match, so an entry you typed by hand still finds the posting when
+the wording differs. Giving only `org` mutes a whole company.
+
+---
+
 ## Configuration
 
 Everything lives in `config.yaml`. `job-radar setup` writes one by asking

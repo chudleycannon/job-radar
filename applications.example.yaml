@@ -1,0 +1,33 @@
+# What you have already done about a role.
+#
+# Copy this to applications.local.yaml (which is gitignored, so it stays
+# yours) or just run `job-radar applied <url>` and the file writes itself.
+#
+# Why it exists: without it, every scan re-presents a job you applied to three
+# weeks ago, or one you already turned down, as though it were news. The point
+# of the tool is showing you fewer things, and this is most of that.
+#
+# status, earliest to latest:
+#   interested | applied | submitted | interviewing | offer | rejected |
+#   withdrawn | closed
+#
+# rejected, withdrawn and closed are "settled": those roles are hidden from
+# results instead of shown again. Everything else gets a status pill on the
+# dashboard so you can see at a glance where each one stands.
+#
+# Matching is by `url` when you give one, which is exact. Otherwise it falls
+# back to the company name plus a loose title match, so an entry typed by hand
+# still finds its posting when the wording differs slightly.
+
+applications:
+  - org: Example Corp
+    role: Engineering Manager, Platform
+    status: submitted
+    date: 2026-08-11
+    note: referred by a former colleague
+    url: https://job-boards.greenhouse.io/example/jobs/123456
+
+  # org alone is enough if you want to mute a whole company
+  - org: Somewhere I Would Not Go
+    status: withdrawn
+    note: coding round in the interview process

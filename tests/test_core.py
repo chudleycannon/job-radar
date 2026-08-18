@@ -250,6 +250,49 @@ def test_us_role_is_dropped_for_a_uk_only_search():
     assert "outside target countries" in why
 
 
+
+def test_application_tracking_matches_and_settles():
+    """A scanner that forgets shows you the same job every week.
+
+    Matching has to survive how people actually write these down: an entry
+    typed by hand says "Example Corp" when the posting title is worded
+    differently, and a URL may carry tracking parameters.
+    """
+    import tempfile, yaml
+    from jobradar.applications import Tracker, SETTLED
+
+    d = Path(tempfile.mkdtemp()) / "applications.yaml"
+    d.write_text(yaml.safe_dump({"applications": [
+        {"org": "Example Corp", "role": "Engineering Manager, Platform",
+         "status": "submitted", "date": "2026-08-11"},
+        {"org": "Nowhere Ltd", "status": "rejected"},
+        {"url": "https://x/jobs/9", "status": "interviewing"},
+    ]}))
+    tr = Tracker.load(d)
+    assert len(tr.apps) == 3
+
+    j = Job(company="Example Corp", title="Engineering Manager - Platform (Remote)",
+            url="https://x/jobs/1", platform="t")
+    assert tr.find(j) is not None
+
+    # org alone mutes a whole company, whatever the role
+    j2 = Job(company="Nowhere Ltd", title="Anything At All", url="https://x/2", platform="t")
+    a2 = tr.find(j2)
+    assert a2 and a2.status in SETTLED
+
+    # an exact URL wins even when the company has been renamed since
+    j3 = Job(company="Renamed Since", title="Different Title",
+             url="https://x/jobs/9?utm=feed", platform="t")
+    assert tr.find(j3) is not None
+
+    assert tr.find(Job(company="Someone Else", title="EM",
+                       url="https://x/3", platform="t")) is None
+
+    assert tr.annotate([j, j2, j3]) == 3
+    assert j.app_status == "submitted" and j2.app_status == "rejected"
+    assert any("2026-08-11" in f for f in j.flags)
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

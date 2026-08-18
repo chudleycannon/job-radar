@@ -206,6 +206,66 @@ def cmd_coverage(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- applied
+def cmd_applied(args) -> int:
+    """Record what happened with a role, without hand-editing YAML."""
+    import yaml
+    from .applications import STATUSES, Tracker
+
+    if args.status not in STATUSES:
+        _say(f"status must be one of: {', '.join(STATUSES)}")
+        return 1
+
+    path = Path(args.file or "applications.local.yaml")
+    raw = yaml.safe_load(path.read_text()) if path.exists() else {}
+    raw = raw if isinstance(raw, dict) else {"applications": raw or []}
+    raw.setdefault("applications", [])
+
+    target = args.target
+    entry = {"status": args.status}
+    if target.startswith("http"):
+        entry["url"] = target
+        # Fill in the company and title from the last scan if we can, so the
+        # entry is readable later rather than being a bare URL.
+        roles = Path(args.out or "out") / "roles.json"
+        if roles.exists():
+            data = json.loads(roles.read_text())
+            for j in data.get("new", []) + data.get("matching", []):
+                if j.get("url", "").rstrip("/") == target.rstrip("/"):
+                    entry["org"], entry["role"] = j.get("company", ""), j.get("title", "")
+                    break
+    else:
+        entry["org"] = target
+        if args.role:
+            entry["role"] = args.role
+    if args.note:
+        entry["note"] = args.note
+    if args.date:
+        entry["date"] = args.date
+
+    # Update in place when this role is already tracked, rather than stacking
+    # duplicate entries that disagree with each other.
+    key = entry.get("url") or (entry.get("org", "").lower(), entry.get("role", "").lower())
+    replaced = False
+    for i, existing in enumerate(raw["applications"]):
+        if not isinstance(existing, dict):
+            continue
+        ekey = existing.get("url") or (str(existing.get("org", "")).lower(),
+                                       str(existing.get("role", "")).lower())
+        if ekey == key:
+            raw["applications"][i] = {**existing, **entry}
+            replaced = True
+            break
+    if not replaced:
+        raw["applications"].append(entry)
+
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    what = entry.get("org") or entry.get("url")
+    _say(f"{'updated' if replaced else 'recorded'}: {what} -> {args.status}")
+    _say(f"  {path} now tracks {len(raw['applications'])} role(s)")
+    return 0
+
+
 # ---------------------------------------------------------------- setup
 def cmd_setup(args) -> int:
     from .setup_wizard import run as wizard
@@ -247,6 +307,17 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("coverage", help="where the source list is thin")
     c.add_argument("--file", default=None)
     c.set_defaults(func=cmd_coverage)
+
+    ap = sub.add_parser("applied", help="record what happened with a role")
+    ap.add_argument("target", help="the posting URL, or just a company name")
+    ap.add_argument("-s", "--status", default="applied",
+                    help="interested|applied|submitted|interviewing|offer|rejected|withdrawn|closed")
+    ap.add_argument("--role", default=None)
+    ap.add_argument("--note", default=None)
+    ap.add_argument("--date", default=None)
+    ap.add_argument("--file", default=None)
+    ap.add_argument("--out", default=None)
+    ap.set_defaults(func=cmd_applied)
 
     w = sub.add_parser("setup", help="build a config by answering a few questions")
     w.add_argument("--defaults", action="store_true", help="write a default config, ask nothing")
