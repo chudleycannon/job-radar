@@ -39,3 +39,6 @@ state/
 # Generated design previews. These embed real scan results, so they must not
 # be committed to a public repo. The generators next to them are source.
 design/*.html
+
+# Your application history. Personal, and not the tool's business.
+applications.local.yaml

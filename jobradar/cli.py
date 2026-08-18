@@ -67,6 +67,16 @@ def cmd_scan(args) -> int:
              f"but have before): {', '.join(throttled[:6])}")
 
     kept, dropped = screen_run(all_jobs, cfg)
+
+    # What you already did about a role beats what the scanner thinks of it.
+    from .applications import Tracker, SETTLED
+    tracker = Tracker.load()
+    if tracker.apps:
+        tagged = tracker.annotate(kept)
+        settled = [j for j in kept if j.app_status in SETTLED]
+        kept = [j for j in kept if j.app_status not in SETTLED]
+        _say(f"  {tagged} already tracked, {len(settled)} settled and hidden")
+
     new, seen = state.split(kept)
     _say(f"  {len(kept)} match your config, {len(new)} new")
 

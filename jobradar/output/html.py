@@ -138,6 +138,12 @@ h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 .dot{display:inline-block;width:6px;height:6px;border-radius:var(--r-pill);
   background:var(--accent);margin-right:6px;vertical-align:middle}
 .note{grid-column:1/-1;font-size:.8125rem;color:var(--flag);margin-top:2px}
+.status{display:inline-block;font-size:.6875rem;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 8px;border-radius:var(--r-pill);margin-left:var(--s2);
+  vertical-align:2px;border:1px solid currentColor}
+.status.applied,.status.submitted{color:var(--accent)}
+.status.interviewing{color:var(--pay)}
+.status.interested{color:var(--muted)}
 .empty{padding:var(--s7) var(--s5);text-align:center;color:var(--muted);font-size:.9375rem}
 footer{margin-top:var(--s5);color:var(--muted);font-size:.8125rem;line-height:1.5;
   padding:0 var(--s2)}
@@ -221,8 +227,11 @@ def _row(j: Job, is_new: bool) -> str:
         f'data-country="{_h.escape(j.country or "unknown", quote=True)}" '
         f'data-city="{_h.escape(j.city or "", quote=True)}">'
         f'<div><div class="role">{"<span class=dot></span>" if is_new else ""}'
-        f'<a href="{_h.escape(j.url)}" target="_blank" rel="noopener">{_h.escape(j.title)}</a></div>'
-        f'<div class="meta">{_h.escape(meta)}</div></div>'
+        f'<a href="{_h.escape(j.url)}" target="_blank" rel="noopener">{_h.escape(j.title)}</a>'
+        + (f'<span class="status {_h.escape(j.app_status, quote=True)}">'
+           f'{_h.escape(j.app_status)}</span>' if j.app_status else '')
+        + '</div>'
+        + f'<div class="meta">{_h.escape(meta)}</div></div>'
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
         f'{_h.escape(j.salary.label())}</span></div>'
         + ('<div class="note">Not screened against your dealbreakers &mdash; '

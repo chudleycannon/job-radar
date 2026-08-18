@@ -95,6 +95,7 @@ class Job:
     country: str | None = None
     city: str = ""
     work_mode: str = "unstated"   # remote | hybrid | office | unstated
+    app_status: str = ""          # set from applications.local.yaml, if tracked
     source_id: str = ""
 
     # populated downstream
