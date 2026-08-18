@@ -45,6 +45,9 @@ SIGNATURES: list[tuple[str, str]] = [
     ("smartrecruiters", r"(?:jobs|careers)\.smartrecruiters\.com/([a-zA-Z0-9_.-]+)"),
     ("recruitee", r"([a-z0-9-]+)\.recruitee\.com"),
     ("personio", r"([a-z0-9-]+)\.jobs\.personio\.(?:de|com)"),
+    # Oracle needs the whole host, not a short token, and the host bears no
+    # relation to the company name.
+    ("oracle", r"([a-z0-9-]+\.fa\.[a-z0-9]+\.oraclecloud\.com)"),
 ]
 
 # Workday needs two captures (tenant, site) and its own URL shape.

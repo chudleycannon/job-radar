@@ -1512,6 +1512,22 @@
    "country": "UK"
   },
   {
+   "company": "Marks and Spencer",
+   "url": "https://fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
+   "platform": "oracle",
+   "sector": "retail",
+   "country": "UK",
+   "domain": "marksandspencer.com"
+  },
+  {
+   "company": "Phoenix Group",
+   "url": "https://fa-enor-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
+   "platform": "oracle",
+   "sector": "finance",
+   "country": "UK",
+   "domain": "thephoenixgroup.com"
+  },
+  {
    "company": "Canva",
    "url": "https://api.smartrecruiters.com/v1/companies/Canva/postings?limit=100",
    "platform": "smartrecruiters",

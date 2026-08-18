@@ -124,8 +124,22 @@ REGISTRY: list[Platform] = [
     ),
     Platform(
         "oracle",
-        r"/hcmRestApi/resources/.*recruitingCEJobRequisitions",
+        r"oraclecloud\.com/hcmRestApi/.*recruitingCEJobRequisitions",
         platforms.parse_oracle,
+        # The token here is "<host>|<siteNumber>", because neither is
+        # derivable from the company name: Marks and Spencer are on
+        # fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com.
+        build=lambda tok: (
+            lambda host, site: (
+                f"https://{host}/hcmRestApi/resources/latest/"
+                f"recruitingCEJobRequisitions?onlyData=true"
+                f"&expand=requisitionList.secondaryLocations"
+                f"&finder=findReqs;siteNumber={site},limit=200,"
+                f"sortBy=POSTING_DATES_DESC"
+            )
+        )(*(tok.split("|") + ["CX_1"])[:2]),
+        verified=True,
+        note="postings nest at items[0].requisitionList; list view carries no salary",
     ),
     Platform(
         "rss",

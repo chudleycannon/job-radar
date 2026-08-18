@@ -347,25 +347,52 @@ def parse_personio(payload: Any, src: Source) -> Iterator[Job]:
 # --------------------------------------------------------------------------
 # Oracle Recruiting Cloud
 # --------------------------------------------------------------------------
+_ORC_SITE = re.compile(r"siteNumber=(CX_\d+)", re.I)
+
+
 def parse_oracle(payload: Any, src: Source) -> Iterator[Job]:
+    """Oracle Recruiting Cloud, the system behind a lot of large employers.
+
+    The response nests one level deeper than most: `items[0].requisitionList`
+    holds the postings, and `items[0].TotalJobsCount` is the real total rather
+    than the page length.
+
+    Two things to know. The host is not derivable from the company name
+    (Marks and Spencer sit on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`),
+    so these come from reading the careers page. And the list view carries no
+    salary at all, only a short description, so roles from here are almost
+    always "unconfirmed salary" and that is the platform, not a parse failure.
+    """
     items = (payload or {}).get("items") or []
     reqs = []
     for it in items:
         reqs.extend(it.get("requisitionList") or [])
-    base = re.sub(r"/hcmRestApi/.*$", "", src.url)
+
+    host = urlparse(src.url).netloc
+    m = _ORC_SITE.search(src.url)
+    site = m.group(1) if m else "CX_1"
+
     for j in reqs:
-        rid = j.get("Id") or ""
+        rid = j.get("Id")
+        if not rid:
+            continue
+        loc = _text(j.get("PrimaryLocation"))
+        secondary = ", ".join(
+            _text(s.get("Name") or s.get("PrimaryLocation"))
+            for s in (j.get("secondaryLocations") or []) if isinstance(s, dict)
+        )
+        desc = _text(j.get("ShortDescriptionStr") or j.get("ExternalResponsibilitiesStr"))
         yield Job(
             company=src.company,
             title=_text(j.get("Title")),
-            url=f"{base}/en/sites/CX/job/{rid}" if rid else base,
+            url=f"https://{host}/hcmUI/CandidateExperience/en/sites/{site}/job/{rid}",
             platform="oracle",
-            location=_text(j.get("PrimaryLocation") or j.get("Location")),
-            remote=_remote(j.get("PrimaryLocation"), j.get("Title")),
-            department=_text(j.get("JobFunction")) or None,
+            location=", ".join(x for x in (loc, secondary) if x),
+            remote=_remote(loc, j.get("WorkplaceTypeCode"), j.get("Title")),
+            department=_text(j.get("JobFamily") or j.get("JobFunction")) or None,
             posted_at=_iso(j.get("PostedDate")),
-            description=_text(j.get("ShortDescriptionStr")),
-            salary=Salary(),
+            description=desc,
+            salary=parse_text(desc[:1500]),
             source_id=src.key,
         )
 

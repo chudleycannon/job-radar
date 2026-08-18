@@ -36,7 +36,7 @@ The trade is coverage. This only sees employers on the list, which is why
 
 ## What it does
 
-**Reads 302 sources** across Greenhouse, Ashby, Lever, Workday,
+**Reads 304 sources** across Greenhouse, Ashby, Lever, Workday,
 Workable, SmartRecruiters and LinkedIn's public endpoint. Mostly technology
 companies, plus a first pass at UK finance, industry, professional services,
 education, media and the public sector: Barclays, Lloyds, Santander, BP,
@@ -167,6 +167,7 @@ the adapters are shaped the way they are.
 | **Workday** | **POST**, not GET. Returns **406, not 404**, for a tenant that does not exist, because of wildcard DNS on `*.myworkdayjobs.com`. A non-404 proves nothing. Tenant and site names cannot be guessed: 117 attempts produced zero working tenants. |
 | **Lever** | Returns a bare top-level list rather than an object with a `jobs` key. |
 | **LinkedIn** | The public `jobs-guest` endpoint returns server-rendered HTML cards to a plain GET, no login and no JavaScript. No description or salary, so those roles are leads rather than screenable postings. |
+| **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. |
 | **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
 
 **Tokens rarely match company names.** `mymoose` is Rapid7. `evergreenix` is
