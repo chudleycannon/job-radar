@@ -98,6 +98,45 @@ jobs quietly.
 
 ---
 
+## A dashboard you can work from
+
+```bash
+job-radar serve
+```
+
+Opens the same dashboard at `127.0.0.1:8765`, but every row has buttons and
+what you click sticks. It is a local server, standard library only, and it
+stops when you Ctrl-C. Not a daemon, not something to expose.
+
+**Screen** reads the job description against your dealbreakers and gives a
+verdict in seconds for pennies. Do this before anything expensive: a role with
+a coding round is cheaper to find now than after you have drafted a CV for it.
+
+**CV** drafts one tailored to the posting. **Cover letter** is disabled until
+the CV exists, because the letter is checked against it: no sequence of six or
+more words may appear in both. The CV carries the facts, the letter carries
+judgement, and they should share nothing but your name.
+
+**Apply** opens the posting and marks it. **Skip** strikes it through and it
+stops coming back.
+
+Generation runs headless `claude -p` in the background using the `rate-cv`,
+`natural-writing` and `screen-role` skills, then runs objective gates: slop
+score, em-dash count, phrase overlap, rating. It redrafts on failure. It never
+claims a document is finished, only drafted.
+
+**Nothing generates unless you click it.** No schedule, no watcher, no
+speculative drafting. Every token spent is one you asked for.
+
+Documents land in `~/job-applications/<date>-<company>-<role>/`, outside the
+repository, alongside a snapshot of the job description. That snapshot matters:
+postings are pulled the moment they are filled, which is usually just before
+someone calls you about one.
+
+Requires the `claude` CLI on your PATH. Everything else works without it.
+
+---
+
 ## Remembering what you already did
 
 A scanner that forgets is a scanner that shows you the same job every week.

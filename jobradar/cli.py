@@ -68,16 +68,33 @@ def cmd_scan(args) -> int:
 
     kept, dropped = screen_run(all_jobs, cfg)
 
-    # What you already did about a role beats what the scanner thinks of it.
-    from .applications import Tracker, SETTLED
-    tracker = Tracker.load()
-    if tracker.apps:
-        tagged = tracker.annotate(kept)
-        settled = [j for j in kept if j.app_status in SETTLED]
-        kept = [j for j in kept if j.app_status not in SETTLED]
-        _say(f"  {tagged} already tracked, {len(settled)} settled and hidden")
+    # The database is the source of truth for what you already did about a
+    # role. It beats whatever the scanner thinks of it today.
+    from . import store
+    con = store.connect(args.db)
+    mig = store.migrate(con)
+    if mig["roles"] or mig["statuses"]:
+        _say(f"  migrated {mig['roles']} roles and {mig['statuses']} statuses "
+             f"into the database")
 
-    new, seen = state.split(kept)
+    store.upsert_roles(con, kept)
+    new_ids = store.new_since_last_run(con, [j.uid for j in kept])
+
+    settled = store.settled_uids(con)
+    hidden = [j for j in kept if j.uid in settled]
+    kept = [j for j in kept if j.uid not in settled]
+
+    # Carry each role's status onto the job so the dashboard can show it.
+    for j in kept:
+        row = con.execute("SELECT status FROM role_state WHERE uid=?",
+                          (j.uid,)).fetchone()
+        j.app_status = row["status"] if row and row["status"] != "new" else ""
+    if hidden:
+        _say(f"  {len(hidden)} settled and hidden")
+
+    store.bump_runs(con)
+    new = [j for j in kept if j.uid in new_ids]
+    seen = [j for j in kept if j.uid not in new_ids]
     _say(f"  {len(kept)} match your config, {len(new)} new")
 
     meta = {
@@ -98,8 +115,12 @@ def cmd_scan(args) -> int:
         written.append(output.write_markdown(outdir / "roles.md", new, seen, meta))
 
     if not args.dry_run:
+        # A one-directional export so a fresh GitHub Actions runner has a
+        # seen-set to commit. Nothing reads it back except a clone with no
+        # database yet.
         state.record(kept, counts)
         state.save()
+        con.close()
 
     for p in written:
         _say(f"  wrote {p}")
@@ -266,6 +287,13 @@ def cmd_applied(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- serve
+def cmd_serve(args) -> int:
+    from .serve import serve
+    return serve(db_path=args.db, host=args.host, port=args.port,
+                 open_browser=not args.no_browser, docs_base=args.docs)
+
+
 # ---------------------------------------------------------------- setup
 def cmd_setup(args) -> int:
     from .setup_wizard import run as wizard
@@ -285,6 +313,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("scan", help="fetch every source and report matches")
     s.add_argument("-o", "--out", default=None)
     s.add_argument("--state", default=None)
+    s.add_argument("--db", default=None, help="database path (default data/job-radar.db)")
     s.add_argument("--limit", type=int, default=0)
     s.add_argument("--dry-run", action="store_true",
                    help="do not record what was seen (re-reports the same roles next time)")
@@ -318,6 +347,14 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--file", default=None)
     ap.add_argument("--out", default=None)
     ap.set_defaults(func=cmd_applied)
+
+    sv = sub.add_parser("serve", help="open the dashboard you can act from")
+    sv.add_argument("--db", default=None)
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--docs", default=None, help="where generated documents go")
+    sv.add_argument("--no-browser", action="store_true")
+    sv.set_defaults(func=cmd_serve)
 
     w = sub.add_parser("setup", help="build a config by answering a few questions")
     w.add_argument("--defaults", action="store_true", help="write a default config, ask nothing")

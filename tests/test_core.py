@@ -293,6 +293,104 @@ def test_application_tracking_matches_and_settles():
     assert any("2026-08-11" in f for f in j.flags)
 
 
+
+# ----------------------------------------------------------------- database
+def _tmpdb():
+    import tempfile
+    from jobradar import store
+    return store.connect(Path(tempfile.mkdtemp()) / "t.db")
+
+
+def test_first_seen_survives_rescans():
+    """"New since last run" is only meaningful if first_seen is never
+    overwritten. A role found in March and still open in August is not new."""
+    from jobradar import store
+    con = _tmpdb()
+    j = _job(title="Engineering Manager")
+    j.url = "https://x/jobs/1"
+    store.upsert_roles(con, [j])
+    con.execute("UPDATE roles SET first_seen='2026-03-01'")
+    store.upsert_roles(con, [j])          # seen again
+    row = con.execute("SELECT first_seen, last_seen FROM roles").fetchone()
+    assert row["first_seen"] == "2026-03-01"
+    assert row["last_seen"] != "2026-03-01"
+
+
+def test_nothing_is_new_on_the_very_first_run():
+    """Reporting 300 roles as new on day one is not an alert, it is the
+    whole database."""
+    from jobradar import store
+    con = _tmpdb()
+    j = _job(); j.url = "https://x/jobs/2"
+    store.upsert_roles(con, [j])
+    assert store.new_since_last_run(con, [j.uid]) == set()
+    store.bump_runs(con)
+    j2 = _job(title="Engineering Manager Two"); j2.url = "https://x/jobs/3"
+    store.upsert_roles(con, [j2])
+    assert j2.uid in store.new_since_last_run(con, [j.uid, j2.uid])
+
+
+def test_settled_roles_are_hidden_and_reversible():
+    from jobradar import store
+    con = _tmpdb()
+    j = _job(); j.url = "https://x/jobs/4"
+    store.upsert_roles(con, [j])
+    store.set_status(con, j.uid, "skipped")
+    assert j.uid in store.settled_uids(con)
+    store.set_status(con, j.uid, "interested")
+    assert j.uid not in store.settled_uids(con)
+
+
+def test_bad_status_is_refused():
+    from jobradar import store
+    con = _tmpdb()
+    j = _job(); j.url = "https://x/jobs/5"
+    store.upsert_roles(con, [j])
+    try:
+        store.set_status(con, j.uid, "definitely-not-a-status")
+    except ValueError:
+        return
+    raise AssertionError("an unknown status should not be storable")
+
+
+def test_generation_is_not_queued_twice():
+    """Clicking the button twice should not spawn two Claude processes."""
+    from jobradar import store
+    con = _tmpdb()
+    j = _job(); j.url = "https://x/jobs/6"
+    store.upsert_roles(con, [j])
+    a = store.enqueue(con, j.uid, "cv")
+    b = store.enqueue(con, j.uid, "cv")
+    assert a == b
+
+
+def test_cover_letter_needs_a_cv_to_check_itself_against():
+    from jobradar import store
+    con = _tmpdb()
+    j = _job(); j.url = "https://x/jobs/7"
+    store.upsert_roles(con, [j])
+    assert store.has_artifact(con, j.uid, "cv") is False
+    store.add_artifact(con, j.uid, "cv", "/tmp/CV.md", rating=78.0)
+    assert store.has_artifact(con, j.uid, "cv") is True
+
+
+def test_migration_is_idempotent():
+    """It runs on every scan, so a second call must change nothing."""
+    import json, tempfile
+    from jobradar import store
+    d = Path(tempfile.mkdtemp())
+    seen = d / "seen.json"
+    seen.write_text(json.dumps({"runs": 3, "seen": {
+        "abc123": {"first_seen": "2026-07-01", "last_seen": "2026-08-01",
+                   "company": "Acme", "title": "Engineering Manager"}}}))
+    con = store.connect(d / "t.db")
+    first = store.migrate(con, state_path=seen, apps_path=d / "none.yaml")
+    second = store.migrate(con, state_path=seen, apps_path=d / "none.yaml")
+    assert first["roles"] == 1 and second["roles"] == 0
+    assert con.execute("SELECT COUNT(*) c FROM roles").fetchone()["c"] == 1
+    assert con.execute("SELECT first_seen FROM roles").fetchone()["first_seen"] == "2026-07-01"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

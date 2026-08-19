@@ -42,3 +42,7 @@ design/*.html
 
 # Your application history. Personal, and not the tool's business.
 applications.local.yaml
+
+# The database. Holds your application history and document paths.
+data/
+*.db
