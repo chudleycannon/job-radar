@@ -589,6 +589,38 @@ def test_empty_cv_path_does_not_look_like_a_valid_file():
     assert src is None                              # the shape the fix relies on
 
 
+
+def test_generate_passes_the_config_it_was_given():
+    """Without this, a run with -c pointed elsewhere resolved a config from the
+    working directory instead, and a nurse's role came back screened against
+    the author's job titles."""
+    import inspect
+    from jobradar import cli, runner
+    src = inspect.getsource(cli.cmd_generate)
+    assert "config_path=args.config" in src, "generate must forward --config"
+    assert "config_path" in inspect.signature(runner.run_job).parameters
+
+
+def test_local_server_refuses_cross_origin_posts():
+    """The generate endpoint spends money, and a text/plain POST is a simple
+    request with no preflight to stop it."""
+    from jobradar.serve import Handler
+
+    class FakeHeaders(dict):
+        def get(self, k, default=None):
+            return dict.get(self, k, default)
+
+    h = Handler.__new__(Handler)
+    h.headers = FakeHeaders({"Origin": "https://evil.example",
+                             "Host": "127.0.0.1:8765"})
+    assert h._same_origin() is False
+    h.headers = FakeHeaders({"Origin": "http://127.0.0.1:8765",
+                             "Host": "127.0.0.1:8765"})
+    assert h._same_origin() is True
+    h.headers = FakeHeaders({"Host": "127.0.0.1:8765"})   # curl, no Origin
+    assert h._same_origin() is True
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

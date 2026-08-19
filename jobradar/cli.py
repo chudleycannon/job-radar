@@ -343,7 +343,12 @@ def cmd_generate(args) -> int:
     finally:
         con.close()
 
-    runner.run_job(job_id, db_path=args.db, base=args.docs)
+    # Without config_path this resolves a config from the working directory,
+    # so a run with -c pointed elsewhere gets screened against whatever
+    # config.yaml happens to be next to it. That is how a nurse's role came
+    # back screened against the author's job titles.
+    runner.run_job(job_id, db_path=args.db, base=args.docs,
+                   config_path=args.config)
 
     con = store.connect(args.db)
     try:
