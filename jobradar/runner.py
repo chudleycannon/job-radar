@@ -292,15 +292,49 @@ def _record(con, job, d: Path, log: str) -> None:
             store.set_status(con, uid, "interested")
 
     elif kind == "cover_letter":
-        overlap = ""
-        op = d / "overlap.txt"
-        if op.exists():
-            overlap = op.read_text().strip()[:120]
         path = next((d / n for n in ("cover-letter.md", "cover-letter.docx")
                      if (d / n).exists()), "")
         gates = _gates(d, "cover-letter.md")
-        gates["no_overlap_with_cv"] = overlap.upper().startswith("NONE") or not overlap
-        store.add_artifact(con, uid, "cover_letter", path, summary=overlap, gates=gates)
+
+        # Measured here, not read back from what the model said about itself.
+        cv_f, letter_f = d / "CV.md", d / "cover-letter.md"
+        summary = ""
+        if cv_f.exists() and letter_f.exists():
+            shared = shared_ngram(cv_f.read_text(errors="ignore"),
+                                  letter_f.read_text(errors="ignore"))
+            gates["no_overlap_with_cv"] = not shared
+            summary = f"shares \"{shared}\" with the CV" if shared else ""
+        store.add_artifact(con, uid, "cover_letter", path, summary=summary, gates=gates)
+
+
+def shared_ngram(a: str, b: str, n: int = 6) -> str:
+    """The longest shared sequence of n or more words, or "" if there is none.
+
+    Computed here rather than asked for. A gate that the model reports on
+    itself is not a gate: the first version asked Claude to write the answer
+    into a file and then guessed at the prose it produced, which read a clean
+    result as a failure.
+    """
+    def toks(s: str) -> list[str]:
+        return re.findall(r"[a-z0-9']+", s.lower())
+
+    ta, tb = toks(a), toks(b)
+    if len(ta) < n or len(tb) < n:
+        return ""
+    grams_b = {tuple(tb[i:i + n]) for i in range(len(tb) - n + 1)}
+    best = ""
+    for i in range(len(ta) - n + 1):
+        if tuple(ta[i:i + n]) in grams_b:
+            # extend the match as far as it goes, to report something useful
+            k = n
+            while (i + k < len(ta)
+                   and tuple(ta[i:i + k + 1]) in
+                   {tuple(tb[j:j + k + 1]) for j in range(len(tb) - k)}):
+                k += 1
+            phrase = " ".join(ta[i:i + k])
+            if len(phrase) > len(best):
+                best = phrase
+    return best
 
 
 def _gates(d: Path, name: str) -> dict:
@@ -336,6 +370,34 @@ def _gates(d: Path, name: str) -> dict:
         except Exception:
             gates["natural_writing"] = None
     return gates
+
+
+def regate(con) -> int:
+    """Recompute the gates on documents already produced.
+
+    Needed because a gate can be wrong: the first overlap check asked the model
+    what it thought and misread the answer, marking a clean letter as
+    overlapping. Fixing the check should fix the rows, not only future runs.
+    """
+    n = 0
+    for a in con.execute("SELECT * FROM artifacts WHERE kind IN ('cv','cover_letter')"):
+        path = Path(a["path"] or "")
+        if not path.exists():
+            continue
+        d = path.parent
+        gates = _gates(d, path.name)
+        summary = a["summary"] or ""
+        if a["kind"] == "cover_letter":
+            cv_f = d / "CV.md"
+            if cv_f.exists():
+                shared = shared_ngram(cv_f.read_text(errors="ignore"),
+                                      path.read_text(errors="ignore"))
+                gates["no_overlap_with_cv"] = not shared
+                summary = f'shares "{shared}" with the CV' if shared else ""
+        con.execute("UPDATE artifacts SET gates=?, summary=? WHERE id=?",
+                    (json.dumps(gates), summary, a["id"]))
+        n += 1
+    return n
 
 
 def spawn(job_id: int, db_path=None, base=None) -> None:

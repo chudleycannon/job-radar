@@ -126,6 +126,16 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
           docs_base=None) -> int:
+    # Gates are recomputed on start, so a fixed check corrects the rows it got
+    # wrong rather than only applying to future runs.
+    con = store.connect(db_path)
+    try:
+        n = runner.regate(con)
+        if n:
+            print(f"  rechecked {n} document(s)")
+    finally:
+        con.close()
+
     Handler.db_path = db_path
     Handler.docs_base = docs_base
     httpd = ThreadingHTTPServer((host, port), Handler)

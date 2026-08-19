@@ -442,6 +442,32 @@ def test_a_config_pointing_at_a_missing_cv_is_refused():
     raise AssertionError("a missing CV should stop the config loading")
 
 
+
+def test_overlap_is_measured_not_self_reported():
+    """A gate the model reports on itself is not a gate.
+
+    The first version asked Claude to write its own overlap finding to a file
+    and then guessed at the prose, which read "Longest phrase shared: 5 words"
+    as a failure and marked a clean letter as overlapping.
+    """
+    from jobradar.runner import shared_ngram
+    a = "I led the team through a two year shift to AI assisted engineering"
+    b = "Separately, I led the team through a two year shift to something else"
+    assert shared_ngram(a, b)                      # 9 shared words: caught
+    assert "led the team through" in shared_ngram(a, b)
+
+    # five shared words is under the bar and must not trip it
+    assert shared_ngram("a model tier and cost strategy for the workstream",
+                        "a model tier and cost policy across the board") == ""
+
+    # nothing in common at all
+    assert shared_ngram("detection engineering at scale",
+                        "completely unrelated wording here") == ""
+
+    # short documents cannot produce a false positive
+    assert shared_ngram("too short", "too short") == ""
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

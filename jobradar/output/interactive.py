@@ -134,8 +134,12 @@ async function poll(){
       row.querySelectorAll('[data-gen]').forEach(b=>{
         const on=busy.has(uid+':'+b.dataset.gen);
         if(on) anyBusy=true;
-        b.classList.toggle('busy',on);
-        if(!on && b.classList.contains('busy')) b.disabled=false;});
+        // toggle() has already removed the class by the time we test it, so
+      // asking whether it is still busy always said no and the button stayed
+      // disabled for ever once a job finished.
+      const was=b.classList.contains('busy');
+      b.classList.toggle('busy',on);
+      if(was && !on) b.disabled=false;});
     }
     const failed=d.jobs.filter(j=>j.state==='failed');
     for(const j of failed){
