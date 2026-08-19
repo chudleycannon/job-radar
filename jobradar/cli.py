@@ -297,7 +297,8 @@ def cmd_serve(args) -> int:
 # ---------------------------------------------------------------- setup
 def cmd_setup(args) -> int:
     from .setup_wizard import run as wizard
-    return wizard(Path(args.config or "config.yaml"), non_interactive=args.defaults)
+    return wizard(Path(args.config or "config.yaml"),
+                  non_interactive=args.defaults, cv=args.cv)
 
 
 # ---------------------------------------------------------------- main
@@ -358,6 +359,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     w = sub.add_parser("setup", help="build a config by answering a few questions")
     w.add_argument("--defaults", action="store_true", help="write a default config, ask nothing")
+    w.add_argument("--cv", default=None, help="path to your CV (required with --defaults)")
     w.set_defaults(func=cmd_setup)
 
     return p

@@ -391,6 +391,57 @@ def test_migration_is_idempotent():
     assert con.execute("SELECT first_seen FROM roles").fetchone()["first_seen"] == "2026-07-01"
 
 
+
+# ------------------------------------------------------------------- gates
+def test_detect_verdict_is_read_not_substring_matched():
+    """detect.py prints "Fix the FAIL/WARN lines above" as standing advice even
+    on a clean run, so testing for the substring FAIL marked every passing
+    document as failed."""
+    import re
+    clean = ("SLOP SCORE: 0/100   (bar: <= 20, and no FAILs)   ->  PASS\n"
+             "Fix the FAIL/WARN lines above, then re-run.")
+    dirty = ("FAIL  polished-cadence\n"
+             "SLOP SCORE: 44/100  ->  FAIL\n"
+             "Fix the FAIL/WARN lines above, then re-run.")
+    def verdict(blob):
+        m = re.search(r"->\s*(PASS|FAIL)", blob)
+        return m.group(1) == "PASS" if m else None
+    assert verdict(clean) is True
+    assert verdict(dirty) is False
+    assert int(re.search(r"SLOP SCORE:\s*(\d+)", clean).group(1)) == 0
+
+
+def test_docx_text_extraction():
+    """The generation subprocess is sandboxed and cannot shell out to a
+    converter, so a .docx has to be turned into text before it is handed over
+    or the CV job has nothing to work from."""
+    from jobradar.runner import docx_to_text
+    cv = Path.home() / "Downloads" / "Callum_McDonald_CV.docx"
+    if not cv.exists():
+        return                       # not this machine; nothing to assert
+    text = docx_to_text(cv)
+    assert len(text) > 500
+    assert "\n" in text
+
+
+def test_a_config_pointing_at_a_missing_cv_is_refused():
+    """A CV path that has silently stopped existing produces an invented CV
+    rather than an error, so it is checked when the config loads."""
+    import tempfile, yaml
+    from jobradar.config import load as load_cfg
+    d = Path(tempfile.mkdtemp())
+    (d / "c.yaml").write_text(yaml.safe_dump({
+        "titles": {"include": ["engineering manager"]},
+        "cv": {"path": str(d / "definitely-not-here.docx")},
+    }))
+    try:
+        load_cfg(d / "c.yaml")
+    except FileNotFoundError as e:
+        assert "no file there" in str(e).lower()
+        return
+    raise AssertionError("a missing CV should stop the config loading")
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

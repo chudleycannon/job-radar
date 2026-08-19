@@ -109,6 +109,7 @@ def write_config(path: Path, answers: dict) -> Path:
         f"\n      platform: {s.get('platform','')}" for s in extra
     ) or "    []"
 
+    cvq = _q(answers.get("cv_path") or "")
     body = f"""# job-radar config
 # Everything the tool does is decided here. Edit freely; re-running
 # `job-radar setup` updates this file rather than replacing it.
@@ -126,6 +127,12 @@ locations:
   relocate_to:{ylist(answers.get('relocate_to'))}
   # Never show roles in these places.
   exclude:{ylist(answers.get('exclude_locations'))}
+
+cv:
+  # Your current CV. Required: everything that writes a document works from
+  # it, and without it the tool would be inventing your career rather than
+  # tailoring it.
+  path: {cvq}
 
 salary:
   # A role whose STATED pay is below this is hidden.
@@ -180,18 +187,51 @@ DEFAULTS = {
     "use_bundled": True,
     "extra_sources": [],
     "concurrency": 4,
+    "cv_path": "",
 }
 
 
-def run(path: Path, non_interactive: bool = False) -> int:
+def ask_cv(existing: str = "") -> str:
+    """Ask until we get a path to a file that actually exists.
+
+    Required rather than optional: every document this tool writes is built
+    from the real CV, and a missing one does not degrade the output, it
+    invents it.
+    """
+    print("\n0. Your current CV  (required)")
+    print("   Everything that drafts a CV or a cover letter works from this.")
+    print("   .docx, .pdf, .md or .txt all fine. Drag the file in if easier.")
+    while True:
+        raw = _ask("   Path to your CV", existing)
+        if not raw:
+            print("   Needed, sorry: without it the tool would be writing a CV")
+            print("   for someone whose record it has never seen.")
+            continue
+        p = Path(raw.strip().strip('"').strip("'")).expanduser()
+        if p.exists() and p.is_file():
+            return str(p.resolve())
+        print(f"   Nothing at {p}. Check the path and try again.")
+
+
+def run(path: Path, non_interactive: bool = False, cv: str | None = None) -> int:
     if non_interactive:
-        write_config(path, DEFAULTS)
+        if not cv:
+            print("A CV is required. Re-run with --cv /path/to/your-cv.docx")
+            return 1
+        p = Path(cv).expanduser()
+        if not p.exists():
+            print(f"No file at {p}")
+            return 1
+        a = dict(DEFAULTS)
+        a["cv_path"] = str(p.resolve())
+        write_config(path, a)
         print(f"Wrote a default config to {path}. Edit it, then run `job-radar scan`.")
         return 0
 
     print("\njob-radar setup\n" + "-" * 40)
     print("Seven questions. Everything is editable afterwards.\n")
     a = dict(DEFAULTS)
+    a["cv_path"] = ask_cv()
 
     # 1. titles
     print("1. What roles are you looking for?")

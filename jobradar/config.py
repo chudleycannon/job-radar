@@ -59,6 +59,7 @@ class Config:
     use_bundled_sources: bool = True
     extra_sources: list[dict] = field(default_factory=list)
 
+    cv_path: str = ""
     formats: list[str] = field(default_factory=lambda: ["html", "json"])
     out_dir: Path = Path("out")
 
@@ -136,6 +137,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         source_countries=_as_list(src.get("countries")),
         use_bundled_sources=bool(src.get("use_bundled", True)),
         extra_sources=_as_list(src.get("extra")),
+        cv_path=str((raw.get("cv") or {}).get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
         out_dir=Path(out.get("dir") or "out"),
         concurrency=int(fet.get("concurrency", 4)),
@@ -143,6 +145,18 @@ def load(path: str | os.PathLike | None = None) -> Config:
         retries=int(fet.get("retries", 2)),
         path=p,
     )
+
+    # Everything that writes a document needs the real CV to work from, and a
+    # path that has silently stopped existing produces a fabricated CV rather
+    # than an error. So it is checked here, on load, not at generation time.
+    if cfg.cv_path:
+        cv = Path(cfg.cv_path).expanduser()
+        if not cv.exists():
+            raise FileNotFoundError(
+                f"Your CV is configured as {cv} but there is no file there.\n"
+                f"Fix `cv.path` in {p}, or run `job-radar setup` again."
+            )
+        cfg.cv_path = str(cv.resolve())
 
     # A concurrency of 40 against other people's job boards is how a useful
     # tool becomes an abusive one. Cap it and say so.

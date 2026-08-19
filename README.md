@@ -14,9 +14,16 @@ that fails rules you write down once.
 
 ```bash
 pip install -e .
-job-radar setup     # answer seven questions
+job-radar setup     # asks for your CV, then seven questions
 job-radar scan      # writes out/index.html
+job-radar serve     # the same dashboard, with buttons
 ```
+
+Setup asks for your current CV first and will not finish without one. It is
+not optional: every document this writes is built from your real record, and
+a missing CV does not degrade the output, it invents it. The path is checked
+again each time the config loads, so a CV you moved fails loudly instead of
+quietly producing fiction.
 
 Or fork this repo, edit `config.yaml`, and let GitHub Actions run it for you.
 No server, no Docker, free on public repos.

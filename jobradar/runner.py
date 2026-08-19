@@ -44,6 +44,37 @@ def role_dir(row, base: Path | None = None) -> Path:
     return base / f"{date.today().isoformat()}-{slug(row['company'], row['title'])}"
 
 
+def docx_to_text(src: Path) -> str:
+    """Pull the text out of a .docx without any dependency.
+
+    A .docx is a zip of XML. The generation subprocess is sandboxed and cannot
+    shell out to a converter, so handing it a binary means handing it nothing.
+    """
+    import zipfile
+    from xml.etree import ElementTree as ET
+    try:
+        with zipfile.ZipFile(src) as z:
+            xml = z.read("word/document.xml")
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return ""
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    root = ET.fromstring(xml)
+    lines = []
+    for para in root.iter(f"{ns}p"):
+        text = "".join(n.text or "" for n in para.iter(f"{ns}t"))
+        lines.append(text.strip())
+    out, blank = [], False
+    for l in lines:                       # collapse runs of empty paragraphs
+        if not l:
+            if blank:
+                continue
+            blank = True
+        else:
+            blank = False
+        out.append(l)
+    return "\n".join(out).strip()
+
+
 def _write_jd(d: Path, row) -> Path:
     """Save the description at generation time.
 
@@ -86,8 +117,9 @@ APPLY_WITH_CAVEATS or SKIP.""",
 "cv": """Use the rate-cv and natural-writing skills.
 
 Draft a CV tailored to the role in `job-description.md` in this directory.
-Base it strictly on my real record in `source-cv` in this directory (read it
-first) -- never invent or inflate anything. A requirement I cannot truthfully claim is reported as a gap, not
+Base it strictly on my real record in `source-cv.txt` in this directory. Read
+that file first; it is the plain-text extraction of my current CV. Never
+invent or inflate anything. A requirement I cannot truthfully claim is reported as a gap, not
 written around.
 
 Write it to `CV.md` here.
@@ -164,23 +196,44 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None) -> None:
                          if Path(n).exists()), None)
         cfg = cfg_file.read_text()[:6000] if cfg_file else "(no config found)"
 
-        # Same reason: copy the base CV in rather than referencing it.
-        src = Path(cv_source or os.environ.get("JOB_RADAR_CV")
-                   or Path.home() / "Downloads" / "Callum_McDonald_CV.docx")
+        # Same reason: copy the base CV in rather than referencing it. The
+        # path comes from the config, which validates it exists on load, so a
+        # CV that has been moved fails loudly instead of being invented.
+        cv_cfg = ""
+        try:
+            from .config import load as _load
+            cv_cfg = _load().cv_path
+        except Exception:
+            pass
+        src = Path(cv_source or cv_cfg or os.environ.get("JOB_RADAR_CV") or "")
         if job["kind"] == "cv":
-            if not src.exists():
+            if not str(src) or not src.exists():
                 store.mark_job(con, job_id, "failed",
-                               error=f"base CV not found at {src}. "
-                                     f"Set JOB_RADAR_CV to its path.")
+                               error="No CV configured. Set `cv.path` in your "
+                                     "config, or run `job-radar setup`.")
                 return
             shutil.copy2(src, d / f"source-cv{src.suffix}")
+            # And a text version, because the sandbox cannot run a converter.
+            if src.suffix.lower() == ".docx":
+                text = docx_to_text(src)
+                if not text:
+                    store.mark_job(con, job_id, "failed",
+                                   error=f"could not read any text out of {src.name}")
+                    return
+                (d / "source-cv.txt").write_text(text, encoding="utf-8")
 
         prompt = build_prompt(job["kind"], cfg, str(src))
 
         try:
-            proc = subprocess.run(
-                ["claude", "-p", prompt, "--permission-mode", "acceptEdits"],
-                cwd=str(d), capture_output=True, text=True, timeout=TIMEOUT)
+            skills = Path.home() / ".claude" / "skills"
+            cmd = ["claude", "-p", prompt,
+                   "--permission-mode", "acceptEdits",
+                   "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
+                   "Bash(python3:*)"]
+            if skills.exists():
+                cmd += ["--add-dir", str(skills)]
+            proc = subprocess.run(cmd, cwd=str(d), capture_output=True,
+                                  text=True, timeout=TIMEOUT)
             out = (proc.stdout or "")[-4000:]
             if proc.returncode != 0:
                 store.mark_job(con, job_id, "failed",
@@ -192,6 +245,14 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None) -> None:
                            error=f"timed out after {TIMEOUT}s")
             return
 
+        expected = {"cv": "CV.md", "cover_letter": "cover-letter.md",
+                    "screen": "screening.md"}[job["kind"]]
+        if not (d / expected).exists():
+            store.mark_job(
+                con, job_id, "failed",
+                error=f"finished without writing {expected}. See the log.",
+                log=out)
+            return
         _record(con, job, d, out)
         store.mark_job(con, job_id, "done", log=out)
     except Exception as e:                      # never leave a job stuck running
@@ -259,10 +320,19 @@ def _gates(d: Path, name: str) -> dict:
             r = subprocess.run(["python3", str(det), str(f)],
                                capture_output=True, text=True, timeout=120)
             blob = r.stdout + r.stderr
-            gates["natural_writing"] = "FAIL" not in blob
-            m = re.search(r"score[^0-9]{0,12}(\d+)", blob, re.I)
+            # Read the verdict line, not any occurrence of the word FAIL.
+            # detect.py prints "Fix the FAIL/WARN lines above" as standing
+            # advice even on a clean run, so a substring test marks every
+            # passing document as failed.
+            m = re.search(r"->\s*(PASS|FAIL)", blob)
             if m:
-                gates["slop_score"] = int(m.group(1))
+                gates["natural_writing"] = m.group(1) == "PASS"
+            else:
+                gates["natural_writing"] = not re.search(
+                    r"^\s*FAIL\b", blob, re.M)
+            s = re.search(r"SLOP SCORE:\s*(\d+)", blob, re.I)
+            if s:
+                gates["slop_score"] = int(s.group(1))
         except Exception:
             gates["natural_writing"] = None
     return gates

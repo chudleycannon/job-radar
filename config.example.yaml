@@ -27,6 +27,13 @@ locations:
   # Never show roles here.
   exclude: []
 
+cv:
+  # Your current CV. REQUIRED. Everything that drafts a document works from
+  # it, and without it the tool would be inventing a career rather than
+  # tailoring one. .docx, .pdf, .md and .txt all work.
+  # `job-radar setup` asks for this and will not finish without a real file.
+  path: ~/Documents/my-cv.docx
+
 salary:
   # A role whose STATED pay is below this is hidden.
   # A role with NO stated pay is shown and marked "unconfirmed salary".
