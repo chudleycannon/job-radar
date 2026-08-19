@@ -1,7 +1,7 @@
 {
  "meta": {
-  "note": "ported from an n8n pipeline, validated and repaired with discover, then extended by harvesting UK employers outside technology",
-  "version": 4,
+  "note": "employer boards discovered and verified; keyword-driven platforms are templates expanded from your own titles",
+  "version": 5,
   "validated": "2026-08-18",
   "harvest": {
    "attempted": 196,
@@ -1436,96 +1436,18 @@
    "sector": "finance"
   },
   {
-   "company": "LinkedIn: detection eng",
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=detection%20engineering%20manager&location=United%20Kingdom&f_TPR=r604800&start=0",
+   "company": "LinkedIn",
    "platform": "linkedin",
-   "sector": "technology"
+   "keyword_template": true,
+   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=United%20Kingdom&f_TPR=r604800&start=0"
   },
   {
-   "company": "LinkedIn: EM AI platform",
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=%22engineering%20manager%22%20AI%20platform&location=United%20Kingdom&f_TPR=r604800&start=0",
-   "platform": "linkedin",
-   "sector": "technology"
-  },
-  {
-   "company": "LinkedIn: EM devsecops",
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=engineering%20manager%20devsecops%20appsec&location=United%20Kingdom&f_TPR=r604800&start=0",
-   "platform": "linkedin",
-   "sector": "technology"
-  },
-  {
-   "company": "LinkedIn: EM security",
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=engineering%20manager%20security&location=United%20Kingdom&f_TPR=r604800&start=0",
-   "platform": "linkedin",
-   "sector": "technology"
-  },
-  {
-   "company": "LinkedIn: head of engineering",
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=head%20of%20engineering&location=United%20Kingdom&f_TPR=r604800&start=0",
-   "platform": "linkedin",
-   "sector": "technology"
-  },
-  {
-   "company": "LinkedIn: senior EM",
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=senior%20engineering%20manager&location=United%20Kingdom&f_TPR=r604800&start=0",
-   "platform": "linkedin",
-   "sector": "technology"
-  },
-  {
-   "company": "NHS Jobs: data manager",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=data+manager",
+   "company": "NHS Jobs",
    "platform": "nhs",
    "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: digital manager",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=digital+manager",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: engineering manager",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=engineering+manager",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: head of engineering",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=head+of+engineering",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: informatics manager",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=informatics+manager",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: IT manager",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=IT+manager",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: programme manager",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=programme+manager",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
-  },
-  {
-   "company": "NHS Jobs: software",
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword=software",
-   "platform": "nhs",
-   "sector": "healthcare",
-   "country": "UK"
+   "country": "UK",
+   "keyword_template": true,
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword={keyword}"
   },
   {
    "company": "Marks and Spencer",

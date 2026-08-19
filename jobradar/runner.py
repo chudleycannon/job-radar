@@ -179,7 +179,8 @@ def build_prompt(kind: str, cfg_path: str, cv_source: str) -> str:
     return PROMPTS[kind].format(config=cfg_path, cv_source=cv_source)
 
 
-def run_job(job_id: int, db_path=None, base=None, cv_source=None) -> None:
+def run_job(job_id: int, db_path=None, base=None, cv_source=None,
+            config_path=None) -> None:
     """Execute one queued job. Called on a background thread."""
     con = store.connect(db_path)
     try:
@@ -204,8 +205,9 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None) -> None:
         # Inline the filters rather than pointing at a path: the subprocess is
         # pinned to this folder and cannot read outside it, and a screen that
         # silently skipped the dealbreakers is worse than no screen.
-        cfg_file = next((Path(n) for n in ("config.local.yaml", "config.yaml")
-                         if Path(n).exists()), None)
+        cfg_file = (Path(config_path) if config_path else
+                    next((Path(n) for n in ("config.local.yaml", "config.yaml")
+                          if Path(n).exists()), None))
         cfg = cfg_file.read_text()[:6000] if cfg_file else "(no config found)"
 
         # Same reason: copy the base CV in rather than referencing it. The
@@ -214,12 +216,15 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None) -> None:
         cv_cfg = ""
         try:
             from .config import load as _load
-            cv_cfg = _load().cv_path
+            cv_cfg = _load(config_path).cv_path
         except Exception:
             pass
-        src = Path(cv_source or cv_cfg or os.environ.get("JOB_RADAR_CV") or "")
+        # Path("") is PosixPath("."), which exists, so the "no CV configured"
+        # guard below never fired and shutil.copy2 raised IsADirectoryError.
+        chosen = cv_source or cv_cfg or os.environ.get("JOB_RADAR_CV") or ""
+        src = Path(chosen) if chosen else None
         if job["kind"] == "cv":
-            if not str(src) or not src.exists():
+            if src is None or not src.exists() or src.is_dir():
                 store.mark_job(con, job_id, "failed",
                                error="No CV configured. Set `cv.path` in your "
                                      "config, or run `job-radar setup`.")
@@ -417,8 +422,9 @@ def regate(con) -> int:
     return n
 
 
-def spawn(job_id: int, db_path=None, base=None) -> None:
+def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
     """Run a job on a daemon thread so the click returns immediately."""
     threading.Thread(target=run_job, args=(job_id,),
-                     kwargs={"db_path": db_path, "base": base},
+                     kwargs={"db_path": db_path, "base": base,
+                             "config_path": config_path},
                      daemon=True).start()

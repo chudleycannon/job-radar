@@ -23,6 +23,17 @@ generated. Do not edit it here: changes belong upstream, and
 and opens a pull request when it does not. Editing the copy directly is how two
 versions of the same skill quietly stop agreeing with each other.
 
+## Also required for document generation
+
+The drafting prompts and two of the four quality gates call
+[natural-writing](https://github.com/maccydee/natural-writing). It is not
+vendored here because it is a general writing skill with a life of its own,
+but generation degrades silently without it:
+
+```bash
+git clone https://github.com/maccydee/natural-writing ~/.claude/skills/natural-writing
+```
+
 ## Installing
 
 Copy any of these into `~/.claude/skills/`:

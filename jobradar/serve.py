@@ -23,6 +23,7 @@ from .output import interactive
 class Handler(BaseHTTPRequestHandler):
     db_path = None
     docs_base = None
+    config_path = None
 
     # ------------------------------------------------------------- helpers
     def _json(self, obj, code=200):
@@ -127,7 +128,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(
                         {"ok": False, "error": "one generation at a time"}, 429)
                 job_id = store.enqueue(con, uid, kind)
-                runner.spawn(job_id, db_path=self.db_path, base=self.docs_base)
+                runner.spawn(job_id, db_path=self.db_path, base=self.docs_base,
+                             config_path=self.config_path)
                 return self._json({"ok": True, "job": job_id, "kind": kind})
         finally:
             con.close()
@@ -135,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
-          docs_base=None) -> int:
+          docs_base=None, config_path=None) -> int:
     # Gates are recomputed on start, so a fixed check corrects the rows it got
     # wrong rather than only applying to future runs.
     con = store.connect(db_path)
@@ -148,6 +150,10 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
 
     Handler.db_path = db_path
     Handler.docs_base = docs_base
+    # Without this the runner resolved a config from its working directory, so
+    # generation used whatever config.yaml happened to be in cwd rather than
+    # the one passed on the command line.
+    Handler.config_path = config_path
     httpd = ThreadingHTTPServer((host, port), Handler)
     url = f"http://{host}:{port}/"
     print(f"job-radar is at {url}")

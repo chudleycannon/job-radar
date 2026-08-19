@@ -81,9 +81,23 @@ class Config:
         return re.compile("|".join(rf"\b{re.escape(t)}\b" for t in self.titles_include), re.I)
 
     def title_exclude_re(self):
+        """Escaped, unlike the include list which is also escaped.
+
+        Left unescaped, a genuine job title containing brackets became a
+        regex: "healthcare assistant (bank)" then failed to match the real
+        posting and matched a different one instead.
+        """
         if not self.titles_exclude:
             return None
-        return re.compile("|".join(self.titles_exclude), re.I)
+        # \b only works next to a word character. A term ending in ")" would
+        # never match if the boundary were added unconditionally.
+        def bounded(term: str) -> str:
+            esc = re.escape(term)
+            lead = r"\b" if term[:1].isalnum() else ""
+            trail = r"\b" if term[-1:].isalnum() else ""
+            return f"{lead}{esc}{trail}"
+
+        return re.compile("|".join(bounded(t) for t in self.titles_exclude), re.I)
 
     def location_exclude_re(self):
         if not self.exclude_locations:

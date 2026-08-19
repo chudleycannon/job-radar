@@ -96,6 +96,22 @@ def cmd_scan(args) -> int:
     new = [j for j in kept if j.uid in new_ids]
     seen = [j for j in kept if j.uid not in new_ids]
     _say(f"  {len(kept)} match your config, {len(new)} new")
+    if not kept:
+        # An empty page reads as "the market is empty" when it usually means
+        # the filters or the sources do not fit the person running it.
+        _say("")
+        _say("  Nothing matched. Where they went:")
+        for reason, n in sorted(dropped.items(), key=lambda x: -x[1])[:5]:
+            _say(f"    {n:>6}  {reason}")
+        total_srcs = len(src_mod.load_file(src_mod.BUNDLED)) if cfg.use_bundled_sources else 0
+        if cfg.sectors and total_srcs:
+            _say(f"    your `sectors` setting cut the bundled list to {len(srcs)} "
+                 f"of {total_srcs} sources")
+        _say("")
+        _say("  Most often this is the titles. Check `titles.include` in "
+             f"{cfg.path} matches how postings are actually worded,")
+        _say("  and add employers yourself with `job-radar discover <company>"
+             " --add`.")
 
     meta = {
         "sources_ok": ok, "sources_total": len(srcs),
@@ -407,7 +423,8 @@ def cmd_list(args) -> int:
 def cmd_serve(args) -> int:
     from .serve import serve
     return serve(db_path=args.db, host=args.host, port=args.port,
-                 open_browser=not args.no_browser, docs_base=args.docs)
+                 open_browser=not args.no_browser, docs_base=args.docs,
+                 config_path=args.config)
 
 
 # ---------------------------------------------------------------- setup

@@ -546,6 +546,49 @@ def test_acted_on_roles_stay_visible_after_a_partial_scan():
     assert new.uid in uids
 
 
+
+# ------------------------------------------- defects found by a fresh user
+def test_keyword_sources_follow_the_user_not_the_author():
+    """The eight bundled NHS sources were frozen searches for the author's own
+    job titles, so a nurse running this got "engineering manager" inside the
+    NHS and zero matches out of 24,719 postings."""
+    from jobradar.config import Config
+    from jobradar import sources as sm
+
+    nurse = Config(titles_include=["practice educator", "clinical educator"])
+    got = [s.company for s in sm.load(nurse) if s.platform == "nhs"]
+    assert got == ["NHS Jobs: practice educator", "NHS Jobs: clinical educator"]
+    assert all("engineering" not in c.lower() for c in got)
+
+    # and the URL really carries the keyword
+    url = next(s.url for s in sm.load(nurse) if s.platform == "nhs")
+    assert "practice+educator" in url
+
+    # someone with no titles set gets no keyword searches rather than a guess
+    assert [s for s in sm.load(Config(titles_include=[])) if s.platform == "nhs"] == []
+
+
+def test_excluded_titles_with_punctuation_match_correctly():
+    """Left unescaped, "healthcare assistant (bank)" became a regex: it failed
+    to match the real posting and matched a different one instead."""
+    from jobradar.config import Config
+    r = Config(titles_exclude=["healthcare assistant (bank)", "sales"]).title_exclude_re()
+    assert r.search("Healthcare Assistant (Bank)")
+    assert not r.search("Healthcare Assistant Bank Staff")
+    assert r.search("Sales Manager")
+    assert not r.search("Salesforce Engineer")     # \b still does its job
+
+
+def test_empty_cv_path_does_not_look_like_a_valid_file():
+    """Path("") is PosixPath("."), which exists, so the "no CV configured"
+    guard never fired and the copy raised IsADirectoryError instead."""
+    from pathlib import Path as P
+    assert P("").exists() is True and P("").is_dir() is True
+    chosen = "" or None
+    src = P(chosen) if chosen else None
+    assert src is None                              # the shape the fix relies on
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

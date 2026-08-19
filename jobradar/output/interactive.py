@@ -272,6 +272,10 @@ def _row(r, arts, job) -> str:
         v = arts["screen"]["summary"] or "screened"
         docs.append(f'<a href="/open?path={_h.escape(quote(str(arts["screen"]["path"])), quote=True)}">Screening</a> <span class="rating">{_h.escape(v)}</span>')
 
+    # The static page warns when a source gives no description; the served one
+    # did not, and that is the page with the money buttons on it.
+    notes = [f for f in json.loads(r["flags"] or "[]")
+             if "not screened" in f or "listing only" in f]
     busy = job["kind"] if job else ""
     has_cv = "cv" in arts
 
@@ -299,6 +303,7 @@ def _row(r, arts, job) -> str:
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
         f'{_h.escape(r["salary_label"] or "unconfirmed salary")}</span></div>'
         + (f'<div class="docs">{" &middot; ".join(docs)}</div>' if docs else "")
+        + (f'<div class="note">{_h.escape(notes[0])}</div>' if notes else "")
         + '<div class="acts">'
         + b("screen", "Screen", "primary")
         + b("cv", "CV")

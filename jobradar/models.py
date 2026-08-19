@@ -134,6 +134,7 @@ class Source:
     domain: str | None = None  # used to verify the board is really this company
     method: str = "GET"
     body: dict[str, Any] | None = None
+    keyword_template: bool = False   # url contains {keyword}, expanded per title
 
     @property
     def key(self) -> str:
@@ -156,6 +157,8 @@ class Source:
             d["method"] = self.method
         if self.body:
             d["body"] = self.body
+        if self.keyword_template:
+            d["keyword_template"] = True
         return d
 
     @classmethod
@@ -169,4 +172,5 @@ class Source:
             domain=d.get("domain"),
             method=d.get("method", "GET"),
             body=d.get("body"),
+            keyword_template=bool(d.get("keyword_template")),
         )

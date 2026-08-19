@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from . import adapters
 from .config import Config
@@ -29,6 +30,31 @@ def load_file(path: str | Path) -> list[Source]:
     return out
 
 
+def expand_templates(srcs: list[Source], titles: list[str]) -> list[Source]:
+    """Turn one templated source into one search per title you care about.
+
+    Some platforms are searches, not employer boards: NHS Jobs and LinkedIn
+    return whatever keyword you give them. Shipping those as fixed URLs shipped
+    the author's own job titles, so a nurse running this got eight searches for
+    "engineering manager" inside the NHS and zero results out of 24,719
+    postings. The keywords have to come from the user.
+    """
+    out: list[Source] = []
+    for s in srcs:
+        if not s.keyword_template:
+            out.append(s)
+            continue
+        if not titles:
+            continue          # nothing to search for; a frozen guess is worse
+        for title in titles[:6]:
+            kw = quote_plus(title)
+            out.append(Source(
+                company=f"{s.company}: {title}", url=s.url.format(keyword=kw),
+                platform=s.platform, sector=s.sector, country=s.country,
+                domain=s.domain, method=s.method, body=s.body))
+    return out
+
+
 def load(cfg: Config) -> list[Source]:
     srcs: list[Source] = []
     if cfg.use_bundled_sources:
@@ -44,6 +70,8 @@ def load(cfg: Config) -> list[Source]:
     if cfg.source_countries:
         want = {c.upper() for c in cfg.source_countries}
         srcs = [s for s in srcs if not s.country or s.country.upper() in want]
+
+    srcs = expand_templates(srcs, cfg.titles_include)
 
     seen, uniq = set(), []
     for s in srcs:

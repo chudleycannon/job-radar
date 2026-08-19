@@ -44,7 +44,7 @@ The trade is coverage. This only sees employers on the list, which is why
 
 ## What it does
 
-**Reads 309 sources** across Greenhouse, Ashby, Lever, Workday,
+**Reads 296 employer boards** across Greenhouse, Ashby, Lever, Workday,
 Workable, SmartRecruiters and LinkedIn's public endpoint. Mostly technology
 companies, plus a first pass at UK finance, industry, professional services,
 education, media and the public sector: Barclays, Lloyds, Santander, BP,
@@ -141,7 +141,12 @@ repository, alongside a snapshot of the job description. That snapshot matters:
 postings are pulled the moment they are filled, which is usually just before
 someone calls you about one.
 
-Requires the `claude` CLI on your PATH. Everything else works without it.
+Requires the `claude` CLI on your PATH, and the
+[natural-writing](https://github.com/maccydee/natural-writing) skill installed
+at `~/.claude/skills/natural-writing/` — the drafting prompts run its linter
+and the slop-score gate reads its output. Without it you still get documents,
+but two of the four gates quietly stop reporting. Everything other than
+generation works with neither.
 
 ---
 
