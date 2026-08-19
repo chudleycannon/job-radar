@@ -172,9 +172,13 @@ fetch:
     return path
 
 
+# Deliberately empty. Filling these with the author's own job titles and
+# calling them "defaults" is how a nurse ended up running eight NHS searches
+# for "engineering manager". Titles also drive the keyword-based sources now,
+# so a wrong guess here is not a mild inconvenience.
 DEFAULTS = {
-    "titles_include": ["engineering manager", "head of engineering", "director of engineering"],
-    "titles_exclude": ["product manager", "programme manager", "account manager", "sales"],
+    "titles_include": [],
+    "titles_exclude": [],
     "countries": ["UK"],
     "remote_ok": True,
     "relocate_to": [],
@@ -213,10 +217,17 @@ def ask_cv(existing: str = "") -> str:
         print(f"   Nothing at {p}. Check the path and try again.")
 
 
-def run(path: Path, non_interactive: bool = False, cv: str | None = None) -> int:
+def run(path: Path, non_interactive: bool = False, cv: str | None = None,
+        titles: str | None = None) -> int:
     if non_interactive:
         if not cv:
             print("A CV is required. Re-run with --cv /path/to/your-cv.docx")
+            return 1
+        if not titles:
+            print("Job titles are required. Re-run with, for example:")
+            print("  --titles 'practice educator,clinical educator'")
+            print("They drive more than the filter: NHS Jobs and LinkedIn are")
+            print("searched with these words.")
             return 1
         p = Path(cv).expanduser()
         if not p.exists():
@@ -224,6 +235,7 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None) -> int
             return 1
         a = dict(DEFAULTS)
         a["cv_path"] = str(p.resolve())
+        a["titles_include"] = [x.strip() for x in titles.split(",") if x.strip()]
         write_config(path, a)
         print(f"Wrote a default config to {path}. Edit it, then run `job-radar scan`.")
         return 0
@@ -253,7 +265,11 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None) -> int
                                             DEFAULTS["titles_include"])
     elif first:
         a["titles_include"] = [x.strip() for x in first.split(",") if x.strip()]
-    a["titles_exclude"] = _ask_list("   Titles to never show", DEFAULTS["titles_exclude"])
+    while not a["titles_include"]:
+        print("   At least one is needed: these words are what NHS Jobs and")
+        print("   LinkedIn are searched with, not just what gets filtered.")
+        a["titles_include"] = _ask_list("   Job titles", [])
+    a["titles_exclude"] = _ask_list("   Titles to never show", [])
 
     # 2. location
     print("\n2. Where?")

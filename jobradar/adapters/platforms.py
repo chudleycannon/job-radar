@@ -45,7 +45,11 @@ def _iso(v: Any) -> str | None:
             return None
     s = str(v).strip()
     for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ",
-                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d/%m/%Y", "%b %d, %Y", "%d %b %Y"):
+                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d/%m/%Y",
+                # NHS Jobs writes the month in full ("18 August 2026"). Without
+                # %B every NHS role had no date, so the recency points never
+                # fired and 28 roles clumped onto three scores.
+                "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
         try:
             return datetime.strptime(s.replace("Z", "+0000") if fmt.endswith("%z") else s,
                                      fmt).date().isoformat()

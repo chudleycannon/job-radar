@@ -17,13 +17,27 @@ If a `config.yaml` or `config.local.yaml` already exists, read it and **edit
 it** rather than starting again. People lose carefully tuned dealbreakers to
 tools that helpfully start over.
 
+## Ask for the CV first, and do not proceed without one
+
+This is not one of the questions below, it comes before them, and it is the
+one thing that has no default. Everything that drafts a document works from
+the real CV: without it the tool does not degrade, it invents a career.
+
+Ask for a path. Check the file exists before accepting it. `.docx`, `.pdf`,
+`.md` and `.txt` all work. If they cannot produce one, stop and say so rather
+than writing a config that will fail later at generation time with a less
+obvious error.
+
 ## What to establish
 
 Seven things. Ask about them in this order, and stop asking once you have
 enough to write a working file. A first config that needs editing later is
 much better than twenty questions.
 
-**1. Titles.** What roles do they want. If they do not know, offer to read
+**1. Titles.** What roles do they want. These matter more than they look:
+NHS Jobs and LinkedIn are searches rather than employer boards, and these are
+the words they get searched with. Wrong titles there means those sources
+return nothing useful, not merely that the filter is loose. If they do not know, offer to read
 their CV: extract the titles their record actually supports, plus adjacent
 ones they would not have searched for. Present those as a starting list to
 edit, never as a verdict, and never include a title their experience does not

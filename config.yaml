@@ -27,6 +27,11 @@ locations:
   # Never show roles here.
   exclude: []
 
+cv:
+  # Your current CV. Required for anything that drafts a document.
+  # `job-radar setup` asks for this and will not finish without a real file.
+  path: ""
+
 salary:
   # A role whose STATED pay is below this is hidden.
   # A role with NO stated pay is shown and marked "unconfirmed salary".
