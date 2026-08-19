@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html as _h
 import json
+from urllib.parse import quote
 from collections import Counter
 from datetime import datetime
 
@@ -89,6 +90,15 @@ async function post(url,body){
   return {ok:r.ok, data:await r.json().catch(()=>({}))};}
 
 document.addEventListener('click', async e=>{
+  // Document links reveal the file in Finder. Without this they navigate the
+  // tab to a raw JSON body and you lose the dashboard.
+  const doc=e.target.closest('.docs a');
+  if(doc){ e.preventDefault();
+    const r=await fetch(doc.getAttribute('href'));
+    const d=await r.json().catch(()=>({}));
+    say(d.ok?'Revealed in Finder':(d.error||'could not open it'));
+    return;}
+
   const row=e.target.closest('.row'); if(!row) return;
   const uid=row.dataset.uid;
 
@@ -158,10 +168,19 @@ if(document.querySelector('.acts button.busy')) poll();
 
 
 def _rows(con):
+    """The last scan's results, plus every role you have acted on.
+
+    Filtering on the last scan alone made applied and interviewing roles
+    disappear the moment a posting closed, a source was rate-limited, or a
+    `--limit` run happened -- taking their status and their generated
+    documents with them, with no other view of them anywhere.
+    """
     return con.execute("""
         SELECT r.*, COALESCE(s.status,'new') AS status, COALESCE(s.note,'') AS note
         FROM roles r LEFT JOIN role_state s ON s.uid = r.uid
         WHERE r.last_seen = (SELECT MAX(last_seen) FROM roles)
+           OR COALESCE(s.status,'new') <> 'new'
+           OR r.uid IN (SELECT DISTINCT uid FROM artifacts)
         ORDER BY r.score DESC, r.company COLLATE NOCASE
     """).fetchall()
 
@@ -239,15 +258,19 @@ def _row(r, arts, job) -> str:
         fails = [k for k, v in json.loads(a["gates"] or "{}").items() if v is False]
         gate = (f'<span class="gatefail">{len(fails)} gate(s) failed</span>'
                 if fails else "")
-        docs.append(f'<a href="/open?path={_h.escape(json.dumps(a["path"])[1:-1], quote=True)}">CV</a> {rating} {gate}')
+        docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">CV</a> {rating} {gate}')
     if "cover_letter" in arts:
         a = arts["cover_letter"]
         ov = json.loads(a["gates"] or "{}").get("no_overlap_with_cv")
-        warn = '' if ov in (True, None) else '<span class="gatefail">overlaps the CV</span>'
-        docs.append(f'<a href="/open?path={_h.escape(json.dumps(a["path"])[1:-1], quote=True)}">Cover letter</a> {warn}')
+        # None means the check never ran, which is not the same as passing.
+        warn = ('' if ov is True else
+                '<span class="gatefail">'
+                + ('overlaps the CV' if ov is False else 'overlap not checked')
+                + '</span>')
+        docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">Cover letter</a> {warn}')
     if "screen" in arts:
         v = arts["screen"]["summary"] or "screened"
-        docs.append(f'<a href="/open?path={_h.escape(json.dumps(arts["screen"]["path"])[1:-1], quote=True)}">Screening</a> <span class="rating">{_h.escape(v)}</span>')
+        docs.append(f'<a href="/open?path={_h.escape(quote(str(arts["screen"]["path"])), quote=True)}">Screening</a> <span class="rating">{_h.escape(v)}</span>')
 
     busy = job["kind"] if job else ""
     has_cv = "cv" in arts

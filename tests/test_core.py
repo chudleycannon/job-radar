@@ -468,6 +468,84 @@ def test_overlap_is_measured_not_self_reported():
     assert shared_ngram("too short", "too short") == ""
 
 
+
+# --------------------------------------------------- defects found by review
+def test_prose_number_ranges_are_not_salaries():
+    """This runs over the first 1500 chars of a description for most adapters,
+    and a confirmed-but-wrong figure below the floor silently DROPS a role."""
+    for s in ("We serve 40,000 to 120,000 requests per second",
+              "Our community grew from 25,000 to 90,000 members",
+              "we raised $50M and serve 10,000 - 60,000 customers"):
+        assert parse_text(s).confirmed is False, s
+    # and real ones still land
+    assert parse_text("Salary: 120,000 to 150,000 per annum").confirmed is True
+    assert parse_text("The pay range for this role is 95,000 to 120,000").confirmed is True
+    assert parse_text("£120,000 - £150,000").confirmed is True
+
+
+def test_remote_ok_false_actually_excludes_remote():
+    """Answering "no" to "include fully remote roles" used to change nothing:
+    only a completely empty location was dropped."""
+    cfg = _cfg(remote_ok=False, relocate_to=[])
+    for loc in ("Remote", "Fully Remote", "Anywhere", ""):
+        keep, why = match(_job(location=loc), cfg)
+        assert keep is False, f"{loc!r} should be excluded when remote is off"
+    assert match(_job(location="London"), cfg)[0] is True
+
+
+def test_spelled_out_us_states_are_not_uk():
+    """The earlier fix taught it the two-letter codes and nothing else, so it
+    fixed the instances in the test and not the class."""
+    from jobradar.screen import _country_of
+    for loc in ("Birmingham, Alabama", "Cambridge, Massachusetts",
+                "Manchester, New Hampshire", "Oxford, Mississippi",
+                "Bristol, Connecticut", "Glasgow, Kentucky"):
+        assert _country_of(loc) == "US", loc
+    assert _country_of("Birmingham, UK") == "UK"
+
+
+def test_role_folder_is_keyed_on_the_role_not_the_day():
+    """A CV drafted Monday and a letter drafted Wednesday landed in different
+    folders, so the letter could not read the CV it must be checked against."""
+    import tempfile
+    from jobradar.runner import role_dir
+    base = Path(tempfile.mkdtemp())
+    row = {"company": "Acme", "title": "Engineering Manager"}
+    monday = base / "2026-08-17-acme-engineering-manager"
+    monday.mkdir(parents=True)
+    assert role_dir(row, base) == monday
+
+
+def test_source_meta_survives_a_prune():
+    """The weekly prune replaced meta wholesale, deleting the provenance note,
+    the version and the harvest counts."""
+    import json as _j, tempfile
+    from jobradar import sources as sm
+    p = Path(tempfile.mkdtemp()) / "s.json"
+    p.write_text(_j.dumps({"meta": {"note": "keep me", "version": 4},
+                           "sources": []}))
+    sm.save([], p, meta={"pruned": 3})
+    meta = _j.loads(p.read_text())["meta"]
+    assert meta["note"] == "keep me" and meta["version"] == 4
+    assert meta["pruned"] == 3
+
+
+def test_acted_on_roles_stay_visible_after_a_partial_scan():
+    """Filtering the dashboard on the last scan alone made applied roles
+    disappear when a posting closed or a source was rate-limited."""
+    from jobradar import store
+    from jobradar.output.interactive import _rows
+    con = _tmpdb()
+    old = _job(title="Engineering Manager Old"); old.url = "https://x/old"
+    new = _job(title="Engineering Manager New"); new.url = "https://x/new"
+    store.upsert_roles(con, [old, new])
+    con.execute("UPDATE roles SET last_seen='2026-01-01' WHERE uid=?", (old.uid,))
+    store.set_status(con, old.uid, "applied")
+    uids = {r["uid"] for r in _rows(con)}
+    assert old.uid in uids, "a role you applied to must not vanish"
+    assert new.uid in uids
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

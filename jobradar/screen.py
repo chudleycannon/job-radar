@@ -60,6 +60,19 @@ _US_STATE = re.compile(
     r"WA|WV|WI|WY|DC)\b"
 )
 
+# Spelled out, too. "Birmingham, Alabama" and "Cambridge, Massachusetts" were
+# reading as UK, because only the two-letter codes were recognised and the
+# city list is checked with UK first.
+_US_STATE_NAME = re.compile(
+    r",\s*(?:alabama|alaska|arizona|arkansas|california|colorado|connecticut|"
+    r"delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|"
+    r"kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|"
+    r"mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|"
+    r"new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|"
+    r"pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|"
+    r"utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b",
+    re.I)
+
 # Tier 3: city names, consulted only when nothing above fired. UK entries that
 # collide with a bigger foreign city are guarded rather than dropped, since
 # "London" and "Manchester" are still the common case in a UK-facing tool.
@@ -123,7 +136,7 @@ def _country_of(location: str) -> str | None:
     for code, pat in _COUNTRY_MARKERS.items():
         if re.search(pat, low):
             return code
-    if _US_STATE.search(raw):
+    if _US_STATE.search(raw) or _US_STATE_NAME.search(low):
         return "US"
     for code, pat in _CITY_HINTS.items():
         if re.search(pat, low):
@@ -238,9 +251,15 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
         # remote does not make a US role open to someone outside the US.
         generic = not loc or bool(_GENERIC_REMOTE.match(loc))
         if generic:
-            if not cfg.remote_ok and not loc:
-                return False, "no location given and remote is off"
+            # Answering "no" to "include fully remote roles" used to change
+            # nothing: only a completely empty location was dropped, so every
+            # posting that actually said "Remote" came through.
+            if not cfg.remote_ok:
+                return False, ("remote role and remote is off" if loc
+                               else "no location given and remote is off")
             return True, ""
+        if not cfg.remote_ok and job.remote is True:
+            return False, "remote role and remote is off"
 
         found = _countries_in(loc)
         if not found:

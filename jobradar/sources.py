@@ -55,10 +55,23 @@ def load(cfg: Config) -> list[Source]:
 
 
 def save(sources: list[Source], path: str | Path, meta: dict | None = None) -> None:
+    """Write the list, merging metadata rather than replacing it.
+
+    Replacing it meant the weekly prune silently deleted the provenance note,
+    the version and the harvest counts, and the release process then told you
+    to bump a version that no longer existed.
+    """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    if p.exists():
+        try:
+            prev = json.loads(p.read_text())
+            existing = prev.get("meta", {}) if isinstance(prev, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            existing = {}
     body = {
-        "meta": meta or {},
+        "meta": {**existing, **(meta or {})},
         "sources": [s.to_dict() for s in
                     sorted(sources, key=lambda x: (x.platform, x.company.lower()))],
     }

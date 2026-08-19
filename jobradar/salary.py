@@ -66,6 +66,18 @@ def _period(text: str) -> str:
     return "year"
 
 
+# A number range in prose is not a salary. "40,000 to 120,000 requests per
+# second" and "grew from 25,000 to 90,000 members" both parse as money if the
+# currency symbol is optional, and because this runs over the first 1500
+# characters of a description for most adapters, a confirmed-but-wrong figure
+# below the floor silently DROPS a real role. So an unsymbolled range has to
+# be introduced by something that means pay.
+_PAY_CONTEXT = re.compile(
+    r"\b(salary|salaries|compensation|comp\b|pay|paid|package|remuneration|"
+    r"base|earnings|wage|ote|bonus|range for this role|pay range|"
+    r"salary range|annum|per year|pa\b)\b", re.I)
+
+
 def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     """Best-effort parse of a free-text pay string.
 
@@ -84,7 +96,14 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     m = rng.search(t)
     if m:
         lo, hi = _to_float(m.group("lo")), _to_float(m.group("hi"))
-        cur = _CUR.get((m.group("c1") or m.group("c2") or "").lower()) or default_currency
+        symbol = m.group("c1") or m.group("c2")
+        cur = _CUR.get((symbol or "").lower()) or default_currency
+        if not symbol:
+            # No currency mark: only believe it if pay is being discussed
+            # within the preceding stretch of text.
+            lead = t[max(0, m.start() - 80):m.start()]
+            if not _PAY_CONTEXT.search(lead):
+                return Salary()
         if lo is not None and hi is not None and hi >= lo:
             return Salary(
                 min=lo, max=hi, currency=cur, period=period,

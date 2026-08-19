@@ -17,6 +17,7 @@ pip install -e .
 job-radar setup     # asks for your CV, then seven questions
 job-radar scan      # writes out/index.html
 job-radar serve     # the same dashboard, with buttons
+job-radar list      # ...or the same thing as text
 ```
 
 Setup asks for your current CV first and will not finish without one. It is
@@ -144,6 +145,31 @@ Requires the `claude` CLI on your PATH. Everything else works without it.
 
 ---
 
+## Everything works without a browser
+
+The dashboard is a convenience, not the product. Every action has a command:
+
+```bash
+job-radar list                      # roles, statuses, documents, ratings
+job-radar list --status applied     # or --all, or --json
+job-radar applied <url|company|uid> -s interviewing --note "call booked"
+job-radar generate <url|company|uid> -k screen      # or cv, or cover_letter
+```
+
+`applied` and `generate` accept a posting URL, a company name, or a role id.
+When a name matches more than one role they list the candidates and stop
+rather than guessing, because recording a status against the wrong role is
+worse than not recording it.
+
+Both write the same database the dashboard reads, so the two views cannot
+disagree.
+
+`scan`, `discover`, `validate` and `coverage` are command-line only by design:
+they are slow maintenance verbs and the dashboard has nowhere sensible to show
+their progress.
+
+---
+
 ## Remembering what you already did
 
 A scanner that forgets is a scanner that shows you the same job every week.
@@ -265,7 +291,10 @@ so job boards throttle them sooner than they throttle your laptop. The scan
 flags sources that look throttled; if you see many, run it locally instead.
 
 **State is committed, not cached.** The Actions cache is evicted after seven
-days of no use, which would make every role look new again.
+days of no use, which would make every role look new again. `state/` is
+gitignored so this repository never carries its maintainer's search history;
+the workflow force-adds it, so a fork gets working state without the upstream
+repo collecting one.
 
 ---
 

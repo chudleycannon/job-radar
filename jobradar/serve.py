@@ -82,8 +82,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/open"):
             # Reveal a generated document in Finder rather than serving it.
             import subprocess
-            target = urlparse(self.path).query.partition("path=")[2]
-            p = Path(json.loads(f'"{target}"')) if target else None
+            from urllib.parse import parse_qs, unquote
+            q = parse_qs(urlparse(self.path).query)
+            target = (q.get("path") or [""])[0]
+            p = Path(unquote(target)) if target else None
             if p and p.exists():
                 subprocess.run(["open", "-R", str(p)], check=False)
                 return self._json({"ok": True})
@@ -94,8 +96,16 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         data = self._body()
         uid = data.get("uid")
+        # An unknown uid used to raise inside the handler and drop the
+        # connection, so the browser's fetch rejected and the click silently
+        # did nothing. A missing uid inserted a NULL row, because SQL foreign
+        # keys ignore NULL.
+        if not isinstance(uid, str) or not uid:
+            return self._json({"ok": False, "error": "a role id is required"}, 400)
         con = store.connect(self.db_path)
         try:
+            if not con.execute("SELECT 1 FROM roles WHERE uid=?", (uid,)).fetchone():
+                return self._json({"ok": False, "error": "no such role"}, 404)
             if path == "/api/status":
                 status = data.get("status", "")
                 if status not in store.STATUSES:

@@ -40,8 +40,20 @@ def slug(*parts: str) -> str:
 
 
 def role_dir(row, base: Path | None = None) -> Path:
+    """Where this role's documents live.
+
+    Keyed on the role, not on the day. Keying it on today's date meant a CV
+    drafted on Monday and a letter drafted on Wednesday landed in different
+    folders, so the letter could not read the CV it is required to be checked
+    against -- and an absent check rendered identically to a passing one.
+    """
     base = Path(base or os.environ.get("JOB_RADAR_DOCS") or DEFAULT_BASE)
-    return base / f"{date.today().isoformat()}-{slug(row['company'], row['title'])}"
+    name = slug(row["company"], row["title"])
+    if base.exists():
+        existing = sorted(p for p in base.glob(f"*-{name}") if p.is_dir())
+        if existing:
+            return existing[0]
+    return base / f"{date.today().isoformat()}-{name}"
 
 
 def docx_to_text(src: Path) -> str:
@@ -303,7 +315,12 @@ def _record(con, job, d: Path, log: str) -> None:
             shared = shared_ngram(cv_f.read_text(errors="ignore"),
                                   letter_f.read_text(errors="ignore"))
             gates["no_overlap_with_cv"] = not shared
-            summary = f"shares \"{shared}\" with the CV" if shared else ""
+            summary = f'shares "{shared}" with the CV' if shared else ""
+        else:
+            # An unmeasurable gate is a failed gate. Leaving it absent made
+            # "never checked" look exactly like "checked and clean".
+            gates["no_overlap_with_cv"] = False
+            summary = "overlap not checked: no CV.md alongside the letter"
         store.add_artifact(con, uid, "cover_letter", path, summary=summary, gates=gates)
 
 
