@@ -241,7 +241,7 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         return 0
 
     print("\njob-radar setup\n" + "-" * 40)
-    print("Seven questions. Everything is editable afterwards.\n")
+    print("A few questions. Everything is editable afterwards.\n")
     a = dict(DEFAULTS)
     a["cv_path"] = ask_cv()
 

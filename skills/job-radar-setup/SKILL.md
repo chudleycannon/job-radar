@@ -12,7 +12,13 @@ cannot drift.
 
 ## Before anything else
 
-Read `config.example.yaml` in the repo. It is the schema and it is commented.
+Read `config.example.yaml` in the job-radar checkout, usually
+`~/job-radar/config.example.yaml`. It is the schema and it is commented. Find
+it rather than assuming a working directory:
+
+```bash
+ls ~/job-radar/config.example.yaml 2>/dev/null || find ~ -maxdepth 3 -name config.example.yaml 2>/dev/null | head -1
+```
 If a `config.yaml` or `config.local.yaml` already exists, read it and **edit
 it** rather than starting again. People lose carefully tuned dealbreakers to
 tools that helpfully start over.
@@ -43,8 +49,10 @@ ones they would not have searched for. Present those as a starting list to
 edit, never as a verdict, and never include a title their experience does not
 support just because it pays more.
 
-If they have a CV to hand, `rate-cv` (in `skills/rate-cv`) scores it properly
-and its output is a better basis for this than a skim.
+If they have a CV to hand, the `rate-cv` skill scores it properly and its
+output is a better basis for this than a skim. Invoke the installed skill;
+the copy under `skills/rate-cv` in the repo is a generated vendored mirror and
+must not be edited.
 
 **2. Where.** Country, whether remote counts, anywhere they would relocate to,
 anywhere to always exclude. Worth being explicit that "remote" on a posting
@@ -90,8 +98,20 @@ because these are other people's servers.
 Write through the same code path the wizard uses:
 
 ```python
-from jobradar.setup_wizard import write_config
-write_config(Path("config.yaml"), answers)
+import sys
+from pathlib import Path
+sys.path.insert(0, "/Users/you/job-radar")        # the checkout, not the cwd
+from jobradar.setup_wizard import write_config, DEFAULTS
+
+answers = dict(DEFAULTS)                          # then override what you asked
+answers.update({
+    "cv_path": "/absolute/path/to/cv.docx",       # required
+    "titles_include": ["practice educator"],      # required: drives the searches
+    "countries": ["UK"],
+    "salary_floor": 43000,
+    "dealbreakers": {"shift work": r"night shift|rotating shifts"},
+})
+write_config(Path("~/job-radar/config.local.yaml").expanduser(), answers)
 ```
 
 That keeps the comments and keeps both front doors consistent. Do not

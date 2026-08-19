@@ -1,9 +1,16 @@
 ---
 name: rate-cv
-description: Rate and critique a CV/resume. Scores it out of 100 against a weighted engineering-leadership rubric, checks ATS parse-ability, quantified impact, and AI-slop, and can match it to a specific job description with a keyword gap list. Use this whenever the user wants a CV or resume rated, scored, graded, reviewed, critiqued, checked against ATS, or matched to a job posting, and also when they ask to improve, tighten, or sanity-check a CV even if they don't literally say "rate". Works on .docx and .txt; pass a job description too for a targeted match.
+description: Rate and critique a CV/resume. Scores it out of 100 against a weighted leadership rubric that adapts to the CV's field (engineering, clinical, teaching, finance, operations), checks ATS parse-ability, quantified impact, and AI-slop, and can match it to a specific job description with a keyword gap list. Use this whenever the user wants a CV or resume rated, scored, graded, reviewed, critiqued, checked against ATS, or matched to a job posting, and also when they ask to improve, tighten, or sanity-check a CV even if they don't literally say "rate". Works on .docx and .txt; pass a job description too for a targeted match.
 ---
 
 # rate-cv
+
+**Read the CV's field before scoring.** The rubric is weighted for leadership
+CVs in any profession: 47 of the 100 points are domain-neutral and the rest
+have a mapping table for what counts as evidence in engineering, clinical,
+teaching, finance and operations roles. Name the domain you scored against in
+the output. A score produced against a rubric you quietly adapted looks
+comparable to other scores and is not.
 
 Score a CV honestly and specifically, then hand back a number that's auditable and fixes that are actionable. Two modes:
 

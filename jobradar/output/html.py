@@ -240,13 +240,13 @@ def _row(j: Job, is_new: bool) -> str:
 
 
 def render(new: list[Job], seen: list[Job], *, dropped, sources_ok, sources_total,
-           throttled, title: str = "Job radar") -> str:
+           throttled, postings: int = 0, title: str = "Job radar") -> str:
     jobs = new + seen
     new_ids = {j.uid for j in new}
     paid_n = sum(1 for j in jobs if j.salary.confirmed)
 
-    bits = [f"<b>{sum(dropped.values()) + len(jobs):,}</b> postings across "
-            f"<b>{sources_ok}</b> boards"]
+    bits = [f"<b>{postings or (sum(dropped.values()) + len(jobs)):,}</b> postings "
+            f"across <b>{sources_ok}</b> boards"]
     if new:
         bits.append(f"<b>{len(new)}</b> new")
     bits.append(f"<b>{paid_n}</b> with a salary")

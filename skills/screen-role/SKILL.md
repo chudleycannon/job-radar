@@ -19,8 +19,17 @@ Work through these in sequence and stop at the first hard fail. Screening in
 this order saves the most time, because the cheapest checks eliminate the most
 roles.
 
-**1. The dealbreakers.** Read `config.yaml` in the job-radar repo if there is
-one, or ask what the user's are. Never invent them. Common ones people hold
+**1. The dealbreakers.** These live in the job-radar config, which is
+`config.local.yaml` if it exists and `config.yaml` otherwise. A skill runs
+from wherever the user happens to be, so search rather than assuming a path:
+
+```bash
+ls ~/job-radar/config.local.yaml ~/job-radar/config.yaml 2>/dev/null
+```
+
+If neither is there, ask what their dealbreakers are. Never invent them, and
+never screen against a list you have not read: a screening built on assumed
+dealbreakers carries the same confidence as a real one and is worthless. Common ones people hold
 without saying so: a live coding round, an expectation of hands-on delivery in
 a leadership role, on-call, shift patterns, heavy travel, managing managers
 when they never have, pre-sales dressed up as engineering.

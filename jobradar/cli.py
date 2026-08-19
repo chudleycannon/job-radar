@@ -61,7 +61,7 @@ def cmd_scan(args) -> int:
 
     throttled = detect_throttling(results, counts, state.source_counts)
 
-    _say(f"  {ok}/{len(srcs)} responded, {len(all_jobs)} postings")
+    _say(f"  {ok}/{len(srcs)} responded, {len(all_jobs):,} postings")
     if throttled:
         _say(f"  ! {len(throttled)} sources look throttled (returned nothing "
              f"but have before): {', '.join(throttled[:6])}")
@@ -115,6 +115,9 @@ def cmd_scan(args) -> int:
 
     meta = {
         "sources_ok": ok, "sources_total": len(srcs),
+        # The raw count, matching what the CLI printed. The HTML used to sum
+        # the drop reasons instead, which is post-dedupe, so the two numbers
+        # disagreed by however many duplicate postings there were.
         "postings": len(all_jobs), "matching": len(kept),
         "new": len(new), "throttled": throttled, "dropped": dropped,
     }
@@ -124,6 +127,7 @@ def cmd_scan(args) -> int:
         written.append(output.html_out.write(
             outdir / "index.html", new=new, seen=seen, dropped=dropped,
             sources_ok=ok, sources_total=len(srcs), throttled=throttled,
+            postings=len(all_jobs),
         ))
     if "json" in cfg.formats:
         written.append(output.write_json(outdir / "roles.json", new, seen, meta))

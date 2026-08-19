@@ -88,12 +88,39 @@ class Handler(BaseHTTPRequestHandler):
             target = (q.get("path") or [""])[0]
             p = Path(unquote(target)) if target else None
             if p and p.exists():
-                subprocess.run(["open", "-R", str(p)], check=False)
-                return self._json({"ok": True})
+                # check=False does not suppress FileNotFoundError, so on a
+                # machine without `open` this raised inside the handler and
+                # dropped the connection.
+                import sys as _sys
+                cmds = ([["open", "-R", str(p)]] if _sys.platform == "darwin"
+                        else [["xdg-open", str(p.parent)], ["explorer", str(p.parent)]])
+                for c in cmds:
+                    try:
+                        subprocess.run(c, check=False)
+                        return self._json({"ok": True})
+                    except (FileNotFoundError, OSError):
+                        continue
+                return self._json({"ok": False,
+                                   "error": f"could not reveal it; the file is at {p}"})
             return self._json({"ok": False, "error": "not found"}, 404)
         self.send_error(404)
 
+    def _same_origin(self) -> bool:
+        """Reject cross-site posts.
+
+        This server spends money. Without a check, any page open in the same
+        browser could POST to /api/generate, and a text/plain body is a simple
+        request so there is no preflight to stop it.
+        """
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True                      # curl and same-origin form posts
+        host = self.headers.get("Host", "")
+        return origin.split("//")[-1] == host
+
     def do_POST(self):
+        if not self._same_origin():
+            return self._json({"ok": False, "error": "cross-origin request refused"}, 403)
         path = urlparse(self.path).path
         data = self._body()
         uid = data.get("uid")
