@@ -199,6 +199,10 @@ def prepare(src: Source) -> Source:
     if not src.platform:
         src.platform = p.name
     if p.method == "POST":
+        # Remember that these were worked out from the URL, so writing the
+        # list back out does not bake in something this function re-derives on
+        # every load.
+        src.derived_request = src.method != "POST" or not src.body
         src.method = "POST"
         if not src.body:
             src.body = _wd_body()

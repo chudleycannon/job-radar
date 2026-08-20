@@ -13,8 +13,8 @@
    "company": "1Password",
    "url": "https://api.ashbyhq.com/posting-api/job-board/1password?includeCompensation=true",
    "platform": "ashby",
-   "domain": "1password.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "1password.com"
   },
   {
    "company": "Airwallex",
@@ -32,8 +32,8 @@
    "company": "Astronomer",
    "url": "https://api.ashbyhq.com/posting-api/job-board/astronomer?includeCompensation=true",
    "platform": "ashby",
-   "domain": "astronomer.io",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "astronomer.io"
   },
   {
    "company": "Attio",
@@ -123,8 +123,8 @@
    "company": "Deepgram",
    "url": "https://api.ashbyhq.com/posting-api/job-board/Deepgram?includeCompensation=true",
    "platform": "ashby",
-   "domain": "deepgram.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "deepgram.com"
   },
   {
    "company": "Deepl",
@@ -178,8 +178,8 @@
    "company": "Freetrade",
    "url": "https://api.ashbyhq.com/posting-api/job-board/freetrade?includeCompensation=true",
    "platform": "ashby",
-   "domain": "freetrade.io",
-   "sector": "finance"
+   "sector": "finance",
+   "domain": "freetrade.io"
   },
   {
    "company": "Fundingcircle",
@@ -227,8 +227,8 @@
    "company": "LangChain",
    "url": "https://api.ashbyhq.com/posting-api/job-board/langchain?includeCompensation=true",
    "platform": "ashby",
-   "domain": "langchain.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "langchain.com"
   },
   {
    "company": "Latent Labs",
@@ -246,8 +246,8 @@
    "company": "Lendable",
    "url": "https://api.ashbyhq.com/posting-api/job-board/lendable?includeCompensation=true",
    "platform": "ashby",
-   "domain": "lendable.co.uk",
-   "sector": "finance"
+   "sector": "finance",
+   "domain": "lendable.co.uk"
   },
   {
    "company": "Lightdash",
@@ -271,22 +271,22 @@
    "company": "Marshmallow",
    "url": "https://api.ashbyhq.com/posting-api/job-board/marshmallow?includeCompensation=true",
    "platform": "ashby",
-   "domain": "marshmallow.com",
-   "sector": "finance"
+   "sector": "finance",
+   "domain": "marshmallow.com"
   },
   {
    "company": "Material Security",
    "url": "https://api.ashbyhq.com/posting-api/job-board/materialsecurity?includeCompensation=true",
    "platform": "ashby",
-   "domain": "material.security",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "material.security"
   },
   {
    "company": "Materialize",
    "url": "https://api.ashbyhq.com/posting-api/job-board/materialize?includeCompensation=true",
    "platform": "ashby",
-   "domain": "materialize.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "materialize.com"
   },
   {
    "company": "Mistral AI",
@@ -328,8 +328,8 @@
    "company": "OakNorth",
    "url": "https://api.ashbyhq.com/posting-api/job-board/oaknorth?includeCompensation=true",
    "platform": "ashby",
-   "domain": "oaknorth.co.uk",
-   "sector": "finance"
+   "sector": "finance",
+   "domain": "oaknorth.co.uk"
   },
   {
    "company": "Omnea",
@@ -395,8 +395,8 @@
    "company": "Prefect",
    "url": "https://api.ashbyhq.com/posting-api/job-board/prefect?includeCompensation=true",
    "platform": "ashby",
-   "domain": "prefect.io",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "prefect.io"
   },
   {
    "company": "Quantexa",
@@ -408,8 +408,8 @@
    "company": "Railway",
    "url": "https://api.ashbyhq.com/posting-api/job-board/railway?includeCompensation=true",
    "platform": "ashby",
-   "domain": "railway.app",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "railway.app"
   },
   {
    "company": "Ramp",
@@ -489,8 +489,8 @@
    "company": "Socure",
    "url": "https://api.ashbyhq.com/posting-api/job-board/socure?includeCompensation=true",
    "platform": "ashby",
-   "domain": "socure.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "socure.com"
   },
   {
    "company": "Supabase",
@@ -532,8 +532,8 @@
    "company": "TigerData",
    "url": "https://api.ashbyhq.com/posting-api/job-board/tigerdata?includeCompensation=true",
    "platform": "ashby",
-   "domain": "tigerdata.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "tigerdata.com"
   },
   {
    "company": "Trainline",
@@ -545,15 +545,15 @@
    "company": "UpGuard",
    "url": "https://api.ashbyhq.com/posting-api/job-board/upguard?includeCompensation=true",
    "platform": "ashby",
-   "domain": "upguard.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "upguard.com"
   },
   {
    "company": "Vanta",
    "url": "https://api.ashbyhq.com/posting-api/job-board/vanta?includeCompensation=true",
    "platform": "ashby",
-   "domain": "vanta.com",
-   "sector": "technology"
+   "sector": "technology",
+   "domain": "vanta.com"
   },
   {
    "company": "Vertical Aerospace",
@@ -595,8 +595,8 @@
    "company": "Zilch",
    "url": "https://api.ashbyhq.com/posting-api/job-board/zilch?includeCompensation=true",
    "platform": "ashby",
-   "domain": "zilch.com",
-   "sector": "finance"
+   "sector": "finance",
+   "domain": "zilch.com"
   },
   {
    "company": "Metro Bank",
@@ -1422,17 +1422,17 @@
   },
   {
    "company": "LinkedIn",
+   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=United%20Kingdom&f_TPR=r604800&start=0",
    "platform": "linkedin",
-   "keyword_template": true,
-   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=United%20Kingdom&f_TPR=r604800&start=0"
+   "keyword_template": true
   },
   {
    "company": "NHS Jobs",
+   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword={keyword}",
    "platform": "nhs",
    "sector": "healthcare",
    "country": "UK",
-   "keyword_template": true,
-   "url": "https://www.jobs.nhs.uk/candidate/search/results?keyword={keyword}"
+   "keyword_template": true
   },
   {
    "company": "Marks and Spencer",

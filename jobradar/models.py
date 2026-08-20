@@ -135,6 +135,12 @@ class Source:
     method: str = "GET"
     body: dict[str, Any] | None = None
     keyword_template: bool = False   # url contains {keyword}, expanded per title
+    # True when `adapters.prepare()` synthesised `method`/`body` from the URL
+    # shape rather than reading them from the file. Writing derived values back
+    # out made `save(load_file(x), x)` non-idempotent: the weekly prune of one
+    # dead source produced a 529-line diff of Workday POST bodies, which is not
+    # a pull request anybody can review.
+    derived_request: bool = False
 
     @property
     def key(self) -> str:
@@ -153,10 +159,11 @@ class Source:
         for k in ("sector", "country", "domain"):
             if getattr(self, k):
                 d[k] = getattr(self, k)
-        if self.method != "GET":
-            d["method"] = self.method
-        if self.body:
-            d["body"] = self.body
+        if not self.derived_request:
+            if self.method != "GET":
+                d["method"] = self.method
+            if self.body:
+                d["body"] = self.body
         if self.keyword_template:
             d["keyword_template"] = True
         return d

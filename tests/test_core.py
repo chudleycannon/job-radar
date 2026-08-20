@@ -1124,6 +1124,23 @@ def test_a_config_path_that_does_not_exist_is_an_error_not_a_default():
     raise AssertionError("an explicit -c pointing nowhere should stop the run")
 
 
+def test_saving_what_you_loaded_changes_nothing():
+    """The weekly prune of one dead source produced a 529-line diff.
+
+    `adapters.prepare()` synthesises a Workday POST body from the URL shape,
+    and `save()` wrote those derived values back into the file, so the pull
+    request a human is meant to review was mostly noise it had generated
+    itself. A maintenance job whose output cannot be read is not maintenance.
+    """
+    import json, tempfile
+    from jobradar.sources import load_file, save, BUNDLED
+    out = Path(tempfile.mkdtemp()) / "s.json"
+    save(load_file(BUNDLED), out)
+    norm = lambda p: sorted(json.dumps(x, sort_keys=True)
+                            for x in json.loads(Path(p).read_text())["sources"])
+    assert norm(BUNDLED) == norm(out)
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())
