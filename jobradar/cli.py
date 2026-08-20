@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +63,19 @@ def cmd_scan(args) -> int:
     throttled = detect_throttling(results, counts, state.source_counts)
 
     _say(f"  {ok}/{len(srcs)} responded, {len(all_jobs):,} postings")
+    # "responded" is not "worked". A board that answers with nothing looks
+    # identical to one that is not being watched at all, which is how five
+    # hand-added charity boards were reported as healthy.
+    empty = [r.source.company for r in results
+             if r.ok and counts.get(r.source.key, 0) == 0]
+    if empty and len(empty) <= 12:
+        _say(f"  ! {len(empty)} source(s) responded with no postings at all: "
+             f"{', '.join(empty)}")
+        _say("    Run `job-radar validate` to see whether they are dead or "
+             "just unreadable.")
+    elif empty:
+        _say(f"  ! {len(empty)} sources responded with no postings at all. "
+             f"Run `job-radar validate`.")
     if throttled:
         _say(f"  ! {len(throttled)} sources look throttled (returned nothing "
              f"but have before): {', '.join(throttled[:6])}")
@@ -160,6 +174,9 @@ def cmd_discover(args) -> int:
             if f.identity == "blocked":
                 _say(f"  blocked. {f.note}")
                 continue
+            if f.identity == "unsupported":
+                _say(f"  found their board: {f.note}")
+                continue
             mark = {"ok": "verified", "mismatch": "WRONG COMPANY?",
                     "unchecked": "unverified"}.get(f.identity, f.identity)
             _say(f"  {f.platform:<16} {f.live_jobs:>4} jobs  [{mark}]  {f.url}")
@@ -178,15 +195,45 @@ def cmd_discover(args) -> int:
 
 
 def _append_sources(cfg_path: Path, new: list[Source]) -> None:   # used by discover --add
+    """Append to `sources.extra` in place, keeping the file as written.
+
+    Round-tripping through yaml.safe_dump rewrote the whole file and deleted
+    every comment in it, including the one line that documents what
+    `sources.extra` is -- so `--add` erased the explanation of `--add`.
+    """
     import yaml
-    raw = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
-    raw = raw or {}
-    raw.setdefault("sources", {}).setdefault("extra", [])
-    have = {s.get("url") for s in raw["sources"]["extra"] if isinstance(s, dict)}
-    for s in new:
-        if s.url not in have:
-            raw["sources"]["extra"].append(s.to_dict())
-    cfg_path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    text = cfg_path.read_text() if cfg_path.exists() else ""
+    raw = yaml.safe_load(text) or {}
+    have = {s.get("url") for s in ((raw.get("sources") or {}).get("extra") or [])
+            if isinstance(s, dict)}
+    add = [s for s in new if s.url not in have]
+    if not add:
+        return
+
+    block = "".join(
+        f"    - company: {s.company}\n      url: {s.url}\n"
+        f"      platform: {s.platform}\n" for s in add)
+
+    lines = text.splitlines(keepends=True)
+    out, done = [], False
+    for i, line in enumerate(lines):
+        # An existing empty `extra: []` becomes a list; an existing list is
+        # appended to at the end of its block.
+        if not done and re.match(r"^\s{2}extra:\s*\[\s*\]\s*$", line):
+            out.append("  extra:\n"); out.append(block); done = True
+            continue
+        if not done and re.match(r"^\s{2}extra:\s*$", line):
+            out.append(line)
+            j = i + 1
+            while j < len(lines) and (lines[j].startswith("    ") or not lines[j].strip()):
+                out.append(lines[j]); j += 1
+            out.append(block); done = True
+            lines[i + 1:j] = []
+            continue
+        out.append(line)
+    if not done:
+        out.append("\nsources:\n  extra:\n" + block)
+    cfg_path.write_text("".join(out))
 
 
 # ---------------------------------------------------------------- validate

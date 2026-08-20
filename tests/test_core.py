@@ -690,6 +690,77 @@ def test_a_role_is_new_once_not_all_day():
     assert store.new_since_last_run(con, [a.uid, b.uid]) == {b.uid}
 
 
+
+def test_a_page_that_served_us_content_is_not_blocked():
+    """Substring-matching "cloudflare" or "captcha" over any body marked three
+    working charity sites as bot-protected: a Cloudflare-served 404 for a path
+    that does not exist is not a block, and neither is a hidden captcha field
+    inside a perfectly good 200."""
+    from jobradar.discover import _is_blocked
+
+    class R:
+        def __init__(self, code, text=""):
+            self.status_code, self.text = code, text
+
+    assert _is_blocked(R(200, "...job alerts signup Captcha...")) is False
+    assert _is_blocked(R(404, "Cloudflare | page not found")) is True
+    assert _is_blocked(R(403, "")) is True
+    assert _is_blocked(R(200, "ordinary careers page")) is False
+    assert _is_blocked(None) is False
+
+
+def test_unsupported_platforms_are_named_not_shrugged_at():
+    """Fifteen identical "nothing found" messages hid the fact that UK charity
+    recruitment runs on four ATSs nobody has written an adapter for."""
+    from jobradar.discover import detect_unsupported
+    cases = [
+        ("https://jobs.bhf.org.uk/", "powered by eploy", "Eploy"),
+        ("https://jobs.crisis.org.uk/Home/Job", "", "Jobtrain"),
+        ("https://jobs.oxfam.org.uk/jobs/home/", "", "Hireserve"),
+        ("https://careers.nationaltrust.org.uk/OA_HTML/a/", "", "Oracle EBS iRecruitment"),
+    ]
+    for url, body, expected in cases:
+        assert detect_unsupported(body, url) == expected, url
+    # "deploy" must not read as Eploy
+    assert detect_unsupported("our servers deploy nightly", "https://x/") == ""
+    # and a supported board is not mislabelled
+    assert detect_unsupported("", "https://boards.greenhouse.io/monzo") == ""
+
+
+def test_adding_a_source_keeps_the_file_as_written():
+    """--add round-tripped through yaml.safe_dump and deleted every comment,
+    including the only line documenting sources.extra."""
+    import shutil, tempfile, yaml
+    from jobradar.cli import _append_sources
+    from jobradar.models import Source
+
+    d = Path(tempfile.mkdtemp()) / "config.yaml"
+    shutil.copy("config.example.yaml", d)
+    before = d.read_text()
+    _append_sources(d, [Source(company="Beam", url="https://x/board", platform="ashby")])
+    after = d.read_text()
+
+    assert after.count("#") == before.count("#"), "comments were destroyed"
+    assert "https://x/board" in after
+    parsed = yaml.safe_load(after)
+    assert any(s.get("url") == "https://x/board"
+               for s in parsed["sources"]["extra"])
+
+
+def test_the_wizard_only_offers_sectors_that_exist():
+    """Offering "manufacturing" and "transport", which are not tags in the
+    source list, meant picking your own sector silently reduced you to the
+    keyword searches alone."""
+    import json as _j
+    from collections import Counter
+    from jobradar.setup_wizard import SECTORS
+    real = {s for s in Counter(
+        x.get("sector") for x in _j.loads(
+            Path("sources/sources.json").read_text())["sources"]) if s}
+    assert not (set(SECTORS) - real), f"offered but nonexistent: {set(SECTORS) - real}"
+    assert not (real - set(SECTORS)), f"exists but not offered: {real - set(SECTORS)}"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

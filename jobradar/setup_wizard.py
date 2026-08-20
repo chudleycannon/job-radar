@@ -24,9 +24,14 @@ COMMON_DEALBREAKERS = {
     "manages managers": r"managing managers|manager of managers|people managers report",
 }
 
+# Must match the tags actually used in sources/sources.json. Offering
+# "manufacturing" and "transport", which do not exist, while omitting
+# "industry", "travel", "telecoms" and "charity", which do, meant picking your
+# own sector could silently reduce you to the keyword searches alone.
 SECTORS = [
     "technology", "finance", "healthcare", "public-sector", "education",
-    "retail", "manufacturing", "professional-services", "media", "transport",
+    "retail", "industry", "professional-services", "media", "travel",
+    "telecoms", "charity",
 ]
 
 _TITLE_HINT = re.compile(

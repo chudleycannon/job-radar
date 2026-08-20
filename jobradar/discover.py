@@ -63,6 +63,33 @@ WORKDAY_RE = re.compile(
 
 _JUNK_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api", "www", "search"}
 
+# Platforms we can recognise but cannot read yet. Naming them turns fifteen
+# identical shrugs into a diagnosis, and tells the maintainer which adapter to
+# write next from real runs rather than guesswork. UK charity and public-sector
+# recruitment runs almost entirely on these.
+UNSUPPORTED = [
+    ("Eploy", r"\beploy\b"),
+    ("Hireserve", r"hireserve|/jobs/home/?(?=\s|[?#]|$)"),
+    ("Jobtrain", r"jobtrain\.co\.uk|/Home/Job(?=\s|[?/#]|$)"),
+    ("Networx", r"networxrecruitment\.com"),
+    ("Oracle EBS iRecruitment", r"/OA_HTML/"),
+    ("Oleeo", r"oleeo\.com|\.tal\.net"),
+    ("Taleo", r"taleo\.net"),
+    ("iCIMS portal", r"icims\.com/jobs/search(?!.*in_iframe)"),
+    ("Teamtailor", r"teamtailor\.com"),
+    ("Workday (site unknown)", r"myworkdayjobs\.com(?!.*/wday/cxs)"),
+    ("Civil Service Jobs", r"civilservicejobs\.service\.gov\.uk"),
+    ("CharityJob", r"charityjob\.co\.uk"),
+]
+
+
+def detect_unsupported(text: str, url: str) -> str:
+    blob = f"{url}\n{text[:200_000]}"
+    for name, pat in UNSUPPORTED:
+        if re.search(pat, blob, re.I):
+            return name
+    return ""
+
 
 @dataclass
 class Found:
@@ -104,10 +131,20 @@ def _get(url: str, timeout: int = 12) -> requests.Response | None:
 
 
 def _is_blocked(r: requests.Response | None) -> bool:
+    """Did this host actually refuse us?
+
+    Substring-matching "cloudflare" or "captcha" over any response body marked
+    three working charity sites as bot-protected: a Cloudflare-served 404 for
+    a path that does not exist is not a block, and neither is a hidden captcha
+    field on a job-alert signup form inside a perfectly good 200.
+    """
     if r is None:
         return False
     if r.status_code in (401, 403, 429):
         return True
+    # A page that served us content did not refuse us, whatever words are in it.
+    if r.status_code < 400:
+        return False
     return bool(_BLOCKED.search(r.text[:2000])) if r.text else False
 
 
@@ -287,6 +324,8 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     cands = _candidates(target)
     hits: list[tuple[str, str, str]] = []
     blocked = 0
+    unsupported = ""          # a platform we recognised but cannot read yet
+    unsupported_url = ""
     with ThreadPoolExecutor(max_workers=6) as ex:
         futs = {ex.submit(_get, c, 10): c for c in cands}
         try:
@@ -301,6 +340,10 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
                 if got:
                     hits.extend(got)
                     break
+                if not unsupported:
+                    found = detect_unsupported(r.text, r.url)
+                    if found:
+                        unsupported, unsupported_url = found, r.url
         except TimeoutError:
             pass
         for f2 in futs:
@@ -336,6 +379,15 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     found = [f for f in checked if f.live_jobs > 0 or not validate]
 
     if not found:
+        if unsupported:
+            # Naming the platform turns an identical shrug into a diagnosis,
+            # and tells the maintainer which adapter to write next from real
+            # runs rather than guesswork.
+            return [Found(company=name, url=unsupported_url, platform="",
+                          token="", domain=domain, identity="unsupported",
+                          note=f"{unsupported}, which job-radar cannot read yet. "
+                               f"The board is at {unsupported_url} and is worth "
+                               f"a bookmark. Adapter requests welcome.")]
         if blocked:
             return [Found(company=name, url="", platform="", token="", domain=domain,
                           identity="blocked",
