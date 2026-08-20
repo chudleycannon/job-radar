@@ -872,7 +872,10 @@ def test_unknown_sector_is_refused():
     from jobradar.config import ConfigError, _sectors
     assert _sectors(["Finance", "charity"]) == ["finance", "charity"]
     try:
-        _sectors(["hospitality"])
+        # Not "hospitality": that was the original example, and the weekly
+        # grower has since added a hospitality employer, which is exactly the
+        # behaviour this validator is meant to follow.
+        _sectors(["telecommunications"])
     except ConfigError:
         return
     raise AssertionError("a sector tag that matches no employer should be refused")

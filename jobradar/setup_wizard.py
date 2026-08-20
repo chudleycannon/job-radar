@@ -28,10 +28,14 @@ COMMON_DEALBREAKERS = {
 # "manufacturing" and "transport", which do not exist, while omitting
 # "industry", "travel", "telecoms" and "charity", which do, meant picking your
 # own sector could silently reduce you to the keyword searches alone.
+# Kept in step with the tags actually present in the bundled source list; a
+# test fails if the two drift. Offering a tag with no employers behind it sends
+# someone away with an empty scan, and not offering one that exists hides a
+# sector from the person it was added for.
 SECTORS = [
     "technology", "finance", "healthcare", "public-sector", "education",
     "retail", "industry", "professional-services", "media", "travel",
-    "telecoms", "charity",
+    "telecoms", "charity", "hospitality",
 ]
 
 # Job titles as they appear on a real CV: usually followed by an employer, a
