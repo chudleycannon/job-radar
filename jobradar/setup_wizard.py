@@ -34,11 +34,17 @@ SECTORS = [
     "telecoms", "charity",
 ]
 
+# Job titles as they appear on a real CV: usually followed by an employer, a
+# date range, or both, on the same line. Requiring the title to be alone on
+# its line returned nothing for every CV tested.
+_ROLE_WORD = (r"manager|director|lead|head|engineer|analyst|architect|consultant|"
+              r"specialist|officer|administrator|coordinator|designer|scientist|"
+              r"nurse|teacher|accountant|partner|advisor|adviser|controller|"
+              r"practitioner|educator|developer|technician|supervisor|assistant")
 _TITLE_HINT = re.compile(
-    r"^\s*(?:[A-Z][\w/&.-]*\s+){0,4}"
-    r"(manager|director|lead|head|engineer|analyst|architect|consultant|specialist|"
-    r"officer|administrator|coordinator|designer|scientist|nurse|teacher|accountant)"
-    r"(?:\s+[A-Za-z/&,.-]+){0,3}\s*$",
+    rf"(?:^|\n)\s*((?:[A-Z][\w/&.'-]*\s+){{0,4}}(?:{_ROLE_WORD})"
+    rf"(?:\s+(?:of|for|-)\s+[A-Z][\w/&.'-]*)?)"
+    rf"(?=\s*(?:$|[,|\u2013\u2014-]|\t|\s{{2,}}|\bat\b|\())",
     re.I | re.M,
 )
 
@@ -72,8 +78,10 @@ def titles_from_cv(text: str, limit: int = 12) -> list[str]:
     """
     hits: dict[str, int] = {}
     for m in _TITLE_HINT.finditer(text):
-        t = " ".join(m.group(0).split()).lower().strip(" ,.-")
-        if 3 <= len(t) <= 45:
+        t = " ".join(m.group(1).split()).lower().strip(" ,.-")
+        # Drop leading filler that reads as part of the title on a CV line.
+        t = re.sub(r"^(?:senior|junior|lead|principal|interim|acting)\s+(?=\w)", "", t)
+        if 3 <= len(t) <= 45 and not t.startswith(("and ", "the ", "a ")):
             hits[t] = hits.get(t, 0) + 1
     ranked = sorted(hits.items(), key=lambda x: (-x[1], len(x[0])))
     return [t for t, _ in ranked[:limit]]
@@ -253,13 +261,29 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
     # 1. titles
     print("1. What roles are you looking for?")
     print("   Not sure? Paste your CV instead and press Ctrl-D on a blank line.")
-    first = _ask("   Job titles (or type 'cv' to paste)", "")
-    if first.lower() == "cv":
-        print("   Paste your CV, then Ctrl-D:")
-        try:
-            text = "".join(iter(input, "\x00"))
-        except EOFError:
-            text = ""
+    first = _ask("   Job titles (or press enter to read them from your CV)", "")
+    if not first or first.lower() == "cv":
+        # It asked for a path at step 0, validated it, then asked you to paste
+        # the same document. Read the file.
+        text = ""
+        cv = Path(a.get("cv_path") or "")
+        if cv.exists():
+            try:
+                if cv.suffix.lower() == ".docx":
+                    import sys as _s
+                    _s.path.insert(0, str(Path(__file__).resolve().parent.parent))
+                    from jobradar.runner import docx_to_text
+                    text = docx_to_text(cv)
+                else:
+                    text = cv.read_text(errors="ignore")
+            except Exception:
+                text = ""
+        if not text:
+            print("   Paste your CV, then Ctrl-D:")
+            try:
+                text = "".join(iter(input, "\x00"))
+            except EOFError:
+                text = ""
         guessed = titles_from_cv(text)
         if guessed:
             print(f"   Found these titles in your CV: {', '.join(guessed)}")

@@ -29,6 +29,11 @@ _EXTRA_CSS = """
 .acts button.primary{color:var(--accent);border-color:var(--accent)}
 .acts button.primary:hover{background:var(--accent);color:var(--surface)}
 .acts button:disabled{opacity:.4;cursor:not-allowed}
+.acts select{border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  font:inherit;font-size:.8125rem;padding:6px 10px;border-radius:var(--r-md);cursor:pointer}
+.acts select:hover{color:var(--ink)}
+.rownote{grid-column:1/-1;font-size:.8125rem;color:var(--muted);margin-top:var(--s2);
+  font-style:italic}
 .acts button:disabled:hover{color:var(--muted);border-color:var(--line)}
 .acts button.busy{color:var(--accent);border-color:var(--accent)}
 .acts button.busy::after{content:"";width:9px;height:9px;border-radius:50%;
@@ -121,6 +126,15 @@ document.addEventListener('click', async e=>{
     await post('/api/status',{uid,status:'applied'});
     row.dataset.status='applied'; say('Marked applied, opening the job board');
     return;}
+
+  if(e.target.closest('[data-note]')){
+    const cur=row.querySelector('.rownote');
+    const note=prompt('Note for this role:', cur?cur.textContent:'');
+    if(note===null) return;
+    const {ok,data}=await post('/api/status',
+      {uid,status:row.dataset.status,note:note});
+    if(!ok){say(data.error||'could not save');return}
+    say('Note saved'); location.reload(); return;}
 
   const gen=e.target.closest('[data-gen]');
   if(gen && !gen.disabled){
@@ -310,6 +324,7 @@ def _row(r, arts, job) -> str:
         f'{_h.escape(r["salary_label"] or "unconfirmed salary")}</span></div>'
         + (f'<div class="docs">{" &middot; ".join(docs)}</div>' if docs else "")
         + (f'<div class="note">{_h.escape(notes[0])}</div>' if notes else "")
+        + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
         + '<div class="acts">'
         + b("screen", "Screen", "primary")
         + b("cv", "CV")
@@ -318,6 +333,16 @@ def _row(r, arts, job) -> str:
           f'data-apply="1">Apply</a>'
         + '<button data-status="skipped">Skip</button>'
         + ('<button data-status="interested">Unskip</button>' if settled else '')
+        # The dashboard offered two of the ten statuses and no note, while the
+        # CLI had all ten and a note, so the browser could not record an
+        # interview date -- the thing a tracker is for.
+        + '<select class="setstatus" aria-label="Set status">'
+        + '<option value="">Status\u2026</option>'
+        + "".join(
+            f'<option value="{s}"{" selected" if s == r["status"] else ""}>{s}</option>'
+            for s in store.STATUSES)
+        + '</select>'
+        + '<button data-note="1" title="Add or edit a note">Note</button>'
         + '</div>'
         + (f'<div class="err" hidden></div>')
         + '</div>')

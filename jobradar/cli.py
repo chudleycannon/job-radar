@@ -42,6 +42,9 @@ def cmd_scan(args) -> int:
         if done["n"] % 25 == 0:
             _say(f"  {done['n']}/{len(srcs)}")
 
+    if len(cfg.titles_include) > 6:
+        _say(f"  note: only the first 6 of your {len(cfg.titles_include)} titles "
+             f"are used as search terms (Workday uses 3). Order matters.")
     results = fetch_all(
         srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
         retries=cfg.retries, user_agent=cfg.user_agent,
@@ -109,7 +112,14 @@ def cmd_scan(args) -> int:
     store.bump_runs(con)
     new = [j for j in kept if j.uid in new_ids]
     seen = [j for j in kept if j.uid not in new_ids]
-    _say(f"  {len(kept)} match your config, {len(new)} new")
+    first_run = int(store.get_meta(con, "runs", "0")) == 0
+    if first_run and kept:
+        # "0 new" on a first run reads as "we found nothing", when in fact
+        # everything is new and there is nothing to compare against yet.
+        _say(f"  {len(kept)} match your config. First run, so none are marked "
+             f"new yet; from the next scan you will only be shown changes.")
+    else:
+        _say(f"  {len(kept)} match your config, {len(new)} new")
     if not kept:
         # An empty page reads as "the market is empty" when it usually means
         # the filters or the sources do not fit the person running it.
@@ -382,8 +392,18 @@ def cmd_generate(args) -> int:
             _say("Draft the CV first: the letter is checked against it for "
                  "repeated phrasing.")
             return 1
-        row = con.execute("SELECT company, title FROM roles WHERE uid=?",
-                          (uid,)).fetchone()
+        row = con.execute("SELECT company, title, description FROM roles "
+                          "WHERE uid=?", (uid,)).fetchone()
+        # Screening a posting with no body spends money to be told there is
+        # nothing to read. For some users that is most of their results.
+        if args.kind == "screen" and len((row["description"] or "").strip()) < 200:
+            _say(f"{row['company']} - {row['title'][:56]}")
+            _say("  This posting has no description, so there is nothing to "
+                 "screen against your dealbreakers.")
+            _say("  Open the advert and screen it by hand, or use --force to "
+                 "spend the tokens anyway.")
+            if not args.force:
+                return 1
         job_id = store.enqueue(con, uid, args.kind)
         _say(f"{row['company']} - {row['title'][:56]}")
         _say(f"  {args.kind}, job {job_id}. This spends tokens.")
@@ -560,6 +580,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="screen | cv | cover_letter")
     g.add_argument("--db", default=None)
     g.add_argument("--docs", default=None)
+    g.add_argument("--force", action="store_true",
+                   help="screen even when the posting has no description")
     g.set_defaults(func=cmd_generate)
 
     ls = sub.add_parser("list", help="the dashboard, as text")

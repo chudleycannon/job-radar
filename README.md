@@ -365,6 +365,14 @@ protection, and it never will.
 **Salary you can filter on reliably.** Around a third of postings state one.
 That is the market, not a bug, and the rule above is built around it.
 
+**Several UK applicant tracking systems.** Charity and public-sector
+recruitment runs largely on Eploy, Hireserve, Jobtrain, Networx and Oracle
+EBS, and none have adapters. `discover` recognises all of them and tells you
+which one an employer uses, with the working board URL, rather than saying
+"nothing found" — but it cannot read them. A fundraiser trying twenty-one
+organisations resolved one. Adapter contributions for these would do more for
+coverage than another hundred technology companies.
+
 ---
 
 ## robots.txt, and what this tool does about it

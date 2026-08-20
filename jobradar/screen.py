@@ -305,6 +305,42 @@ def apply_salary(job: Job, cfg: Config) -> tuple[bool, str]:
     return keep, why
 
 
+# Seniority words, roughly ordered. Used to notice when a posting sits well
+# above or below the level you asked for, which the score was blind to: a
+# Principal role and a grade-I role got identical numbers because nothing in
+# the calculation read the candidate at all.
+_LEVELS = [
+    (1, r"\b(?:junior|graduate|trainee|apprentice|entry.level|assistant)\b|\bI\b$"),
+    (2, r"\b(?:analyst|associate|engineer|officer|advisor|coordinator|executive)\b"),
+    (3, r"\b(?:senior|snr|specialist|lead(?!ership)|supervisor)\b"),
+    (4, r"\b(?:manager|management)\b"),
+    (5, r"\b(?:principal|staff|head of|senior manager|group manager)\b"),
+    (6, r"\b(?:director|vp|vice president|chief|c-level|partner)\b"),
+]
+
+
+def seniority(title: str) -> int:
+    """Rough level of a title, 0 when nothing identifies one.
+
+    An explicit junior marker wins outright. Taking the maximum meant "Junior
+    Data Engineer" scored as mid-level, because "engineer" outranks "junior".
+    """
+    title = title or ""
+    if re.search(_LEVELS[0][1], title, re.I):
+        return 1
+    best = 0
+    for lvl, pat in _LEVELS[1:]:
+        if re.search(pat, title, re.I):
+            best = max(best, lvl)
+    return best
+
+
+def _target_level(cfg: Config) -> int:
+    levels = [seniority(t) for t in cfg.titles_include]
+    levels = [l for l in levels if l]
+    return max(levels) if levels else 0
+
+
 def score(job: Job, cfg: Config) -> float:
     """A transparent 0-100 score. Explanations land in `job.reasons`."""
     s, why = 0.0, []
@@ -353,7 +389,25 @@ def score(job: Job, cfg: Config) -> float:
     if not job.flags:
         s += 10
 
-    job.score = round(min(s, 100.0), 1)
+    # A role two levels above what you asked for is not a better match for
+    # being more senior. Without this the top of the list was whatever was
+    # posted most recently, regardless of whether it was reachable.
+    target = _target_level(cfg)
+    lvl = seniority(job.title)
+    if target and lvl:
+        gap = lvl - target
+        if gap >= 2:
+            s -= 25
+            why.append(f"reads {gap} levels above your targets")
+            job.flags.append("a stretch: this sits well above the titles you asked for")
+        elif gap == 1:
+            s -= 8
+            why.append("a level above your targets")
+        elif gap <= -2:
+            s -= 15
+            why.append(f"reads {-gap} levels below your targets")
+
+    job.score = round(max(min(s, 100.0), 0.0), 1)
     job.reasons = why
     return job.score
 

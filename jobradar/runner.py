@@ -299,7 +299,12 @@ def _record(con, job, d: Path, log: str) -> None:
         store.add_artifact(con, uid, "screen", body if body.exists() else "",
                            summary=verdict)
         if verdict.upper().startswith("SKIP"):
-            store.set_status(con, uid, "skipped", note="screened out")
+            # "Too senior for you today" and "wrong forever" are different
+            # things, and skipped is a terminal state. Record the verdict and
+            # let the person decide.
+            store.set_status(con, uid, "interested",
+                             note=f"screened: {verdict}. Read screening.md "
+                                  f"before skipping.")
 
     elif kind == "cv":
         rating = None
@@ -308,17 +313,18 @@ def _record(con, job, d: Path, log: str) -> None:
             m = re.search(r"\d{1,3}", rp.read_text())
             if m:
                 rating = float(m.group(0))
-        path = next((d / n for n in ("CV.md", "CV.docx") if (d / n).exists()), "")
-        store.add_artifact(con, uid, "cv", path, rating=rating,
-                           gates=_gates(d, "CV.md"))
+        # Convert to .docx: a document you cannot attach to an application is
+        # not a finished document.
+        gates = _gates(d, "CV.md")
+        path = _to_docx(d, "CV.md", "CV.docx")
+        store.add_artifact(con, uid, "cv", path, rating=rating, gates=gates)
         cur = con.execute("SELECT status FROM role_state WHERE uid=?", (uid,)).fetchone()
         if not cur or cur["status"] == "new":
             store.set_status(con, uid, "interested")
 
     elif kind == "cover_letter":
-        path = next((d / n for n in ("cover-letter.md", "cover-letter.docx")
-                     if (d / n).exists()), "")
         gates = _gates(d, "cover-letter.md")
+        path = _to_docx(d, "cover-letter.md", "cover-letter.docx")
 
         # Measured here, not read back from what the model said about itself.
         cv_f, letter_f = d / "CV.md", d / "cover-letter.md"
@@ -364,6 +370,18 @@ def shared_ngram(a: str, b: str, n: int = 6) -> str:
             if len(phrase) > len(best):
                 best = phrase
     return best
+
+
+def _to_docx(d: Path, md_name: str, docx_name: str):
+    """Write a .docx alongside the Markdown, and hand back whichever exists."""
+    md = d / md_name
+    if not md.exists():
+        return ""
+    try:
+        from .docx import markdown_to_docx
+        return markdown_to_docx(md.read_text(errors="ignore"), d / docx_name)
+    except Exception:
+        return md          # the Markdown is still there and still usable
 
 
 def _gates(d: Path, name: str) -> dict:

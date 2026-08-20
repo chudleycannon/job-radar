@@ -761,6 +761,58 @@ def test_the_wizard_only_offers_sectors_that_exist():
     assert not (real - set(SECTORS)), f"exists but not offered: {real - set(SECTORS)}"
 
 
+
+def test_seniority_mismatch_is_scored_down():
+    """The score never read the candidate, so a Principal role and a grade-I
+    role got identical numbers and the person who most needed to be told
+    "that one is a fantasy" was handed it at the top of the list."""
+    from jobradar.screen import score, seniority
+    cfg = _cfg(titles_include=["data engineer", "analytics engineer"],
+               titles_exclude=[], salary_floor=None)
+
+    def s(title):
+        return score(_job(title=title, location="London"), cfg)
+
+    assert seniority("Junior Data Engineer") == 1, "an explicit junior marker wins"
+    assert seniority("Principal Database Engineer") == 5
+    assert s("Data Engineer") > s("Staff Analytics Engineer")
+    assert s("Staff Analytics Engineer") > s("Director of Data Engineering")
+    j = _job(title="Principal Analytics Engineer", location="London")
+    score(j, cfg)
+    assert any("stretch" in f for f in j.flags)
+
+
+def test_titles_are_read_from_real_cv_lines():
+    """The extractor required a title alone on its own line, so any CV with an
+    employer or a date beside the job title returned nothing at all."""
+    from jobradar.setup_wizard import titles_from_cv
+    cv = ("Finance Business Partner - Bevan Group, Cardiff (Aug 2023 - present)\n"
+          "Management Accountant, Bevan Manufacturing, May 2021 - Aug 2023\n"
+          "Practice Educator\t\tLeeds Teaching Hospitals\n"
+          "Head of Department at Fairfield High School\n")
+    got = titles_from_cv(cv)
+    for expected in ("finance business partner", "management accountant",
+                     "practice educator", "head of department"):
+        assert expected in got, f"{expected} not extracted from {got}"
+
+
+def test_markdown_becomes_an_openable_docx():
+    """The tool asked for a .docx and handed back Markdown, which cannot be
+    attached to an application."""
+    import tempfile, zipfile
+    from jobradar.docx import markdown_to_docx
+    from jobradar.runner import docx_to_text
+
+    md = "# Jane Smith\n\n## PROFILE\n\nA **senior** nurse.\n\n- Ran a ward\n- Taught six students\n"
+    out = markdown_to_docx(md, Path(tempfile.mkdtemp()) / "CV.docx")
+    assert out.exists() and out.stat().st_size > 1000
+    names = zipfile.ZipFile(out).namelist()
+    assert "word/document.xml" in names and "[Content_Types].xml" in names
+    text = docx_to_text(out)          # round-trips through our own reader
+    assert "Jane Smith" in text and "Ran a ward" in text
+    assert "**" not in text, "inline markup should be styling, not literal"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

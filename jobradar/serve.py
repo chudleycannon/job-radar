@@ -151,6 +151,15 @@ class Handler(BaseHTTPRequestHandler):
                         {"ok": False,
                          "error": "draft the CV first: the letter is checked "
                                   "against it for repeated phrasing"}, 409)
+                if kind == "screen":
+                    row = con.execute("SELECT description FROM roles WHERE uid=?",
+                                      (uid,)).fetchone()
+                    if len((row["description"] or "").strip()) < 200:
+                        return self._json(
+                            {"ok": False,
+                             "error": "this posting has no description, so there "
+                                      "is nothing to screen. Open the advert "
+                                      "instead."}, 409)
                 if store.running_count(con) >= 1:
                     return self._json(
                         {"ok": False, "error": "one generation at a time"}, 429)
