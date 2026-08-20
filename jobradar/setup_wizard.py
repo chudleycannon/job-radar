@@ -42,7 +42,7 @@ _ROLE_WORD = (r"manager|director|lead|head|engineer|analyst|architect|consultant
               r"nurse|teacher|accountant|partner|advisor|adviser|controller|"
               r"practitioner|educator|developer|technician|supervisor|assistant")
 _TITLE_HINT = re.compile(
-    rf"(?:^|\n)\s*((?:[A-Z][\w/&.'-]*\s+){{0,4}}(?:{_ROLE_WORD})"
+    rf"(?:^|\n)[ \t]*((?:[A-Z][\w/&.'-]*[ \t]+){{0,4}}(?:{_ROLE_WORD})"
     rf"(?:\s+(?:of|for|-)\s+[A-Z][\w/&.'-]*)?)"
     rf"(?=\s*(?:$|[,|\u2013\u2014-]|\t|\s{{2,}}|\bat\b|\())",
     re.I | re.M,

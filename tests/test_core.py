@@ -777,6 +777,20 @@ def test_seniority_mismatch_is_scored_down():
     assert seniority("Principal Database Engineer") == 5
     assert s("Data Engineer") > s("Staff Analytics Engineer")
     assert s("Staff Analytics Engineer") > s("Director of Data Engineering")
+
+    # Everything inside the band you asked for ranks equally: listing a
+    # director title alongside a manager one must not mark the manager role
+    # as two levels too junior.
+    band = _cfg(titles_include=["fundraising manager", "head of fundraising",
+                                "partnerships director"],
+                titles_exclude=[], salary_floor=None)
+
+    def b(title):
+        return score(_job(title=title, location="London"), band)
+
+    assert b("Fundraising Manager") == b("Partnerships Director")
+    assert b("Chief Executive") < b("Fundraising Manager")
+    assert b("Fundraising Assistant") < b("Fundraising Manager")
     j = _job(title="Principal Analytics Engineer", location="London")
     score(j, cfg)
     assert any("stretch" in f for f in j.flags)
@@ -794,6 +808,11 @@ def test_titles_are_read_from_real_cv_lines():
     for expected in ("finance business partner", "management accountant",
                      "practice educator", "head of department"):
         assert expected in got, f"{expected} not extracted from {got}"
+
+    # The name on the line above must not be swallowed into the title.
+    named = titles_from_cv("Priya Ramanathan\nFundraising Manager, Mind, London\n")
+    assert "fundraising manager" in named
+    assert not any("priya" in x for x in named), named
 
 
 def test_markdown_becomes_an_openable_docx():

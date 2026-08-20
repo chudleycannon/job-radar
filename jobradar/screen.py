@@ -335,10 +335,15 @@ def seniority(title: str) -> int:
     return best
 
 
-def _target_level(cfg: Config) -> int:
-    levels = [seniority(t) for t in cfg.titles_include]
-    levels = [l for l in levels if l]
-    return max(levels) if levels else 0
+def _target_band(cfg: Config) -> tuple[int, int]:
+    """The span of levels you asked for, not just the top of it.
+
+    Taking the maximum meant listing one director title alongside a manager
+    title marked every manager role as two levels too junior, which is the
+    opposite of what listing both means.
+    """
+    levels = [l for l in (seniority(t) for t in cfg.titles_include) if l]
+    return (min(levels), max(levels)) if levels else (0, 0)
 
 
 def score(job: Job, cfg: Config) -> float:
@@ -392,20 +397,20 @@ def score(job: Job, cfg: Config) -> float:
     # A role two levels above what you asked for is not a better match for
     # being more senior. Without this the top of the list was whatever was
     # posted most recently, regardless of whether it was reachable.
-    target = _target_level(cfg)
+    low, high = _target_band(cfg)
     lvl = seniority(job.title)
-    if target and lvl:
-        gap = lvl - target
-        if gap >= 2:
+    if high and lvl:
+        above, below = lvl - high, low - lvl
+        if above >= 2:
             s -= 25
-            why.append(f"reads {gap} levels above your targets")
+            why.append(f"reads {above} levels above your targets")
             job.flags.append("a stretch: this sits well above the titles you asked for")
-        elif gap == 1:
+        elif above == 1:
             s -= 8
             why.append("a level above your targets")
-        elif gap <= -2:
+        elif below >= 2:
             s -= 15
-            why.append(f"reads {-gap} levels below your targets")
+            why.append(f"reads {below} levels below your targets")
 
     job.score = round(max(min(s, 100.0), 0.0), 1)
     job.reasons = why
