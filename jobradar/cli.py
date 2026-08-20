@@ -232,7 +232,7 @@ def cmd_discover(args) -> int:
 
     good = [f for f in results if f.live_jobs > 0 and f.identity != "mismatch"]
     if args.add and good:
-        cfg_path = Path(args.config or "config.yaml")
+        cfg_path = _cfg_path(args.config)
         if not cfg_path.exists():
             # Writing a file containing only a sources block produced a config
             # that then failed to load with "titles.include is empty", which
@@ -240,8 +240,14 @@ def cmd_discover(args) -> int:
             _say(f"\nNo config at {cfg_path}. Run `job-radar setup` first, "
                  f"then re-run this with --add.")
             return 1
-        _append_sources(cfg_path, [f.to_source() for f in good])
-        _say(f"\nAdded {len(good)} source(s) to {cfg_path}")
+        n = _append_sources(cfg_path, [f.to_source() for f in good])
+        if n:
+            _say(f"\nAdded {n} source(s) to {cfg_path}")
+        else:
+            # It used to say "Added 1" while correctly writing nothing, so
+            # running the same discover twice looked like it had duplicated
+            # the entry.
+            _say(f"\nAlready in {cfg_path}; nothing to add.")
     elif good and not args.add:
         _say("\nRe-run with --add to write these into your config.")
     return 0 if results else 1
@@ -283,7 +289,33 @@ def _coverage_note(kept, srcs, cfg) -> None:
          "twenty employers beats any setting in the config.")
 
 
-def _append_sources(cfg_path: Path, new: list[Source]) -> None:   # used by discover --add
+def _cfg_path(raw) -> Path:
+    """The config path as given, with surrounding whitespace removed.
+
+    A path pasted with a stray leading space produced "no config at
+    ` /path/c.yaml`", which reads as the file being missing rather than as a
+    typo in the argument.
+    """
+    return Path(str(raw or "config.yaml").strip()).expanduser()
+
+
+def _cfg_or_default(raw) -> Config:
+    """Load the config, or fall back to defaults only when none was asked for.
+
+    Falling back silently when `-c` names a file that is not there meant a
+    mistyped path produced a confident, complete, wrong answer: `coverage`
+    reported the whole bundled list as though it were the user's own view.
+    """
+    p = _cfg_path(raw)
+    if p.exists():
+        return load_cfg(p)
+    if raw:
+        raise SystemExit(f"No config at {p}. Check the path, or run "
+                         f"`job-radar setup -c {p}` to create it.")
+    return Config()
+
+
+def _append_sources(cfg_path: Path, new: list[Source]) -> int:   # used by discover --add
     """Append to `sources.extra` in place, keeping the file as written.
 
     Round-tripping through yaml.safe_dump rewrote the whole file and deleted
@@ -297,7 +329,7 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> None:   # used by disc
             if isinstance(s, dict)}
     add = [s for s in new if s.url not in have]
     if not add:
-        return
+        return 0
 
     block = "".join(
         f"    - company: {s.company}\n      url: {s.url}\n"
@@ -340,11 +372,12 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> None:   # used by disc
             f"({str(e).splitlines()[0]}). Add this by hand under "
             f"sources.extra:\n{block}")
     cfg_path.write_text(result)
+    return len(add)
 
 
 # ---------------------------------------------------------------- validate
 def cmd_validate(args) -> int:
-    cfg = load_cfg(args.config) if Path(args.config or "config.yaml").exists() else Config()
+    cfg = _cfg_or_default(args.config)
     srcs = src_mod.load_file(args.file) if args.file else src_mod.load(cfg)
     if args.limit:
         srcs = srcs[: args.limit]
@@ -394,7 +427,7 @@ def cmd_validate(args) -> int:
 
 # ---------------------------------------------------------------- coverage
 def cmd_coverage(args) -> int:
-    cfg = load_cfg(args.config) if Path(args.config or "config.yaml").exists() else Config()
+    cfg = _cfg_or_default(args.config)
     srcs = src_mod.load_file(args.file) if args.file else src_mod.load(cfg)
     cov = src_mod.coverage(srcs)
     _say(f"{cov['total']} sources\n")
@@ -675,7 +708,7 @@ def cmd_serve(args) -> int:
 # ---------------------------------------------------------------- setup
 def cmd_setup(args) -> int:
     from .setup_wizard import run as wizard
-    return wizard(Path(args.config or "config.yaml"),
+    return wizard(_cfg_path(args.config),
                   non_interactive=args.defaults, cv=args.cv, titles=args.titles)
 
 

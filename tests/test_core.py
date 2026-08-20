@@ -1091,6 +1091,39 @@ def test_the_new_tab_reflects_the_current_run():
     assert html.count('data-new="1"') == 1 and 'data-f="new"' in html
 
 
+def test_adding_the_same_source_twice_is_honest_and_idempotent():
+    """`--add` reported "Added 1" while correctly writing nothing, so running
+    the same discover twice looked like it had duplicated the entry."""
+    import tempfile, yaml
+    from jobradar.setup_wizard import write_config, DEFAULTS
+    from jobradar.cli import _append_sources
+    from jobradar.models import Source
+    p = Path(tempfile.mkdtemp()) / "c.yaml"
+    a = dict(DEFAULTS)
+    a.update({"titles_include": ["general manager"], "cv_path": str(p)})
+    write_config(p, a)
+    src = Source(company="Nandos", url="https://x/jobs", platform="workday")
+    assert _append_sources(p, [src]) == 1
+    assert _append_sources(p, [src]) == 0
+    assert _append_sources(p, [Source(company="Hilton", url="https://y/jobs",
+                                      platform="oracle")]) == 1
+    got = yaml.safe_load(p.read_text())["sources"]["extra"]
+    assert [x["company"] for x in got] == ["Nandos", "Hilton"]
+
+
+def test_a_config_path_that_does_not_exist_is_an_error_not_a_default():
+    """Falling back silently when `-c` names a missing file meant a mistyped
+    path produced a confident, complete, wrong answer."""
+    from jobradar.cli import _cfg_or_default
+    from jobradar.config import Config
+    assert isinstance(_cfg_or_default(None), Config)   # no -c given: defaults
+    try:
+        _cfg_or_default("/nonexistent/typo.yaml")
+    except SystemExit:
+        return
+    raise AssertionError("an explicit -c pointing nowhere should stop the run")
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

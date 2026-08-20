@@ -98,7 +98,12 @@ h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 .chips button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
 :root[data-theme="dark"] .chips button[aria-pressed=true]{color:#0b0b0d}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chips button[aria-pressed=true]{color:#0b0b0d}}
-.chips .n{opacity:.6;font-variant-numeric:tabular-nums;margin-left:5px}
+.chips .n,.seg .n{opacity:.6;font-variant-numeric:tabular-nums;margin-left:5px}
+/* The scrollbar is hidden, so on a desktop width the thirteenth sector chip
+   simply vanished off the right edge with nothing to say it was there. Wrap
+   where there is room; keep the swipe strip on a phone, where it is the
+   expected gesture. */
+@media (min-width:640px){.chips{flex-wrap:wrap;overflow-x:visible}}
 
 .selects{display:flex;gap:var(--s2);margin-bottom:var(--s4)}
 .selects label{flex:1;min-width:0;position:relative}

@@ -462,16 +462,21 @@ def score(job: Job, cfg: Config) -> float:
         why.append("in " + ", ".join(sorted(found & set(cfg.relocate_to))) + ", relocation")
 
     if job.salary.confirmed:
-        s += 10
-        why.append(f"pay stated ({job.salary.raw})")
+        # Publishing a figure is worth points, but only fully when the figure
+        # tells you something. A EUR floor cannot read a sterling number, and
+        # a 13.50/hour NHS post was collecting the same transparency bonus as
+        # a role paying twice the floor.
+        comparable_cur = not (cfg.salary_currency and job.salary.currency
+                              and job.salary.currency != cfg.salary_currency)
+        s += 10 if comparable_cur else 4
+        why.append(f"pay stated ({job.salary.raw})" if comparable_cur
+                   else f"pay stated ({job.salary.raw}), not comparable to your floor")
         top = job.salary.annualised()
         # The same currency guard `clears_floor` applies. Without it the
         # filter refused to compare GBP against a EUR floor while the scorer
         # went ahead and awarded points for it, so one row said "not compared"
         # and the next said "comfortably above your floor" about the same pay.
-        comparable = not (cfg.salary_currency and job.salary.currency
-                          and job.salary.currency != cfg.salary_currency)
-        if top and cfg.salary_floor and comparable and top >= cfg.salary_floor * 1.15:
+        if top and cfg.salary_floor and comparable_cur and top >= cfg.salary_floor * 1.15:
             s += 10
             why.append("comfortably above your floor")
     else:

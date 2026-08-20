@@ -341,7 +341,10 @@ def _row(r, arts, job, run=0) -> str:
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
         f'{_h.escape(r["salary_label"] or "unconfirmed salary")}</span></div>'
         + (f'<div class="docs">{" &middot; ".join(docs)}</div>' if docs else "")
-        + (f'<div class="note">{_h.escape(notes[0])}</div>' if notes else "")
+        # All of them, not notes[0]. A role could be both unscreenable and
+        # carrying a salary that was never compared to the floor, and only
+        # the first ever appeared.
+        + "".join(f'<div class="note">{_h.escape(n)}</div>' for n in notes)
         + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
         + '<div class="acts">'
         + b("screen", "Screen", "primary")
