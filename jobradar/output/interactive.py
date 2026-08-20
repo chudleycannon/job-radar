@@ -69,7 +69,8 @@ function apply(){let n=0;
   for(const r of document.querySelectorAll('.row')){
     const st=r.dataset.status;
     const viewOk = f==='all' || (f==='open' && !SETTLED.has(st)) ||
-                   (f==='pay' && r.dataset.pay==='1');
+                   (f==='pay' && r.dataset.pay==='1') ||
+                   (f==='new' && r.dataset.new==='1');
     const ok = viewOk
       && (secs.size===0  || secs.has(r.dataset.sector))
       && (modes.size===0 || modes.has(r.dataset.mode))
@@ -188,17 +189,19 @@ if(document.querySelector('.acts button.busy')) poll();
 
 
 def _rows(con):
-    """The last scan's results, plus every role you have acted on.
+    """Roles seen recently, plus every role you have acted on.
 
     Filtering on the last scan alone made applied and interviewing roles
     disappear the moment a posting closed, a source was rate-limited, or a
     `--limit` run happened -- taking their status and their generated
-    documents with them, with no other view of them anywhere.
+    documents with them, with no other view of them anywhere. Filtering on
+    the newest date alone had the same effect for everything else: one
+    limited run emptied the board.
     """
     return con.execute("""
         SELECT r.*, COALESCE(s.status,'new') AS status, COALESCE(s.note,'') AS note
         FROM roles r LEFT JOIN role_state s ON s.uid = r.uid
-        WHERE r.last_seen = (SELECT MAX(last_seen) FROM roles)
+        WHERE """ + store.LIVE_SQL + """
            OR COALESCE(s.status,'new') <> 'new'
            OR r.uid IN (SELECT DISTINCT uid FROM artifacts)
         ORDER BY r.score DESC, r.company COLLATE NOCASE
@@ -207,6 +210,7 @@ def _rows(con):
 
 def render(con) -> str:
     rows = _rows(con)
+    run = store.current_run(con)
     arts = {}
     for a in con.execute("SELECT * FROM artifacts ORDER BY id"):
         arts.setdefault(a["uid"], {})[a["kind"]] = dict(a)
@@ -216,6 +220,12 @@ def render(con) -> str:
     total = len(rows)
     paid = sum(1 for r in rows if r["salary_confirmed"])
     settled = sum(1 for r in rows if r["status"] in store.SETTLED)
+
+    # "What changed since yesterday" is the whole point of running this daily,
+    # and the count was previously only ever a line of stdout that scrolled
+    # away. first_run is in the database already; this surfaces it.
+    fresh = sum(1 for r in rows if r["first_run"] and r["first_run"] == run)
+    _new_count = f'<span class="n">{fresh}</span>' if fresh else ""
 
     sec = Counter((r["sector"] or "other") for r in rows)
     chips = "".join(
@@ -246,6 +256,7 @@ def render(con) -> str:
 </header>
 <div class="seg" role="tablist" aria-label="Filter roles">
   <button role="tab" aria-selected="true"  data-f="all">All</button>
+  <button role="tab" aria-selected="false" data-f="new">New{_new_count}</button>
   <button role="tab" aria-selected="false" data-f="open">Open</button>
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
@@ -255,7 +266,7 @@ def render(con) -> str:
   <label><span>Country</span><select id="fcountry" aria-label="Country">{countries}</select></label>
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
-<div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"])) for r in rows)}</div>
+<div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run) for r in rows)}</div>
 <p class="empty" id="empty" hidden>Nothing matches those filters.</p>
 <footer>Roles with a stated salary below your floor are hidden. Nothing is generated
 unless you click for it.</footer>
@@ -263,7 +274,7 @@ unless you click for it.</footer>
 <script>{_JS}</script></body></html>"""
 
 
-def _row(r, arts, job) -> str:
+def _row(r, arts, job, run=0) -> str:
     settled = r["status"] in store.SETTLED
     paid = bool(r["salary_confirmed"])
     meta = " \u00b7 ".join(x for x in [r["company"], _cap_location(r["location"] or "")] if x)
@@ -294,8 +305,14 @@ def _row(r, arts, job) -> str:
 
     # The static page warns when a source gives no description; the served one
     # did not, and that is the page with the money buttons on it.
+    # Everything worth a caveat, not just the missing-description one. The
+    # note that a salary was never compared to the floor existed on 12 roles
+    # in one run and reached no view a person ever opens, so a EUR floor
+    # looked like it had passed a set of sterling figures below it. Same for
+    # a posting that rules out sponsorship.
     notes = [f for f in json.loads(r["flags"] or "[]")
-             if "not screened" in f or "listing only" in f]
+             if ("not screened" in f or "listing only" in f
+                 or "not compared" in f or "sponsor" in f)]
     busy = job["kind"] if job else ""
     has_cv = "cv" in arts
 
@@ -312,6 +329,7 @@ def _row(r, arts, job) -> str:
         f'<div class="row{" settled" if settled else ""}" data-uid="{_h.escape(r["uid"], quote=True)}" '
         f'data-status="{_h.escape(r["status"], quote=True)}" '
         f'data-pay="{1 if paid else 0}" '
+        f'data-new="{1 if r["first_run"] and r["first_run"] == run else 0}" '
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
         f'data-mode="{_h.escape(r["work_mode"] or "unstated", quote=True)}" '
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '

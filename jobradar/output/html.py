@@ -219,6 +219,11 @@ def _cap_location(loc: str) -> str:
 def _row(j: Job, is_new: bool) -> str:
     paid = j.salary.confirmed
     unscreened = any("not screened" in f for f in j.flags)
+    # The flags that change what you should do about a role. "Salary in GBP,
+    # floor in EUR, not compared" reached roles.json and nowhere a person
+    # looks, so an unconverted figure below the floor read as one that passed.
+    caveats = [f for f in j.flags
+               if "not compared" in f or "sponsor" in f or "soft flag" in f]
     meta = " \u00b7 ".join(x for x in [j.company, _cap_location(j.location)] if x)
     return (
         f'<div class="row" data-new="{1 if is_new else 0}" data-pay="{1 if paid else 0}" '
@@ -236,6 +241,7 @@ def _row(j: Job, is_new: bool) -> str:
         f'{_h.escape(j.salary.label())}</span></div>'
         + ('<div class="note">Not screened against your dealbreakers &mdash; '
            'this source gives no description</div>' if unscreened else '')
+        + "".join(f'<div class="note">{_h.escape(c)}</div>' for c in caveats)
         + '</div>')
 
 

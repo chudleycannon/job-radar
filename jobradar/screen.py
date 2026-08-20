@@ -90,17 +90,17 @@ _CITY_HINTS = {
     "US": r"san francisco|new york|seattle|austin|boston|chicago|los angeles|"
           r"denver|atlanta|palo alto|mountain view|menlo park|san jose|"
           r"washington,? d\.?c|bellevue|redmond|sunnyvale",
-    "IE": r"\bdublin\b(?!,? *(?:oh|ca))", "DE": r"\bberlin\b|munich|hamburg|cologne",
-    "FR": r"\bparis\b(?!,? *(?:tx|tn))", "ES": r"\bmadrid\b|barcelona",
-    "NL": r"amsterdam|rotterdam|utrecht", "CA": r"\btoronto\b|vancouver|montreal|ottawa",
+    "IE": r"\bdublin\b(?!,? *(?:oh|ca))|\bcork\b|galway|limerick", "DE": r"\bberlin\b|munich|m\u00fcnchen|hamburg|cologne|k\u00f6ln|frankfurt|stuttgart|d\u00fcsseldorf|dusseldorf|leipzig|n\u00fcrnberg|nuremberg",
+    "FR": r"\bparis\b(?!,? *(?:tx|tn))|\blyon\b|marseille|toulouse|bordeaux|\bnantes\b|\blille\b", "ES": r"\bmadrid\b|barcelona|valencia|seville|sevilla|bilbao|malaga|m\u00e1laga|zaragoza",
+    "NL": r"amsterdam|rotterdam|utrecht|eindhoven|the hague|den haag|groningen|delft", "CA": r"\btoronto\b|vancouver|montreal|ottawa",
     "AU": r"\bsydney\b|melbourne|brisbane|perth", "NZ": r"auckland|wellington",
     "AE": r"\bdubai\b|abu dhabi", "IN": r"bangalore|bengaluru|hyderabad|mumbai|pune|gurgaon|noida",
-    "JP": r"\btokyo\b", "CN": r"beijing|shanghai|shenzhen", "PL": r"warsaw|krakow|wroclaw",
-    "PT": r"\blisbon\b|\bporto\b", "SE": r"stockholm", "CH": r"zurich|geneva",
+    "JP": r"\btokyo\b", "CN": r"beijing|shanghai|shenzhen", "PL": r"warsaw|warszawa|krakow|krak\u00f3w|wroclaw|wroc\u0142aw|gdansk|gda\u0144sk|poznan|\bl\u00f3dz\b",
+    "PT": r"\blisbon\b|lisboa|\bporto\b|\boporto\b|coimbra|\bbraga\b|\bfaro\b|aveiro|funchal", "SE": r"stockholm|gothenburg|g\u00f6teborg|malm\u00f6|\bmalmo\b", "CH": r"zurich|z\u00fcrich|geneva|gen\u00e8ve|basel|lausanne|zug\b",
     "IL": r"tel aviv", "BR": r"sao paulo", "ZA": r"cape town|johannesburg",
     "ID": r"jakarta", "TH": r"bangkok", "MY": r"kuala lumpur", "PH": r"manila",
-    "IT": r"\bmilan\b|\brome\b", "BE": r"brussels", "AT": r"\bvienna\b",
-    "DK": r"copenhagen", "NO": r"\boslo\b", "FI": r"helsinki", "CZ": r"prague",
+    "IT": r"\bmilan\b|milano|\brome\b|\broma\b|turin|torino|bologna|florence|firenze|naples", "BE": r"brussels|bruxelles|antwerp|\bghent\b|leuven", "AT": r"\bvienna\b|\bwien\b|\bgraz\b|salzburg",
+    "DK": r"copenhagen|k\u00f8benhavn|aarhus|\bodense\b", "NO": r"\boslo\b|bergen|trondheim", "FI": r"helsinki|espoo|tampere", "CZ": r"prague|praha|\bbrno\b",
     "RO": r"bucharest", "TR": r"istanbul", "AR": r"buenos aires", "SG": r"\bsingapore\b",
     "HK": r"hong kong", "KR": r"\bseoul\b", "VN": r"hanoi|ho chi minh",
 }
@@ -181,6 +181,33 @@ _NOT_A_CITY = re.compile(
     r"various|multiple locations|flexible|tbc|n/?a)$", re.I)
 
 
+# "Remote" with a country named somewhere in the body. Airbnb's "Senior Data
+# Scientist" said `Remote` in the location field and "This position is US -
+# Remote Eligible" in the description; the tool called it "remote, no country
+# named", gave it 20 points for it, and ranked it second for a user who
+# cannot work in the US.
+_REMOTE_SCOPE = re.compile(
+    r"(?:remote|based|located|work|eligible|hire|role is)[^.\n]{0,60}?"
+    r"\b(?:in|within|from|across|to)\b[^.\n]{0,40}"
+    r"|\b(?:uk|us|usa|united states|united kingdom|eu|europe|emea)\b[\s-]*"
+    r"(?:only|based|remote|eligible)", re.I)
+
+
+def remote_scope(job: Job) -> set[str]:
+    """Countries a nominally-location-free remote role is actually limited to.
+
+    Only consulted when the location field names nothing, and only over the
+    first part of the description, where employers put this.
+    """
+    d = (job.description or "")[:3000]
+    if not d:
+        return set()
+    found: set[str] = set()
+    for m in _REMOTE_SCOPE.finditer(d):
+        found |= _countries_in(m.group(0))
+    return found
+
+
 def work_mode(job: Job) -> str:
     """remote | hybrid | office | unstated.
 
@@ -223,6 +250,9 @@ def enrich(job: Job) -> Job:
     job.country = job.country or (sorted(found)[0] if len(found) == 1 else
                                   ("multiple" if found else None))
     job.city = city_of(job.location)
+    rights = work_rights(job)
+    if rights and rights not in job.flags:
+        job.flags.append(rights)
     return job
 
 
@@ -252,12 +282,26 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
         # Judge the rest of the rules on what is left after the exclusion.
         loc = " / ".join(survivors)
 
+    if not allowed and not cfg.remote_ok:
+        # remote_ok lived entirely inside the country branch, so with no
+        # countries set it was dead code and "no, I do not want remote roles"
+        # changed nothing at all.
+        if job.remote is True or _GENERIC_REMOTE.match(loc or ""):
+            return False, "remote role and remote is off"
+
     if allowed:
         # "Remote" on its own means the employer has not named a country, so
         # take them at their word. "Remote - US" has named one, and being
         # remote does not make a US role open to someone outside the US.
         generic = not loc or bool(_GENERIC_REMOTE.match(loc))
         if generic:
+            # Before taking "Remote" at face value, check whether the body
+            # names a country. A role restricted to the US is a US role,
+            # however the location field is written.
+            scope = remote_scope(job)
+            if scope and not (scope & allowed):
+                return False, (f"remote but restricted to "
+                               f"{', '.join(sorted(scope))}")
             # Answering "no" to "include fully remote roles" used to change
             # nothing: only a completely empty location was dropped, so every
             # posting that actually said "Remote" came through.
@@ -270,11 +314,52 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
 
         found = _countries_in(loc)
         if not found:
-            return False, f"location not recognised ({loc})"
+            return False, (f"location not recognised ({loc})" if loc.strip()
+                           else "no location given")
         if not (found & allowed):
             return False, f"{loc} outside target countries"
 
     return True, ""
+
+
+# Whether the employer will sponsor a work visa is, for anyone without the
+# right to work in the country, the single fact that decides the application.
+# Nothing in the tool had any concept of it: a posting saying "we are unable
+# to provide visa sponsorship" and one saying "we can sponsor visas" scored
+# identically and looked identical, and the only place that noticed was a
+# paid screen, one role at a time.
+_NO_SPONSOR = re.compile(
+    r"(?:unable|not able|cannot|can.t|do not|don.t|will not|won.t)\s+"
+    r"(?:to\s+)?(?:provide|offer|support|sponsor)\w*\s*"
+    r"(?:\w+\s+){0,3}?(?:visa|sponsorship|work permit)"
+    r"|no\s+(?:visa\s+)?sponsorship"
+    r"|without\s+(?:the\s+need\s+for\s+)?(?:visa\s+)?sponsorship"
+    r"|sponsorship\s+is\s+not\s+(?:available|offered|provided)"
+    r"|must\s+(?:already\s+)?have\s+(?:the\s+)?(?:full\s+)?rights?\s+to\s+work"
+    r"|full\s+rights?\s+to\s+work", re.I)
+
+_WILL_SPONSOR = re.compile(
+    r"(?:can|able to|will|do|happy to|willing to)\s+(?:\w+\s+){0,2}?sponsor"
+    r"|(?:visa|sponsorship)\s+(?:support\s+)?(?:is\s+)?(?:available|offered|provided)"
+    r"|we\s+(?:offer|provide)\s+(?:visa\s+)?sponsorship"
+    r"|relocation\s+and\s+visa", re.I)
+
+
+def work_rights(job: Job) -> str:
+    '''"no sponsorship", "sponsorship offered", or "" for not stated.
+
+    Read from the description the tool has already downloaded. Reported, never
+    used to drop a role: most people running this already have the right to
+    work where they are looking, and for them it is noise rather than a filter.
+    '''
+    d = job.description or ""
+    if not d:
+        return ""
+    if _NO_SPONSOR.search(d):
+        return "no sponsorship"
+    if _WILL_SPONSOR.search(d):
+        return "sponsorship offered"
+    return ""
 
 
 def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
@@ -362,8 +447,16 @@ def score(job: Job, cfg: Config) -> float:
         why.append("remote in " + ", ".join(sorted(home)) if job.remote
                    else "in " + ", ".join(sorted(home)))
     elif job.remote and not found:
-        s += 20
-        why.append("remote, no country named")
+        # The description may name one even when the location field does not.
+        scope = remote_scope(job)
+        if scope & set(cfg.countries):
+            s += 20
+            why.append("remote, body says " + ", ".join(sorted(scope)))
+        elif scope:
+            why.append("remote but restricted to " + ", ".join(sorted(scope)))
+        else:
+            s += 20
+            why.append("remote, no country named")
     elif found & set(cfg.relocate_to):
         s += 8
         why.append("in " + ", ".join(sorted(found & set(cfg.relocate_to))) + ", relocation")
@@ -372,7 +465,13 @@ def score(job: Job, cfg: Config) -> float:
         s += 10
         why.append(f"pay stated ({job.salary.raw})")
         top = job.salary.annualised()
-        if top and cfg.salary_floor and top >= cfg.salary_floor * 1.15:
+        # The same currency guard `clears_floor` applies. Without it the
+        # filter refused to compare GBP against a EUR floor while the scorer
+        # went ahead and awarded points for it, so one row said "not compared"
+        # and the next said "comfortably above your floor" about the same pay.
+        comparable = not (cfg.salary_currency and job.salary.currency
+                          and job.salary.currency != cfg.salary_currency)
+        if top and cfg.salary_floor and comparable and top >= cfg.salary_floor * 1.15:
             s += 10
             why.append("comfortably above your floor")
     else:

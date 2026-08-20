@@ -19,7 +19,7 @@ domain you asked for and reports a mismatch rather than banking it.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import urlparse
 
 import requests
@@ -317,6 +317,21 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
         domain = urlparse(target if target.startswith("http") else f"https://{target}").netloc
     name = company or (domain.split(".")[0] if domain else target).replace("-", " ").title()
 
+    # If the thing being asked about IS one of the platforms we cannot read,
+    # say so and stop. Guessing tokens from the domain label answered
+    # `civilservicejobs.service.gov.uk` with a real Greenhouse board named
+    # "Civil Service Jobs" (it is one department's, holding a single posting),
+    # marked it verified, and left a user believing the whole civil service
+    # was covered. A platform domain is never an employer.
+    platform_hit = detect_unsupported("", target)
+    if platform_hit:
+        return [Found(company=name, url=target if target.startswith("http")
+                      else f"https://{target}", platform="", token="",
+                      domain=domain, identity="unsupported",
+                      note=f"{platform_hit} is a job platform, not an employer, "
+                           f"and job-radar cannot read it yet. Searching it by "
+                           f"hand is the only option for now.")]
+
     # Candidates are independent, so fetch them together rather than walking a
     # list of 30 URLs at 10 seconds each. First page that reveals an ATS wins.
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -341,9 +356,9 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
                     hits.extend(got)
                     break
                 if not unsupported:
-                    found = detect_unsupported(r.text, r.url)
-                    if found:
-                        unsupported, unsupported_url = found, r.url
+                    plat = detect_unsupported(r.text, r.url)
+                    if plat:
+                        unsupported, unsupported_url = plat, r.url
         except TimeoutError:
             pass
         for f2 in futs:
@@ -401,10 +416,39 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     return found
 
 
+# A neutral word to probe a keyword search with. It has to return something
+# on any real job board without being specific to one field.
+PROBE_KEYWORD = "manager"
+
+
 def validate_source(src: Source) -> dict:
     """Health check for one already-known source. Used by `validate` and by
     the weekly maintenance workflow.
+
+    Keyword searches (NHS Jobs, LinkedIn) ship as templates and are expanded
+    per title at scan time. Fetching the unexpanded URL asks the board for
+    postings matching the literal string "{keyword}", which returns nothing,
+    which read as dead: the weekly prune was scheduled to delete NHS Jobs, a
+    live source and the only direct one that works outside technology. So
+    probe them with a real word instead, and skip the identity check, which
+    asks "is this board really this employer's" and is meaningless for an
+    aggregator that returns every employer.
     """
+    if src.keyword_template or "{keyword}" in src.url:
+        from urllib.parse import quote_plus
+        probe = replace(src, url=src.url.format(keyword=quote_plus(PROBE_KEYWORD)),
+                        keyword_template=False)
+        n, _ = count_jobs(probe)
+        return {
+            "company": src.company,
+            "url": src.url,
+            "platform": src.platform,
+            "live_jobs": n,
+            "verdict": "dead" if n == 0 else "live",
+            "note": "keyword search, probed with "
+                    f"'{PROBE_KEYWORD}'; identity not checked",
+        }
+
     n, jobs = count_jobs(src)
     verdict, note = ("dead", "no postings returned") if n == 0 else \
         verify_identity(jobs, src.domain, src.company, src.platform)

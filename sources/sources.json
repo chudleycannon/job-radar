@@ -737,13 +737,6 @@
    "sector": "technology"
   },
   {
-   "company": "ClearBank",
-   "url": "https://boards-api.greenhouse.io/v1/boards/clear/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "domain": "clear.bank",
-   "sector": "finance"
-  },
-  {
    "company": "Cleo",
    "url": "https://boards-api.greenhouse.io/v1/boards/cleo/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -1168,7 +1161,7 @@
    "sector": "technology"
   },
   {
-   "company": "Skyscanner",
+   "company": "Skyscanner (Greenhouse)",
    "url": "https://boards-api.greenhouse.io/v1/boards/skyscanner/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "travel"
@@ -1461,7 +1454,7 @@
    "company": "Serco",
    "url": "https://careers.serco.com/gb/en/search-results?s=1",
    "platform": "phenom",
-   "sector": "public-sector",
+   "sector": "professional-services",
    "country": "UK",
    "domain": "serco.com"
   },
@@ -1469,7 +1462,7 @@
    "company": "Thales",
    "url": "https://careers.thalesgroup.com/global/en/search-results",
    "platform": "phenom",
-   "sector": "public-sector",
+   "sector": "industry",
    "country": "UK",
    "domain": "thalesgroup.com"
   },
@@ -1805,7 +1798,7 @@
    "company": "Rollsroyce",
    "url": "https://rollsroyce.wd3.myworkdayjobs.com/wday/cxs/rollsroyce/professional/jobs",
    "platform": "workday",
-   "sector": "public-sector"
+   "sector": "industry"
   },
   {
    "company": "Salesforce",

@@ -211,7 +211,12 @@ def fetch_phenom(
 
     session = requests.Session()
     host = urlparse(src.url).netloc
-    country = "gb"
+    # Prefer the country in the URL, then the one the source is tagged with.
+    # "gb" is only the last resort: a UK default baked in below the config
+    # layer is invisible to anyone who is not in the UK.
+    country = (src.country or "gb").lower()
+    if country == "uk":
+        country = "gb"
     m = re.search(r"//[^/]+/([a-z]{2})/", src.url)
     if m:
         country = m.group(1)
@@ -222,7 +227,7 @@ def fetch_phenom(
         probe = Source(
             company=src.company, url=f"https://{host}/widgets", platform="phenom",
             sector=src.sector, country=src.country, method="POST",
-            body={"lang": "en_gb", "deviceType": "desktop", "country": country,
+            body={"lang": f"en_{country}", "deviceType": "desktop", "country": country,
                   "pageName": "search-results", "ddoKey": "refineSearch",
                   "from": page * 50, "size": 50, "jobs": True, "counts": True,
                   "all_fields": [], "keywords": "", "global": True,

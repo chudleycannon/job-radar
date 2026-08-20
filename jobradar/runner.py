@@ -126,10 +126,21 @@ versus stated preferences versus things I simply have not done yet.
 
 Be brief. Three lines naming the real blocker beat a page of balance.
 
+If the posting body is empty or is only a title, a location and a salary
+line, you cannot screen it. Say that plainly, say which dealbreakers went
+unchecked rather than implying they passed, and use the verdict
+NEEDS_THE_ADVERT. A recorded APPLY on a posting nobody read is worse than no
+screen, because it reads later as a role that cleared the filters.
+
 Finally write a single line to `verdict.txt` containing only APPLY,
-APPLY_WITH_CAVEATS or SKIP.""",
+APPLY_WITH_CAVEATS, SKIP or NEEDS_THE_ADVERT.""",
 
 "cv": """Use the rate-cv and natural-writing skills.
+
+Report the score as `NN/100 · currency N/8 · <band>`. Category 7 of the rubric
+scores how recent the evidence is, and it travels with the headline rather
+than inside it: a single number reported a CV with a three-year break and
+three retired platforms on it as shortlist-strong.
 
 Draft a CV tailored to the role in `job-description.md` in this directory.
 Base it strictly on my real record in `source-cv.txt` in this directory. Read
@@ -140,6 +151,12 @@ written around.
 Write it to `CV.md` here.
 
 Rules that are not negotiable:
+- Every number, date, scale and frequency must already be in `source-cv.txt`.
+  Do not add one that is not there. "Run the newsletter" does not become
+  "write the monthly newsletter": that is one word, it is unverifiable, and it
+  is the first thing an interviewer asks about. If a claim would be stronger
+  with a figure and there is no figure, leave it without one and list it as a
+  question to ask me.
 - No em-dashes anywhere.
 - Plain first. State the fact and stop. No triads with a payoff, no
   "not X but Y", no stock idioms, no aphorisms.
@@ -164,6 +181,12 @@ or more words may appear in both. If any does, rewrite the letter.
 Write it to `cover-letter.md` here.
 
 Rules that are not negotiable:
+- Every number, date, scale and frequency must already be in `source-cv.txt`.
+  Do not add one that is not there. "Run the newsletter" does not become
+  "write the monthly newsletter": that is one word, it is unverifiable, and it
+  is the first thing an interviewer asks about. If a claim would be stronger
+  with a figure and there is no figure, leave it without one and list it as a
+  question to ask me.
 - No em-dashes anywhere.
 - Say plainly why this company and why this team, using something specific
   from the job description.
@@ -296,13 +319,24 @@ def _record(con, job, d: Path, log: str) -> None:
         if vp.exists():
             verdict = vp.read_text().strip().split("\n")[0][:40]
         body = (d / "screening.md")
+        # A screen run with --force on an empty posting came back
+        # APPLY_WITH_CAVEATS while the document itself said the dealbreakers
+        # could not be checked. Believe the description, not the verdict.
+        r = con.execute("SELECT description FROM roles WHERE uid=?", (uid,)).fetchone()
+        jd = (r["description"] if r else "") or ""
+        if len(jd.strip()) < 200 and not verdict.upper().startswith("NEEDS"):
+            verdict = "NEEDS_THE_ADVERT"
         store.add_artifact(con, uid, "screen", body if body.exists() else "",
                            summary=verdict)
         if verdict.upper().startswith("SKIP"):
             # "Too senior for you today" and "wrong forever" are different
-            # things, and skipped is a terminal state. Record the verdict and
-            # let the person decide.
-            store.set_status(con, uid, "interested",
+            # things, and skipped is a terminal state, so the screen does not
+            # apply it. It used to write "interested" instead, which showed a
+            # role the tool had just told you to skip under an Interested
+            # pill. Leave the status where the person put it; attach the note.
+            cur = con.execute("SELECT status FROM role_state WHERE uid=?",
+                              (uid,)).fetchone()
+            store.set_status(con, uid, (cur["status"] if cur else "new"),
                              note=f"screened: {verdict}. Read screening.md "
                                   f"before skipping.")
 
@@ -310,9 +344,14 @@ def _record(con, job, d: Path, log: str) -> None:
         rating = None
         rp = d / "cv-rating.txt"
         if rp.exists():
-            m = re.search(r"\d{1,3}", rp.read_text())
+            # Anchor on the "NN/100" form. A bare \d{1,3} took the first
+            # number in the file, so a rating that opened "100-point rubric"
+            # would have been recorded as 100.
+            txt = rp.read_text()
+            m = re.search(r"\b(\d{1,3})\s*/\s*100\b", txt) or \
+                re.search(r"\b(\d{1,3})\b", txt)
             if m:
-                rating = float(m.group(0))
+                rating = float(m.group(1))
         # Convert to .docx: a document you cannot attach to an application is
         # not a finished document.
         gates = _gates(d, "CV.md")
@@ -384,6 +423,50 @@ def _to_docx(d: Path, md_name: str, docx_name: str):
         return md          # the Markdown is still there and still usable
 
 
+# Words that assert a scale or a cadence. On their own they are ordinary
+# English; inside a tailored CV they are the cheapest way to make a true line
+# sound bigger, and they are unfalsifiable in a way a number is not.
+_QUALIFIERS = re.compile(
+    r"\b(daily|weekly|fortnightly|monthly|quarterly|annual(?:ly)?|"
+    r"nationwide|company.?wide|global(?:ly)?|enterprise.?wide|"
+    r"industry.?leading|award.?winning|market.?leading|"
+    r"cross.?functional|end.?to.?end)\b", re.I)
+
+_NUMBER = re.compile(r"(?<![\w.])\d[\d,.]*\s?[%kKmMbB]?(?![\w])")
+
+
+def _invented(doc: str, source: str) -> list[str]:
+    """Specifics in the draft that are not in the source CV.
+
+    The tool's central promise is that it never claims something the person
+    cannot claim, and until now nothing enforced it: a draft turned "run the
+    newsletter" into "write the **monthly** newsletter", which is one word, is
+    not in the source, and is the sort of thing an interviewer asks about.
+    Numbers and scale words are the two forms of embellishment that are cheap
+    to add and expensive to defend, and both are checkable against the source
+    text without a model in the loop.
+
+    A hit is not proof of a lie. Figures legitimately come from the job advert
+    and from dates. So this reports rather than blocks, and it is deliberately
+    narrow: only tokens with no counterpart anywhere in the source.
+    """
+    def norm(x): return x.lower().replace(",", "").rstrip(".")
+    have = {norm(m.group(0)) for m in _NUMBER.finditer(source)}
+    have |= {m.group(0).lower() for m in _QUALIFIERS.finditer(source)}
+    out = []
+    for m in list(_NUMBER.finditer(doc)) + list(_QUALIFIERS.finditer(doc)):
+        tok = m.group(0).strip()
+        if norm(tok) in have or tok.lower() in have:
+            continue
+        # Years and small ordinals are structure, not claims.
+        bare = norm(tok)
+        if re.fullmatch(r"(19|20)\d\d", bare) or re.fullmatch(r"\d", bare):
+            continue
+        if tok not in out:
+            out.append(tok)
+    return out[:12]
+
+
 def _gates(d: Path, name: str) -> dict:
     """Objective checks only. A re-read is not a gate.
 
@@ -395,6 +478,13 @@ def _gates(d: Path, name: str) -> dict:
         return {"written": False}
     text = f.read_text(errors="ignore")
     gates = {"written": True, "no_em_dash": "—" not in text}
+    srcs = list(d.glob("source-cv.txt")) or list(d.glob("source-cv.*"))
+    if srcs:
+        try:
+            new_bits = _invented(text, srcs[0].read_text(errors="ignore"))
+            gates["unsourced_specifics"] = new_bits or False
+        except OSError:
+            pass
     det = Path.home() / ".claude/skills/natural-writing/scripts/detect.py"
     if det.exists():
         try:

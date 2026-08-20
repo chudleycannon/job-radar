@@ -22,9 +22,17 @@ keyword sources have nothing to look for.
 
 | key | type | notes |
 |---|---|---|
-| `countries` | list of codes | `UK`, `US`, `CA`, `AU`, `IE`, `DE`… Empty means anywhere. |
+| `countries` | list of codes | Empty means anywhere. Country names are accepted and normalised (`Portugal` becomes `PT`); anything the filter cannot use is refused at load rather than silently matching nothing. Note the UK is `UK`, not `GB`. |
 | `remote_ok` | true / false | Unquoted. `"no"` and `"false"` are understood, anything else is refused rather than read as true. |
-| `relocate_to` | list of codes | Shown, scored below home. |
+| `relocate_to` | list of codes | Shown, scored below home. Same validation as `countries`. |
+
+The full set of codes the location filter recognises:
+
+`AE`, `AR`, `AT`, `AU`, `BE`, `BR`, `CA`, `CH`, `CN`, `CZ`, `DE`, `DK`, `ES`, `FI`, `FR`, `HK`, `ID`, `IE`, `IL`, `IN`, `IT`, `JP`, `KR`, `MX`, `MY`, `NL`, `NO`, `NZ`, `PH`, `PL`, `PT`, `RO`, `SE`, `SG`, `TH`, `TR`, `UK`, `US`, `VN`, `ZA`
+
+A country not on this list cannot be filtered on. Roles there are still
+fetched; they are dropped as "location not recognised" unless `countries` is
+empty.
 | `exclude` | list of places | Applied per location. A role in London only is dropped; a role in "London / Manchester" survives on Manchester. |
 
 ## cv
@@ -37,8 +45,8 @@ keyword sources have nothing to look for.
 
 | key | type | notes |
 |---|---|---|
+| `currency` | `GBP`, `USD` or `EUR` | Anything else is refused. A salary in a different currency to your floor is never converted: it is shown and marked "not compared", and it can neither disqualify a role nor earn it points. |
 | `floor` | number | `70000`. `£70,000` and `70,000` are accepted and converted. Words are refused. A role whose **stated** pay is below this is hidden; a role with **no** stated pay is always shown and marked. |
-| `currency` | code | `GBP`, `USD`, `EUR`. Salaries in another currency are flagged, never converted. |
 
 ## dealbreakers
 
@@ -59,16 +67,16 @@ actually exist in the bundled list:
 | sector | sources |
 |---|---|
 | `technology` | 211 |
-| `finance` | 39 |
-| `professional-services` | 11 |
-| `industry` | 8 |
-| `public-sector` | 6 |
+| `finance` | 38 |
+| `professional-services` | 12 |
+| `industry` | 10 |
 | `healthcare` | 4 |
-| `education` | 4 |
 | `travel` | 4 |
 | `retail` | 3 |
+| `education` | 3 |
 | `telecoms` | 3 |
 | `media` | 3 |
+| `public-sector` | 3 |
 | `untagged` | 1 |
 | `charity` | 1 |
 

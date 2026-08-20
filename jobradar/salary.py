@@ -86,10 +86,29 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     """
     if not text:
         return Salary()
-    t = " ".join(text.split())[:400]
+    full = " ".join(text.split())
+    t = full[:400]
     if _NOISE.search(t) and not re.search(r"[£$€]\s?\d", t):
         return Salary(raw=t.strip()[:120])
 
+    got = _scan(t, default_currency, need_context=False)
+    if got.confirmed:
+        return got
+    # Most adapters hand this the whole description, and employers who do
+    # publish a figure usually put it at the bottom: "Base salary range:
+    # £48,000 - £72,000" sat at character 4,109 of a GoCardless posting and
+    # 9% of a real scan came back "unconfirmed" while stating a range in the
+    # body. Beyond the opening block the risk of reading a funding round or a
+    # customer count as pay goes up, so out there a figure only counts when
+    # pay is being discussed right next to it, symbol or no symbol.
+    if len(full) > 400:
+        got = _scan(full[400:20_000], default_currency, need_context=True)
+        if got.confirmed:
+            return got
+    return got
+
+
+def _scan(t: str, default_currency: str | None, *, need_context: bool) -> Salary:
     period = _period(t)
     rng, single = (_RANGE_RATE, _SINGLE_RATE) if period != "year" else (_RANGE, _SINGLE)
 
@@ -98,10 +117,11 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
         lo, hi = _to_float(m.group("lo")), _to_float(m.group("hi"))
         symbol = m.group("c1") or m.group("c2")
         cur = _CUR.get((symbol or "").lower()) or default_currency
-        if not symbol:
-            # No currency mark: only believe it if pay is being discussed
-            # within the preceding stretch of text.
-            lead = t[max(0, m.start() - 80):m.start()]
+        if not symbol or need_context:
+            # Only believe it if pay is being discussed within the preceding
+            # stretch of text. Required always for an unsymbolled range, and
+            # everywhere once we are past the opening block.
+            lead = t[max(0, m.start() - 120):m.start()]
             if not _PAY_CONTEXT.search(lead):
                 return Salary()
         if lo is not None and hi is not None and hi >= lo:
@@ -114,6 +134,8 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     if m:
         v = _to_float(m.group("v"))
         cur = _CUR.get((m.group("c") or "").lower()) or default_currency
+        if need_context and not _PAY_CONTEXT.search(t[max(0, m.start() - 120):m.start()]):
+            return Salary()
         if v is not None and v > 0:
             return Salary(
                 min=v, max=v, currency=cur, period=period,
@@ -179,6 +201,12 @@ def clears_floor(sal: Salary, floor: float | None, currency: str | None = None) 
         return True, "unconfirmed salary"
     if currency and sal.currency and sal.currency != currency:
         return True, f"salary in {sal.currency}, floor in {currency}, not compared"
+    if currency and not sal.currency:
+        # A figure with no currency mark used to be compared against the floor
+        # as a bare number, so an unsymbolled 2,500,000 zloty cleared a
+        # 55,000 euro floor and an unsymbolled 45,000 of anything failed it.
+        # Neither outcome was flagged.
+        return True, f"salary has no currency, floor in {currency}, not compared"
     top = sal.annualised()
     if top is None:
         return True, "unconfirmed salary"

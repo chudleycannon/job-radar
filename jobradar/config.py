@@ -212,6 +212,117 @@ KNOWN_KEYS = {
 TOP_LEVEL = set(KNOWN_KEYS) | {"dealbreakers", "sectors"}
 
 
+# Every country the location filter can recognise, plus the names people
+# actually type. `countries: [Portugal]` used to match nothing at all: the
+# filter compares against internal codes, so a Lisbon user asking for
+# Portugal, Spain, Netherlands and Germany got 112 UK roles, zero from any
+# country they asked for, and no warning. Names are accepted and normalised
+# rather than rejected, because typing your country's name is the reasonable
+# thing to do.
+COUNTRY_ALIASES = {
+    "united kingdom": "UK", "great britain": "UK", "britain": "UK",
+    "gb": "UK", "gbr": "UK", "england": "UK", "scotland": "UK",
+    "wales": "UK", "northern ireland": "UK",
+    "united states": "US", "usa": "US", "america": "US",
+    "ireland": "IE", "eire": "IE", "germany": "DE", "deutschland": "DE",
+    "france": "FR", "spain": "ES", "espana": "ES", "netherlands": "NL",
+    "holland": "NL", "canada": "CA", "australia": "AU", "new zealand": "NZ",
+    "uae": "AE", "united arab emirates": "AE", "singapore": "SG",
+    "hong kong": "HK", "india": "IN", "japan": "JP", "china": "CN",
+    "poland": "PL", "portugal": "PT", "sweden": "SE", "switzerland": "CH",
+    "israel": "IL", "brazil": "BR", "mexico": "MX", "south africa": "ZA",
+    "indonesia": "ID", "thailand": "TH", "malaysia": "MY",
+    "philippines": "PH", "italy": "IT", "italia": "IT", "belgium": "BE",
+    "austria": "AT", "denmark": "DK", "norway": "NO", "finland": "FI",
+    "czech republic": "CZ", "czechia": "CZ", "romania": "RO",
+    "turkey": "TR", "argentina": "AR", "vietnam": "VN", "south korea": "KR",
+}
+
+# Codes the pipeline uses, taken from the filter itself so the two cannot
+# drift. Imported lazily to keep config.py free of a screen.py dependency.
+def _known_country_codes() -> set[str]:
+    from .screen import _COUNTRY_MARKERS
+    return set(_COUNTRY_MARKERS)
+
+
+def _countries(values, where: str) -> list[str]:
+    """Normalise a country list, and refuse anything the filter cannot use.
+
+    Silence here is the worst possible behaviour: an unrecognised entry does
+    not loosen the filter, it removes that country from it entirely, and the
+    results still look like a working scan.
+    """
+    known = _known_country_codes()
+    out = []
+    for v in values:
+        t = str(v).strip()
+        if not t:
+            continue
+        code = COUNTRY_ALIASES.get(t.lower(), t.upper())
+        if code not in known:
+            near = [c for c in sorted(known) if c.startswith(t[:1].upper())]
+            hint = f" Did you mean {', '.join(near[:4])}?" if near else ""
+            raise ConfigError(
+                f"{where}: {t!r} is not a country this tool recognises.{hint} "
+                f"Use a two-letter code (or UK). Valid: {', '.join(sorted(known))}")
+        if code not in out:
+            out.append(code)
+    return out
+
+
+# Only currencies the salary parser can actually produce. `currency: euro`
+# uppercased to EURO, never matched EUR, and silently switched the floor off
+# on every euro role.
+VALID_CURRENCIES = {"GBP", "USD", "EUR"}
+_CURRENCY_ALIASES = {"POUND": "GBP", "POUNDS": "GBP", "STERLING": "GBP",
+                     "EURO": "EUR", "EUROS": "EUR", "DOLLAR": "USD",
+                     "DOLLARS": "USD", "US$": "USD", "USDOLLAR": "USD"}
+
+
+def _currency(v, where: str) -> str:
+    t = str(v or "GBP").strip().upper()
+    t = _CURRENCY_ALIASES.get(t, t)
+    if t not in VALID_CURRENCIES:
+        raise ConfigError(
+            f"{where}: {v!r} is not a currency this tool compares. "
+            f"Valid: {', '.join(sorted(VALID_CURRENCIES))}. Salaries in any "
+            f"other currency are shown and never compared to your floor.")
+    return t
+
+
+def _sectors(values) -> list[str]:
+    """Refuse a sector tag that is not in the bundled list.
+
+    `sectors: [hospitality]` is the obvious thing for a restaurant manager to
+    write. It is not a tag, so it matched nothing, switched off 299 of 307
+    sources, and still printed a normal-looking scan.
+    """
+    from .sources import BUNDLED
+    import json as _json
+    try:
+        raw = _json.loads(BUNDLED.read_text())
+        items = raw.get("sources", raw) if isinstance(raw, dict) else raw
+        known = {(d.get("sector") or "").lower() for d in items if isinstance(d, dict)}
+        known.discard("")
+    except (OSError, ValueError):
+        return [str(v).strip().lower() for v in values if str(v).strip()]
+    out = []
+    for v in values:
+        t = str(v).strip().lower()
+        if not t:
+            continue
+        if t not in known:
+            raise ConfigError(
+                f"sectors: {v!r} is not a tag in the bundled source list, so "
+                f"it would match no employers at all. Valid: "
+                f"{', '.join(sorted(known))}. Leave `sectors` empty to watch "
+                f"every employer, and use `job-radar discover <employer> "
+                f"--add` to add your own.")
+        if t not in out:
+            out.append(t)
+    return out
+
+
 def _dealbreakers(rows) -> list[Dealbreaker]:
     """Refuse quietly-broken entries rather than dropping them.
 
@@ -279,15 +390,15 @@ def load(path: str | os.PathLike | None = None) -> Config:
     cfg = Config(
         titles_include=_as_list(titles.get("include")),
         titles_exclude=_as_list(titles.get("exclude")),
-        countries=_as_list(loc.get("countries")),
+        countries=_countries(_as_list(loc.get("countries")), "locations.countries"),
         remote_ok=_bool(loc.get("remote_ok", True), "locations.remote_ok"),
-        relocate_to=_as_list(loc.get("relocate_to")),
+        relocate_to=_countries(_as_list(loc.get("relocate_to")), "locations.relocate_to"),
         exclude_locations=_as_list(loc.get("exclude")),
         salary_floor=_num(sal.get("floor"), "salary.floor"),
-        salary_currency=(sal.get("currency") or "GBP").upper(),
+        salary_currency=_currency(sal.get("currency"), "salary.currency"),
         dealbreakers=_dealbreakers(raw.get("dealbreakers")),
-        sectors=_as_list(raw.get("sectors")),
-        source_countries=_as_list(src.get("countries")),
+        sectors=_sectors(_as_list(raw.get("sectors"))),
+        source_countries=_countries(_as_list(src.get("countries")), "sources.countries"),
         use_bundled_sources=_bool(src.get("use_bundled", True), "sources.use_bundled"),
         extra_sources=_as_list(src.get("extra")),
         cv_path=str((raw.get("cv") or {}).get("path") or ""),

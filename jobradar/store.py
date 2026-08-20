@@ -99,6 +99,11 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
     con = sqlite3.connect(p, timeout=15, isolation_level=None)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    # A database made by an older version is missing columns the dashboard
+    # now reads. Adding them on open rather than only in the write path means
+    # `serve` and `list` cannot crash on a database that has not been scanned
+    # since the upgrade.
+    _ensure_columns(con)
     return con
 
 
@@ -158,6 +163,25 @@ def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
             con.execute("INSERT OR IGNORE INTO role_state (uid,status,updated_at) "
                         "VALUES (?,'new',?)", (j.uid, today))
     return new, seen
+
+
+# How long a role stays on the board after a scan last saw it.
+#
+# The dashboard used to show only roles whose last_seen equalled the newest
+# date in the table. One `--limit 25` run then replaced a 60-role board with
+# 4, because those 4 now held the newest date; `list` had no such filter and
+# accumulated every role ever seen, so the two views disagreed by 71 rows on
+# the same database. A window fixes both: a posting that stops appearing ages
+# off in a fortnight instead of the instant a source is throttled.
+LIVE_WINDOW_DAYS = 14
+
+LIVE_SQL = (f"r.last_seen >= date((SELECT MAX(last_seen) FROM roles), "
+            f"'-{LIVE_WINDOW_DAYS} days')")
+
+
+def current_run(con) -> int:
+    """The run number the last completed scan wrote."""
+    return int(get_meta(con, "runs", "0"))
 
 
 def new_since_last_run(con, uids: list[str]) -> set[str]:

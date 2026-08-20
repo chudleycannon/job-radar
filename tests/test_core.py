@@ -832,6 +832,265 @@ def test_markdown_becomes_an_openable_docx():
     assert "**" not in text, "inline markup should be styling, not literal"
 
 
+# --------------------------------------------------------------- persona run
+# Every test below came from a defect a first-time user hit in a sandbox.
+
+
+def test_country_names_are_accepted_and_unknown_ones_refused():
+    """`countries: [Portugal]` matched nothing at all and said nothing.
+
+    The filter compares against internal codes, so a name removed that country
+    from the filter entirely. A Lisbon user asking for Portugal, Spain,
+    Netherlands and Germany got 112 UK roles and no warning.
+    """
+    from jobradar.config import ConfigError, _countries
+    assert _countries(["Portugal", "Spain", "GB", "uk"], "x") == ["PT", "ES", "UK"]
+    for bad in (["Narnia"], ["ZZ"]):
+        try:
+            _countries(bad, "locations.countries")
+        except ConfigError:
+            continue
+        raise AssertionError(f"{bad} should be refused")
+
+
+def test_currency_is_validated_and_normalised():
+    """`currency: euro` uppercased to EURO, never equalled EUR, and silently
+    switched the floor off on every euro role."""
+    from jobradar.config import ConfigError, _currency
+    assert _currency("euro", "salary.currency") == "EUR"
+    assert _currency(None, "salary.currency") == "GBP"
+    try:
+        _currency("XYZ", "salary.currency")
+    except ConfigError:
+        return
+    raise AssertionError("an unknown currency should be refused")
+
+
+def test_unknown_sector_is_refused():
+    """`sectors: [hospitality]` cut 299 of 307 sources and still printed a
+    normal-looking scan."""
+    from jobradar.config import ConfigError, _sectors
+    assert _sectors(["Finance", "charity"]) == ["finance", "charity"]
+    try:
+        _sectors(["hospitality"])
+    except ConfigError:
+        return
+    raise AssertionError("a sector tag that matches no employer should be refused")
+
+
+def test_scorer_obeys_the_same_currency_rule_as_the_filter():
+    """One row said "not compared", the next said "comfortably above your
+    floor", about the same pay."""
+    from jobradar.models import Job, Salary
+    from jobradar.config import Config
+    from jobradar.screen import score
+    cfg = Config(titles_include=["data analyst"], salary_floor=55000,
+                 salary_currency="EUR", countries=["PT"])
+    j = Job(company="X", title="Senior Data Analyst", url="u",
+            location="London W2 1NY", platform="greenhouse",
+            salary=Salary(min=58000, max=65261, currency="GBP", period="year",
+                          confirmed=True, raw="58k-65k"))
+    score(j, cfg)
+    assert "comfortably above your floor" not in j.reasons
+
+
+def test_salary_is_found_beyond_the_first_400_characters():
+    """9% of a real scan reported "unconfirmed" while stating a range in the
+    body. The parser only ever saw the opening block."""
+    from jobradar.salary import parse_text
+    body = "About the role. " + ("we do things. " * 300) + \
+           "Base salary range: \u00a348,000 - \u00a372,000"
+    s = parse_text(body)
+    assert s.confirmed and s.min == 48000 and s.max == 72000
+    # ... but prose numbers far from any mention of pay still are not salary
+    assert not parse_text("x " * 300 + "we raised 1,200,000 from investors").confirmed
+
+
+def test_an_uncurrencied_salary_is_flagged_not_compared():
+    """A bare number used to be compared against the floor as if it were in
+    the floor's currency, in both directions, with no flag either way."""
+    from jobradar.models import Salary
+    from jobradar.salary import clears_floor
+    keep, why = clears_floor(Salary(min=45000, max=45000, confirmed=True),
+                             55000, "EUR")
+    assert keep and "not compared" in why
+
+
+def test_remote_is_not_taken_at_face_value_when_the_body_names_a_country():
+    """"Remote" in the location field and "This position is US - Remote
+    Eligible" in the description scored +20 for "remote, no country named"."""
+    from jobradar.models import Job
+    from jobradar.config import Config
+    from jobradar.screen import match
+    j = Job(company="Airbnb", title="Data Scientist", url="u", location="Remote",
+            platform="greenhouse", remote=True,
+            description="Your Location: This position is US - Remote Eligible.")
+    keep, why = match(j, Config(titles_include=["data scientist"], countries=["UK"]))
+    assert not keep and "US" in why
+
+
+def test_remote_ok_false_works_with_no_country_set():
+    """remote_ok lived inside the country branch, so with no countries set it
+    was dead code."""
+    from jobradar.models import Job
+    from jobradar.config import Config
+    from jobradar.screen import match
+    cfg = Config(titles_include=["x"], remote_ok=False)
+    assert match(Job(company="A", title="x", url="u", location="Remote",
+                     platform="p"), cfg)[0] is False
+    assert match(Job(company="A", title="x", url="u", location="Lisbon",
+                     platform="p"), cfg)[0] is True
+
+
+def test_sponsorship_is_read_off_the_description():
+    """The only part of the tool that knew about the right to work was a paid
+    screen, one role at a time."""
+    from jobradar.models import Job
+    from jobradar.screen import work_rights
+
+    def j(d):
+        return Job(company="c", title="t", url="u", location="London",
+                   platform="p", description=d)
+    assert work_rights(j("We are unable to provide visa sponsorship.")) == "no sponsorship"
+    assert work_rights(j("Sponsorship is not available for this position.")) == "no sponsorship"
+    assert work_rights(j("We are able to offer visa sponsorship.")) == "sponsorship offered"
+    assert work_rights(j("Free lunch and a good team.")) == ""
+
+
+def test_non_uk_cities_are_recognised():
+    """`Lisboa` failing while `Swindon` worked was the whole bias in one line."""
+    from jobradar.screen import _country_of
+    for place, code in [("Lisboa", "PT"), ("Frankfurt", "DE"), ("The Hague", "NL"),
+                        ("Seville", "ES"), ("Ghent", "BE"), ("Gdansk", "PL"),
+                        ("Swindon", "UK")]:
+        assert _country_of(place) == code, f"{place} -> {_country_of(place)}"
+
+
+def test_keyword_sources_are_probed_not_declared_dead():
+    """`validate --prune` fetched the literal `{keyword}` URL, got nothing,
+    and was scheduled to delete NHS Jobs every week."""
+    from jobradar.models import Source
+    import jobradar.discover as disc
+    src = Source(company="NHS Jobs", url="https://x/search?keyword={keyword}",
+                 platform="nhs", keyword_template=True)
+    calls = []
+
+    def fake(s):
+        calls.append(s.url)
+        return (7, [{"title": "t"}])
+    old, disc.count_jobs = disc.count_jobs, fake
+    try:
+        row = disc.validate_source(src)
+    finally:
+        disc.count_jobs = old
+    assert "{keyword}" not in calls[0]
+    assert row["verdict"] == "live" and "identity not checked" in row["note"]
+
+
+def test_a_platform_domain_is_not_mistaken_for_an_employer():
+    """Guessing a Greenhouse token from `civilservicejobs.service.gov.uk`
+    found one department's board named "Civil Service Jobs" and marked it
+    verified."""
+    from jobradar.discover import discover
+    found = discover("civilservicejobs.service.gov.uk")
+    assert found and found[0].identity == "unsupported"
+    assert "Civil Service Jobs" in found[0].note
+
+
+def test_a_uid_prefix_resolves():
+    """`list` prints a shortened uid; pasting it back said "could not
+    identify a role"."""
+    from jobradar import store
+    from jobradar.cli import _resolve_uid
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "first_seen,last_seen) VALUES "
+                "('abcdef0123456789','C','T','u','L','p','2026-01-01','2026-01-01')")
+    assert _resolve_uid(con, "abcdef01")[0] == "abcdef0123456789"
+
+
+def test_the_wizards_config_survives_discover_add():
+    """The wizard wrote `extra:` and `    []` on two lines; `--add` appended a
+    sequence under the placeholder and every command then died on a YAML
+    parse error."""
+    import tempfile, yaml
+    from jobradar.setup_wizard import write_config, DEFAULTS
+    from jobradar.cli import _append_sources
+    from jobradar.models import Source
+    p = Path(tempfile.mkdtemp()) / "c.yaml"
+    a = dict(DEFAULTS)
+    a.update({"titles_include": ["area manager"], "cv_path": str(p)})
+    write_config(p, a)
+    _append_sources(p, [Source(company="Nandos", url="https://x/jobs",
+                               platform="workday")])
+    got = yaml.safe_load(p.read_text())
+    assert [s["company"] for s in got["sources"]["extra"]] == ["Nandos"]
+
+
+def test_defaults_ship_no_dealbreakers():
+    """A coding-round dealbreaker shipped as a default filtered a solicitor's
+    and a marketing manager's results on an engineering artefact."""
+    from jobradar.setup_wizard import DEFAULTS
+    assert DEFAULTS["dealbreakers"] == {}
+
+
+def test_a_dry_run_writes_nothing():
+    """It used to insert every role and bump the run counter, so trying the
+    tool out once spent the newness of everything it saw."""
+    import inspect
+    from jobradar import cli
+    src = inspect.getsource(cli.cmd_scan)
+    i = src.index("upsert_roles")
+    assert "args.dry_run" in src[max(0, i - 400):i], \
+        "upsert_roles must be guarded by the dry-run check"
+
+
+def test_a_draft_that_adds_a_specific_is_caught():
+    """"run the newsletter" became "write the monthly newsletter". Nothing
+    gated it, in the one paragraph where it matters most."""
+    from jobradar.runner import _invented
+    src = "Run the newsletter and the Facebook page. Grew signups 40%."
+    assert "monthly" in _invented("I write the monthly newsletter.", src)
+    assert "62%" in _invented("Cut cost 62%.", src)
+    assert _invented("Grew signups 40% since 2019.", src) == []
+
+
+def test_a_rating_is_read_from_the_score_not_the_first_number():
+    """`re.search(r"\d{1,3}")` would record a file opening "100-point rubric"
+    as 100."""
+    import re
+    txt = "100-point rubric\n\nOverall: 68/100 (solid)"
+    m = re.search(r"\b(\d{1,3})\s*/\s*100\b", txt)
+    assert m and m.group(1) == "68"
+
+
+def test_the_dashboard_survives_a_limited_scan():
+    """One `--limit 25` run replaced a 60-role board with 4, because those 4
+    held the newest date."""
+    from jobradar import store
+    from jobradar.output import interactive
+    con = store.connect(":memory:")
+    for i, day in enumerate(["2026-08-10"] * 5 + ["2026-08-20"]):
+        con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                    "first_seen,last_seen,first_run) VALUES (?,?,?,?,?,?,?,?,1)",
+                    (f"u{i}", "C", "T", f"u{i}", "London", "greenhouse", day, day))
+    assert len(interactive._rows(con)) == 6
+
+
+def test_the_new_tab_reflects_the_current_run():
+    from jobradar import store
+    from jobradar.output import interactive
+    con = store.connect(":memory:")
+    store.set_meta(con, "runs", "4")
+    for uid, run in (("a", 4), ("b", 3)):
+        con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                    "first_seen,last_seen,first_run) VALUES "
+                    "(?,?,?,?,?,?,'2026-08-20','2026-08-20',?)",
+                    (uid, "C", "T", uid, "London", "greenhouse", run))
+    html = interactive.render(con)
+    assert html.count('data-new="1"') == 1 and 'data-f="new"' in html
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

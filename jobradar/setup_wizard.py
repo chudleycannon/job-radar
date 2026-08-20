@@ -120,7 +120,13 @@ def write_config(path: Path, answers: dict) -> Path:
     extra_block = "\n".join(
         f"    - company: {_q(s.get('company'))}\n      url: {_q(s.get('url'))}"
         f"\n      platform: {s.get('platform','')}" for s in extra
-    ) or "    []"
+    )
+    # An empty list has to go on the `extra:` line itself. Written as a
+    # separate `    []` line it is still valid YAML, but `discover --add`
+    # appended a sequence underneath it and produced a file that no command
+    # could load. The wizard is the documented first step, so this broke the
+    # documented second step every time.
+    extra_key = f"  extra:\n{extra_block}" if extra_block else "  extra: []"
 
     cvq = _q(answers.get("cv_path") or "")
     body = f"""# job-radar config
@@ -167,8 +173,7 @@ sources:
   # Limit the bundled list to these countries. Empty means all.
   countries:{ylist(answers.get('source_countries'), indent="    ")}
   # Boards added by `job-radar discover --add`.
-  extra:
-{extra_block}
+{extra_key}
 
 output:
   formats: [html, json]
@@ -198,7 +203,11 @@ DEFAULTS = {
     "exclude_locations": [],
     "salary_floor": None,
     "salary_currency": "GBP",
-    "dealbreakers": {"coding round": COMMON_DEALBREAKERS["coding round"]},
+    # Also empty, for the same reason as the titles above. A coding-round
+    # dealbreaker shipped as a default filtered a solicitor's and a marketing
+    # manager's results on an engineering artefact, and the whole value of a
+    # dealbreaker is that the person wrote it.
+    "dealbreakers": {},
     "sectors": [],
     "source_countries": [],
     "use_bundled": True,
