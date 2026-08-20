@@ -109,7 +109,10 @@ PROMPTS = {
 "screen": """Use the screen-role skill.
 
 Screen this job for me and write your verdict to `screening.md` in the current
-directory. Read `job-description.md` here for the posting.
+directory. Read `job-description.md` here for the posting, and `source-cv.txt`
+here for my actual record. Both are in this directory. Do not assess a gap
+without reading the CV: a gap named without checking is a guess wearing the
+same confidence as a finding.
 
 These are my dealbreakers and filters. They are the whole list; do not invent
 any others, and do not assume anything not written here:
@@ -223,21 +226,25 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         # guard below never fired and shutil.copy2 raised IsADirectoryError.
         chosen = cv_source or cv_cfg or os.environ.get("JOB_RADAR_CV") or ""
         src = Path(chosen) if chosen else None
-        if job["kind"] == "cv":
-            if src is None or not src.exists() or src.is_dir():
+        if src is None or not src.exists() or src.is_dir():
+            store.mark_job(con, job_id, "failed",
+                           error="No CV configured. Set `cv.path` in your "
+                                 "config, or run `job-radar setup`.")
+            return
+
+        # Every kind needs it. Screening was previously asked to separate hard
+        # requirements from things the candidate has not done yet, without
+        # being given the candidate.
+        shutil.copy2(src, d / f"source-cv{src.suffix}")
+        if src.suffix.lower() == ".docx":
+            text = docx_to_text(src)
+            if not text:
                 store.mark_job(con, job_id, "failed",
-                               error="No CV configured. Set `cv.path` in your "
-                                     "config, or run `job-radar setup`.")
+                               error=f"could not read any text out of {src.name}")
                 return
-            shutil.copy2(src, d / f"source-cv{src.suffix}")
-            # And a text version, because the sandbox cannot run a converter.
-            if src.suffix.lower() == ".docx":
-                text = docx_to_text(src)
-                if not text:
-                    store.mark_job(con, job_id, "failed",
-                                   error=f"could not read any text out of {src.name}")
-                    return
-                (d / "source-cv.txt").write_text(text, encoding="utf-8")
+            (d / "source-cv.txt").write_text(text, encoding="utf-8")
+        elif src.suffix.lower() in (".txt", ".md"):
+            shutil.copy2(src, d / "source-cv.txt")
 
         prompt = build_prompt(job["kind"], cfg, str(src))
 

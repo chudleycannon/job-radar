@@ -75,10 +75,59 @@ class Config:
 
     # ---- derived ----
 
+    # How a profession writes a title and how you type it are rarely the same.
+    # An accountant searching "fp&a" missed "Financial Planning & Analysis
+    # Manager", "FP&A Manager" and "Head of Financial Planning and Analysis":
+    # 35 real roles, a 76% difference in results, with nothing to indicate it.
+    ABBREVIATIONS = {
+        "fp&a": "financial planning and analysis",
+        "hr": "human resources",
+        "qa": "quality assurance",
+        "pm": "project manager",
+        "bd": "business development",
+        "sre": "site reliability engineer",
+        "ml": "machine learning",
+        "bi": "business intelligence",
+        "ux": "user experience",
+        "cs": "customer success",
+        "m&a": "mergers and acquisitions",
+        "ap": "accounts payable",
+        "ar": "accounts receivable",
+    }
+
+    @staticmethod
+    def _title_variants(term: str) -> set[str]:
+        """Every spelling of one title worth matching.
+
+        Covers the "&" / "and" split and the common abbreviations, in both
+        directions, so it does not matter which form you typed.
+        """
+        out = {" ".join(term.lower().split())}
+        # Two passes, because expanding an abbreviation can introduce an "and"
+        # that then needs its own "&" form: fp&a -> financial planning and
+        # analysis -> financial planning & analysis.
+        for _ in range(2):
+            for v in list(out):
+                for short, long in Config.ABBREVIATIONS.items():
+                    if short in v:
+                        out.add(v.replace(short, long))
+                    if long in v:
+                        out.add(v.replace(long, short))
+            for v in list(out):
+                for a, b in (("&", " and "), (" and ", " & ")):
+                    if a in v:
+                        out.add(" ".join(v.replace(a, b).split()))
+        return {" ".join(v.split()) for v in out if v.strip()}
+
     def title_include_re(self):
         if not self.titles_include:
             return None
-        return re.compile("|".join(rf"\b{re.escape(t)}\b" for t in self.titles_include), re.I)
+        variants: set[str] = set()
+        for term in self.titles_include:
+            variants |= self._title_variants(term)
+        return re.compile(
+            "|".join(rf"\b{re.escape(v)}\b" for v in sorted(variants, key=len, reverse=True)),
+            re.I)
 
     def title_exclude_re(self):
         """Escaped, unlike the include list which is also escaped.
@@ -105,12 +154,109 @@ class Config:
         return re.compile("|".join(re.escape(x) for x in self.exclude_locations), re.I)
 
 
+class ConfigError(ValueError):
+    """A config problem worth stopping for, phrased for the person who wrote it."""
+
+
+def _num(v, key: str):
+    """Accept what a person actually types for money.
+
+    `floor: £70,000` and `floor: 70,000` both parse as strings in YAML, were
+    stored unconverted, and then raised TypeError deep inside the salary
+    comparison partway through a scan.
+    """
+    if v is None or isinstance(v, (int, float)):
+        return v
+    s = str(v).strip().replace(",", "").replace("£", "").replace("$", "").replace("€", "")
+    s = re.sub(r"(?i)\s*(per annum|pa|k)$", lambda m: "000" if m.group(1).lower() == "k" else "", s)
+    try:
+        return float(s)
+    except ValueError:
+        raise ConfigError(
+            f"{key}: {v!r} is not a number. Write it plainly, like 70000.")
+
+
+def _bool(v, key: str) -> bool:
+    """`remote_ok: "no"` used to mean yes, because bool("no") is True."""
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return True
+    s = str(v).strip().lower()
+    if s in ("true", "yes", "y", "1", "on"):
+        return True
+    if s in ("false", "no", "n", "0", "off"):
+        return False
+    raise ConfigError(f"{key}: {v!r} is not true or false.")
+
+
 def _as_list(v) -> list:
     if v is None:
         return []
     if isinstance(v, (list, tuple)):
         return list(v)
     return [v]
+
+
+VALID_FORMATS = {"html", "json", "markdown", "md"}
+
+KNOWN_KEYS = {
+    "titles": {"include", "exclude"},
+    "locations": {"countries", "remote_ok", "relocate_to", "exclude"},
+    "salary": {"floor", "currency"},
+    "cv": {"path"},
+    "sources": {"use_bundled", "countries", "extra"},
+    "output": {"formats", "dir"},
+    "fetch": {"concurrency", "timeout", "retries", "user_agent"},
+}
+TOP_LEVEL = set(KNOWN_KEYS) | {"dealbreakers", "sectors"}
+
+
+def _dealbreakers(rows) -> list[Dealbreaker]:
+    """Refuse quietly-broken entries rather than dropping them.
+
+    A missing `pattern`, a typo'd key, or a regex that does not compile used to
+    vanish without a word, so a dealbreaker you thought was protecting you was
+    simply absent.
+    """
+    out = []
+    for i, d in enumerate(rows or []):
+        if not isinstance(d, dict):
+            raise ConfigError(f"dealbreakers[{i}]: expected a name and a pattern.")
+        name = d.get("name") or f"dealbreakers[{i}]"
+        unknown = set(d) - {"name", "pattern", "hard"}
+        if unknown:
+            raise ConfigError(
+                f"dealbreakers '{name}': unknown key(s) {sorted(unknown)}. "
+                f"Did you mean 'pattern'?")
+        if not d.get("pattern"):
+            raise ConfigError(f"dealbreakers '{name}': no pattern, so it would "
+                              f"never match anything.")
+        try:
+            re.compile(d["pattern"], re.I)
+        except re.error as e:
+            raise ConfigError(f"dealbreakers '{name}': the pattern is not a "
+                              f"valid regular expression ({e}).")
+        out.append(Dealbreaker(name=name, pattern=d["pattern"],
+                               hard=_bool(d.get("hard", True),
+                                          f"dealbreakers '{name}'.hard")))
+    return out
+
+
+def _check_keys(raw: dict) -> None:
+    """Catch `sector:` for `sectors:` at load, not by wondering why nothing
+    filtered."""
+    unknown = set(raw) - TOP_LEVEL
+    if unknown:
+        raise ConfigError(f"unknown setting(s) {sorted(unknown)}. "
+                          f"Valid: {sorted(TOP_LEVEL)}")
+    for section, allowed in KNOWN_KEYS.items():
+        block = raw.get(section)
+        if isinstance(block, dict):
+            extra = set(block) - allowed
+            if extra:
+                raise ConfigError(f"{section}: unknown key(s) {sorted(extra)}. "
+                                  f"Valid: {sorted(allowed)}")
 
 
 def load(path: str | os.PathLike | None = None) -> Config:
@@ -121,6 +267,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
             f"or copy config.example.yaml."
         )
     raw: dict[str, Any] = yaml.safe_load(p.read_text()) or {}
+    _check_keys(raw)
 
     titles = raw.get("titles") or {}
     loc = raw.get("locations") or {}
@@ -133,23 +280,15 @@ def load(path: str | os.PathLike | None = None) -> Config:
         titles_include=_as_list(titles.get("include")),
         titles_exclude=_as_list(titles.get("exclude")),
         countries=_as_list(loc.get("countries")),
-        remote_ok=bool(loc.get("remote_ok", True)),
+        remote_ok=_bool(loc.get("remote_ok", True), "locations.remote_ok"),
         relocate_to=_as_list(loc.get("relocate_to")),
         exclude_locations=_as_list(loc.get("exclude")),
-        salary_floor=sal.get("floor"),
+        salary_floor=_num(sal.get("floor"), "salary.floor"),
         salary_currency=(sal.get("currency") or "GBP").upper(),
-        dealbreakers=[
-            Dealbreaker(
-                name=d.get("name") or "unnamed",
-                pattern=d.get("pattern") or "",
-                hard=bool(d.get("hard", True)),
-            )
-            for d in (raw.get("dealbreakers") or [])
-            if d.get("pattern")
-        ],
+        dealbreakers=_dealbreakers(raw.get("dealbreakers")),
         sectors=_as_list(raw.get("sectors")),
         source_countries=_as_list(src.get("countries")),
-        use_bundled_sources=bool(src.get("use_bundled", True)),
+        use_bundled_sources=_bool(src.get("use_bundled", True), "sources.use_bundled"),
         extra_sources=_as_list(src.get("extra")),
         cv_path=str((raw.get("cv") or {}).get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
@@ -159,6 +298,19 @@ def load(path: str | os.PathLike | None = None) -> Config:
         retries=int(fet.get("retries", 2)),
         path=p,
     )
+
+    if not cfg.titles_include:
+        raise ConfigError(
+            "titles.include is empty. It is required: with no titles every "
+            "posting matches, and the keyword-driven sources (NHS Jobs, "
+            "LinkedIn) have nothing to search for.")
+
+    bad = [f for f in cfg.formats if f not in VALID_FORMATS]
+    if bad:
+        raise ConfigError(f"output.formats: {bad} is not a format. "
+                          f"Valid: html, json, markdown.")
+
+    cfg.out_dir = Path(str(cfg.out_dir)).expanduser()
 
     # Everything that writes a document needs the real CV to work from, and a
     # path that has silently stopped existing produces a fabricated CV rather

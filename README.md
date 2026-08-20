@@ -187,9 +187,14 @@ job-radar applied "Example Corp" --status rejected --note "coding round"
 job-radar applied <url> --status interviewing --date 2026-08-19
 ```
 
-That writes `applications.local.yaml`, which is gitignored, so your history
-stays yours even on a public fork. You can hand-edit it instead; see
-[`applications.example.yaml`](applications.example.yaml).
+That writes to the local database, the same one the dashboard reads, so the
+two cannot disagree. The database lives at `data/job-radar.db` by default and
+is gitignored, so your history stays yours even on a public fork.
+
+`applications.local.yaml` is still read if you have one, and is imported once
+on first run. It is no longer written to; see
+[`applications.example.yaml`](applications.example.yaml) for the format if you
+are migrating an old file.
 
 Statuses run `interested → applied → submitted → interviewing → offer`, plus
 `rejected`, `withdrawn` and `closed`.
@@ -232,6 +237,10 @@ dealbreakers:
 
 sectors: []          # empty means all
 ```
+
+Every setting, what it accepts and what happens when it is wrong is in
+[docs/CONFIG.md](docs/CONFIG.md), including the command-line flags and the
+real list of sectors.
 
 `dealbreakers` are read against the job description, which is the part that
 catches roles that look right in a search result and are wrong in the detail.

@@ -307,14 +307,6 @@
    "sector": "education"
   },
   {
-   "company": "Multiverse",
-   "url": "https://api.ashbyhq.com/posting-api/job-board/stackfuel?includeCompensation=true",
-   "platform": "ashby",
-   "sector": "education",
-   "country": "UK",
-   "domain": "multiverse.io"
-  },
-  {
    "company": "N8N",
    "url": "https://api.ashbyhq.com/posting-api/job-board/n8n?includeCompensation=true",
    "platform": "ashby",

@@ -241,9 +241,16 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
 
     loc_exc = cfg.location_exclude_re()
     if loc_exc and loc and loc_exc.search(loc):
-        # A posting listing several locations survives if one of them is wanted.
-        if not (_countries_in(loc) & allowed):
+        # Exclusion has to work per location, not against the whole string.
+        # Asking whether any wanted COUNTRY appears meant "London" cancelled
+        # its own exclusion for anyone with countries: [UK], so the single
+        # most load-bearing filter a UK user writes did nothing at all.
+        parts = [x.strip() for x in _SPLIT.split(loc) if x.strip()] or [loc]
+        survivors = [x for x in parts if not loc_exc.search(x)]
+        if not survivors:
             return False, f"location excluded ({loc})"
+        # Judge the rest of the rules on what is left after the exclusion.
+        loc = " / ".join(survivors)
 
     if allowed:
         # "Remote" on its own means the employer has not named a country, so

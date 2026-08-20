@@ -102,7 +102,13 @@ document.addEventListener('click', async e=>{
   const row=e.target.closest('.row'); if(!row) return;
   const uid=row.dataset.uid;
 
-  const st=e.target.closest('[data-status]');
+  // Scoped to the button. The row wrapper also carries data-status, for
+  // filtering, so an unscoped closest() walked up from every button and hit
+  // the row first: Screen, CV, Cover letter and Apply all silently posted
+  // status "new" and returned before reaching their own branch. Skip worked
+  // only because its own button carries the attribute, so closest stopped
+  // there -- which is why testing Skip alone said the buttons were fine.
+  const st=e.target.closest('button[data-status]');
   if(st){ const status=st.dataset.status;
     const {ok,data}=await post('/api/status',{uid,status});
     if(!ok){say(data.error||'could not save');return}

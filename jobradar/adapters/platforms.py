@@ -25,8 +25,22 @@ _WS = re.compile(r"\s+")
 
 
 def _text(v: Any) -> str:
+    """Flatten whatever an API returned into a readable string.
+
+    Some platforms wrap a field as {"rendered": "Data Engineer"}. Passing that
+    to str() put a Python dict repr on screen as a job title.
+    """
     if not v:
         return ""
+    if isinstance(v, dict):
+        for k in ("rendered", "name", "label", "text", "value"):
+            if isinstance(v.get(k), str):
+                v = v[k]
+                break
+        else:
+            v = " ".join(str(x) for x in v.values() if isinstance(x, str))
+    elif isinstance(v, (list, tuple)):
+        v = ", ".join(str(x) for x in v if isinstance(x, str))
     s = html.unescape(str(v))
     s = _TAGS.sub(" ", s)
     return _WS.sub(" ", s).strip()
@@ -239,6 +253,15 @@ def parse_workday(payload: Any, src: Source) -> Iterator[Job]:
         url = urljoin(f"{base}/en-US/{site}/", path.lstrip("/")) if path else base
         bullets = " ".join(str(b) for b in (j.get("bulletFields") or []))
         loc = _text(j.get("locationsText"))
+        if not loc:
+            # Some tenants leave locationsText empty and put the city in the
+            # path instead. Without this the role has no location at all, and
+            # an unknown country passes a country filter it should fail.
+            m2 = re.search(r"/job/([^/]+)/", path or "")
+            if m2:
+                loc = _text(m2.group(1).replace("-", " "))
+            if not loc:
+                loc = " ".join(str(b) for b in (j.get("bulletFields") or [])[:2])
         yield Job(
             company=src.company,
             title=_text(j.get("title")),

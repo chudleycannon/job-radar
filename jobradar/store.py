@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS roles (
   reasons TEXT DEFAULT '[]',
   flags TEXT DEFAULT '[]',
   first_seen TEXT NOT NULL,
+  first_run INTEGER DEFAULT 0,
   last_seen TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_roles_last_seen ON roles(last_seen);
@@ -112,13 +113,22 @@ def open_db(path=None):
 
 # ------------------------------------------------------------------ roles
 
+def _ensure_columns(con) -> None:
+    """Add columns to a database made by an older version."""
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(roles)")}
+    if "first_run" not in cols:
+        con.execute("ALTER TABLE roles ADD COLUMN first_run INTEGER DEFAULT 0")
+
+
 def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
     """Insert or refresh roles. Returns (new, seen_before).
 
     `first_seen` is never overwritten: it is what makes "new since last run"
     meaningful across months rather than across one scan.
     """
+    _ensure_columns(con)
     today = date.today().isoformat()
+    run = int(get_meta(con, "runs", "0")) + 1      # the run these belong to
     new = seen = 0
     for j in jobs:
         row = con.execute("SELECT uid FROM roles WHERE uid=?", (j.uid,)).fetchone()
@@ -142,27 +152,32 @@ def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
             con.execute("""INSERT INTO roles (company,title,url,location,city,country,
                 work_mode,sector,platform,department,salary_min,salary_max,
                 salary_currency,salary_period,salary_confirmed,salary_label,posted_at,
-                description,score,reasons,flags,last_seen,first_seen,uid)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                vals + (today, j.uid))
+                description,score,reasons,flags,last_seen,first_seen,first_run,uid)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                vals + (today, run, j.uid))
             con.execute("INSERT OR IGNORE INTO role_state (uid,status,updated_at) "
                         "VALUES (?,'new',?)", (j.uid, today))
     return new, seen
 
 
 def new_since_last_run(con, uids: list[str]) -> set[str]:
-    """Roles first seen today AND not previously recorded.
+    """Roles first seen on THIS run, not merely today.
+
+    Keying on the date meant a second scan the same afternoon re-reported every
+    role from the morning as new, which is exactly the behaviour the seen-set
+    exists to prevent.
 
     The very first run reports nothing as new: "here are 300 new roles" on day
     one is not an alert, it is the whole database.
     """
+    _ensure_columns(con)
     runs = int(get_meta(con, "runs", "0"))
     if runs == 0 or not uids:
         return set()
-    today = date.today().isoformat()
     q = ",".join("?" * len(uids))
     rows = con.execute(
-        f"SELECT uid FROM roles WHERE first_seen=? AND uid IN ({q})", (today, *uids))
+        f"SELECT uid FROM roles WHERE first_run=? AND uid IN ({q})",
+        (runs + 1, *uids))
     return {r["uid"] for r in rows}
 
 

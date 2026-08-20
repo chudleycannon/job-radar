@@ -189,6 +189,7 @@ def test_wizard_config_is_valid_yaml_with_regex_dealbreakers():
     from jobradar.config import load as load_cfg
 
     answers = dict(DEFAULTS)
+    answers["titles_include"] = ["engineering manager"]    # required since v5
     answers["dealbreakers"] = dict(COMMON_DEALBREAKERS)   # every pattern, \w and all
     d = Path(tempfile.mkdtemp()) / "config.yaml"
     write_config(d, answers)
@@ -619,6 +620,74 @@ def test_local_server_refuses_cross_origin_posts():
     assert h._same_origin() is True
     h.headers = FakeHeaders({"Host": "127.0.0.1:8765"})   # curl, no Origin
     assert h._same_origin() is True
+
+
+
+def test_config_refuses_what_it_used_to_swallow():
+    """Six settings used to be accepted and then silently do the wrong thing:
+    a salary with a pound sign crashed mid-scan, remote_ok "no" meant yes, a
+    broken dealbreaker regex was a traceback after the fetch, a typo'd section
+    name loaded clean and filtered nothing."""
+    import tempfile, yaml
+    from jobradar.config import load as load_cfg, ConfigError
+
+    d = Path(tempfile.mkdtemp())
+
+    def write(cfg):
+        p = d / "c.yaml"
+        base = {"titles": {"include": ["engineering manager"]}}
+        base.update(cfg)
+        p.write_text(yaml.safe_dump(base))
+        return p
+
+    # money written the way people write money
+    assert load_cfg(write({"salary": {"floor": "£70,000"}})).salary_floor == 70000.0
+    assert load_cfg(write({"salary": {"floor": "70,000"}})).salary_floor == 70000.0
+
+    # quoted booleans mean what they say
+    assert load_cfg(write({"locations": {"remote_ok": "no"}})).remote_ok is False
+
+    # and the things that should stop the run
+    for cfg, why in [
+        ({"salary": {"floor": "seventy grand"}}, "not a number"),
+        ({"output": {"formats": ["pdf"]}}, "not a format"),
+        ({"sector": ["retail"]}, "unknown setting"),
+        ({"dealbreakers": [{"name": "x", "pattern": "a|(b"}]}, "regular expression"),
+        ({"dealbreakers": [{"name": "x", "hard": True}]}, "no pattern"),
+        ({"dealbreakers": [{"name": "x", "regex": "y"}]}, "unknown key"),
+    ]:
+        try:
+            load_cfg(write(cfg))
+        except ConfigError as e:
+            assert why in str(e).lower(), f"{cfg} -> {e}"
+        else:
+            raise AssertionError(f"{cfg} should have been refused")
+
+
+def test_excluded_location_is_not_cancelled_by_the_country_filter():
+    """"Not London" is the most load-bearing line a UK user writes, and it did
+    nothing: the exclusion matched, then the country check un-matched it."""
+    cfg = _cfg(countries=["UK"], relocate_to=[], exclude_locations=["London"])
+    for loc in ("London", "London, UK", "London, England"):
+        assert match(_job(location=loc), cfg)[0] is False, loc
+    assert match(_job(location="Manchester, UK"), cfg)[0] is True
+    # a role in several places survives on the one that is not excluded
+    assert match(_job(location="London | Manchester"), cfg)[0] is True
+
+
+def test_a_role_is_new_once_not_all_day():
+    """Keying "new" on the date meant a second scan the same afternoon
+    re-reported the morning's roles as new."""
+    from jobradar import store
+    con = _tmpdb()
+    a = _job(title="EM One"); a.url = "https://x/1"
+    store.upsert_roles(con, [a]); store.bump_runs(con)
+    store.upsert_roles(con, [a])
+    assert store.new_since_last_run(con, [a.uid]) == set(), "same role, same day"
+    store.bump_runs(con)
+    b = _job(title="EM Two"); b.url = "https://x/2"
+    store.upsert_roles(con, [a, b])
+    assert store.new_since_last_run(con, [a.uid, b.uid]) == {b.uid}
 
 
 if __name__ == "__main__":

@@ -360,6 +360,8 @@ def cmd_generate(args) -> int:
         for a in store.artifacts_for(con, uid):
             if a["kind"] == args.kind:
                 rating = f"  {a['rating']:.0f}/100" if a["rating"] else ""
+                if a["summary"]:
+                    _say(f"  {a['summary']}")
                 _say(f"  wrote {a['path']}{rating}")
                 gates = json.loads(a["gates"] or "{}")
                 bad = [k for k, v in gates.items() if v is False]
@@ -376,9 +378,13 @@ def cmd_list(args) -> int:
     from . import store
     con = store.connect(args.db)
     try:
-        q = ("SELECT r.*, COALESCE(s.status,'new') status FROM roles r "
+        q = ("SELECT r.*, COALESCE(s.status,'new') status, "
+             "COALESCE(s.note,'') note FROM roles r "
              "LEFT JOIN role_state s ON s.uid=r.uid")
         params = []
+        if args.status and args.status not in store.STATUSES:
+            _say(f"status must be one of: {', '.join(store.STATUSES)}")
+            return 1
         if args.status:
             q += " WHERE COALESCE(s.status,'new')=?"
             params.append(args.status)
@@ -398,6 +404,14 @@ def cmd_list(args) -> int:
             out = []
             for r in rows:
                 d = dict(r)
+                # These are TEXT columns holding JSON. Passing them straight
+                # into json.dumps double-encoded them, so every consumer had
+                # to parse a string inside the parsed document.
+                for k in ("reasons", "flags"):
+                    try:
+                        d[k] = json.loads(d.get(k) or "[]")
+                    except (json.JSONDecodeError, TypeError):
+                        d[k] = []
                 d["artifacts"] = [
                     {"kind": a["kind"], "path": a["path"], "rating": a["rating"],
                      "gates": json.loads(a["gates"] or "{}")}
@@ -414,12 +428,16 @@ def cmd_list(args) -> int:
                 bad = [k for k, v in json.loads(a["gates"] or "{}").items()
                        if v is False]
                 mark = f" {a['rating']:.0f}/100" if a["rating"] else ""
+                if a["summary"]:
+                    mark += f" {a['summary'][:40]}"
                 mark += f" [{len(bad)} gate(s) failed]" if bad else ""
                 docs.append(f"{a['kind']}{mark}")
             status = "" if r["status"] == "new" else f"  [{r['status']}]"
             _say(f"{r['score']:>5.0f}  {r['title'][:52]:<52} {r['company'][:22]:<22}"
                  f"  {r['salary_label'] or 'unconfirmed':<20}{status}")
             _say(f"       {r['uid']}  {r['location'][:60]}")
+            if r["note"]:
+                _say(f"       note: {r['note']}")
             if docs:
                 _say(f"       {' | '.join(docs)}")
         _say(f"\n{len(rows)} role(s)")
