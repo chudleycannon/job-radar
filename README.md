@@ -13,12 +13,25 @@ systems, normalises thirteen different APIs into one shape, and drops anything
 that fails rules you write down once.
 
 ```bash
-pip install -e .
-job-radar setup     # asks for your CV, then seven questions
-job-radar scan      # writes out/index.html
-job-radar serve     # the same dashboard, with buttons
-job-radar list      # ...or the same thing as text
+git clone https://github.com/maccydee/job-radar
+cd job-radar && pip install -e .
+job-radar setup     # asks for your CV, then seven questions, then scans
 ```
+
+Setup runs the first scan itself rather than leaving you holding a config file
+and no evidence any of it works. It is also the run most likely to show up a
+mistake worth fixing now, like titles that match nothing or a salary floor that
+hides everything, while you are still sitting in front of it. Afterwards:
+
+```bash
+job-radar serve       # the dashboard, at http://127.0.0.1:8765
+job-radar list        # the same thing as text
+job-radar list --new  # only what arrived since the last scan
+job-radar rank        # score the whole board against your CV, cheaply
+job-radar scan        # read the boards again
+```
+
+The dashboard is optional. Everything it does has a command behind it.
 
 Setup asks for your current CV first and will not finish without one. It is
 not optional: every document this writes is built from your real record, and
