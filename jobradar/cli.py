@@ -608,6 +608,57 @@ def cmd_generate(args) -> int:
         con.close()
 
 
+# ---------------------------------------------------------------- rank
+def cmd_rank(args) -> int:
+    """Score every role against the CV in one batched pass.
+
+    Deliberately a command rather than something the scan does. It spends
+    tokens, and the rule everywhere else in this tool is that nothing is spent
+    without being asked for. It says what it will cost before it starts.
+    """
+    from . import rank as rank_mod, store
+    cfg = _cfg_or_default(args.config)
+    con = store.connect(args.db)
+    try:
+        rows = rank_mod.candidates(con, refresh=args.refresh)
+        if not rows:
+            _say("Nothing to rank. Every role with a description already has a "
+                 "fit score; use --refresh to score them again.")
+            return 0
+        if args.limit:
+            rows = rows[: args.limit]
+        batches, tokens = rank_mod.estimate(rows)
+        _say(f"{len(rows)} roles to rank, in {batches} call(s), roughly "
+             f"{tokens:,} input tokens.")
+        _say(f"Screening these one at a time would be about "
+             f"{len(rows) * 60_000:,}.")
+        if args.dry_run:
+            _say("dry run: nothing sent")
+            return 0
+
+        def progress(done, total, scored):
+            _say(f"  {done}/{total} sent, {scored} scored")
+
+        n = rank_mod.rank(con, cfg, rows, on_batch=progress)
+        _say(f"\nScored {n} of {len(rows)}.")
+        if n < len(rows):
+            _say(f"  {len(rows) - n} came back unscored and keep fit -1; they "
+                 f"are not ranked as bad, they are unranked. Run again to "
+                 f"retry just those.")
+        top = con.execute(
+            "SELECT company,title,fit,fit_why FROM roles WHERE fit>=0 "
+            "ORDER BY fit DESC, score DESC LIMIT ?", (args.top,)).fetchall()
+        if top:
+            _say("")
+            for r in top:
+                _say(f"  {r['fit']:>3}  {r['company'][:24]:<26} {r['title'][:44]}")
+                if r["fit_why"]:
+                    _say(f"       {r['fit_why'][:104]}")
+        return 0
+    finally:
+        con.close()
+
+
 # ---------------------------------------------------------------- list
 def cmd_list(args) -> int:
     """Everything the dashboard shows, as text."""
@@ -767,6 +818,16 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--force", action="store_true",
                    help="screen even when the posting has no description")
     g.set_defaults(func=cmd_generate)
+
+    rk = sub.add_parser("rank", help="score every role against your CV, cheaply")
+    rk.add_argument("--refresh", action="store_true",
+                    help="re-score roles that already have a fit")
+    rk.add_argument("--limit", type=int, default=0)
+    rk.add_argument("--top", type=int, default=12, help="how many to print")
+    rk.add_argument("--dry-run", action="store_true",
+                    help="show what it would cost and send nothing")
+    rk.add_argument("--db", default=None)
+    rk.set_defaults(func=cmd_rank)
 
     ls = sub.add_parser("list", help="the dashboard, as text")
     ls.add_argument("--status", default=None)

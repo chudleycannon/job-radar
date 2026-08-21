@@ -132,6 +132,13 @@ def _ensure_columns(con) -> None:
     cols = {r["name"] for r in con.execute("PRAGMA table_info(roles)")}
     if "first_run" not in cols:
         con.execute("ALTER TABLE roles ADD COLUMN first_run INTEGER DEFAULT 0")
+    # Fit against the CV, from `job-radar rank`. -1 means "not yet judged",
+    # which is different from 0 ("judged, and wrong for you") and has to stay
+    # different or an unranked board sorts as though every role were terrible.
+    if "fit" not in cols:
+        con.execute("ALTER TABLE roles ADD COLUMN fit INTEGER DEFAULT -1")
+    if "fit_why" not in cols:
+        con.execute("ALTER TABLE roles ADD COLUMN fit_why TEXT DEFAULT ''")
     acols = {r["name"] for r in con.execute("PRAGMA table_info(artifacts)")}
     if "body" not in acols:
         con.execute("ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")

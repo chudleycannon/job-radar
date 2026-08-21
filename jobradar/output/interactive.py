@@ -82,7 +82,8 @@ function apply(){let n=0;
                    (f==='pay' && r.dataset.pay==='1') ||
                    (f==='new' && r.dataset.new==='1') ||
                    (f==='live' && IN_FLIGHT.has(st)) ||
-                   (f==='closed' && CLOSED_OUT.has(st));
+                   (f==='closed' && CLOSED_OUT.has(st)) ||
+                   (f==='fit' && (+r.dataset.fit)>=70);
     const ok = viewOk
       && (secs.size===0  || secs.has(r.dataset.sector))
       && (modes.size===0 || modes.has(r.dataset.mode))
@@ -93,12 +94,59 @@ function apply(){let n=0;
 
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.seg button').forEach(o=>o.setAttribute('aria-selected','false'));
-  b.setAttribute('aria-selected','true'); f=b.dataset.f; apply();});
+  b.setAttribute('aria-selected','true'); f=b.dataset.f;
+  // Best fit is a priority list, so it is ordered by fit rather than by the
+  // filter score the rest of the board uses.
+  const list=$('#list');
+  const rows=[...list.querySelectorAll('.row')];
+  rows.sort(f==='fit'
+    ? (a,b)=>(+b.dataset.fit)-(+a.dataset.fit)||(+b.dataset.score)-(+a.dataset.score)
+    : (a,b)=>(+b.dataset.score)-(+a.dataset.score));
+  rows.forEach(r=>list.appendChild(r));
+  apply();});
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
   b.setAttribute('aria-pressed', on?'false':'true');
   const set=b.dataset.sec?secs:modes, key=b.dataset.sec||b.dataset.mode;
   on?set.delete(key):set.add(key); apply();});
+// Ranking spends tokens, so the click shows the cost and waits for a yes.
+// Everything else that spends in this tool works the same way.
+const rankBtn=$('#rank'), rankInfo=$('#rankinfo');
+async function rankState(){
+  const r=await fetch('/api/rank'); if(!r.ok) return null;
+  return r.json();}
+async function refreshRankInfo(){
+  const d=await rankState(); if(!d) return d;
+  if(d.state==='running'){
+    rankBtn.classList.add('busy'); rankBtn.disabled=true;
+    rankInfo.textContent=`ranking ${d.done}/${d.total}...`;
+  }else{
+    rankBtn.classList.remove('busy'); rankBtn.disabled=false;
+    rankInfo.textContent = d.pending
+      ? `${d.pending} unranked`
+      : (d.scored ? `${d.scored} ranked` : '');}
+  return d;}
+refreshRankInfo();
+
+rankBtn.onclick=async ()=>{
+  const d=await rankState(); if(!d) return;
+  if(!d.pending){ say('Everything with a description is already ranked'); return; }
+  const ok=confirm(
+    `Rank ${d.pending} roles against your CV?\n\n`+
+    `About ${d.tokens.toLocaleString()} input tokens, in ${d.batches} call(s).\n`+
+    `Screening them one at a time would be about `+
+    `${d.screen_tokens.toLocaleString()}.`);
+  if(!ok) return;
+  const {ok:started,data}=await post('/api/rank',{});
+  if(!started){ say(data.error||'could not start'); return; }
+  say('Ranking started. This takes a couple of minutes.');
+  const t=setInterval(async ()=>{
+    const s=await refreshRankInfo();
+    if(s && s.state!=='running'){ clearInterval(t);
+      say('Ranked. Reloading.'); setTimeout(()=>location.reload(),700);}
+  },3000);
+  refreshRankInfo();};
+
 $('#fcountry').onchange=e=>{country=e.target.value;apply()};
 $('#fcity').onchange=e=>{city=e.target.value;apply()};
 
@@ -284,6 +332,11 @@ def render(con) -> str:
     shut = sum(1 for r in rows if r["status"] in store.CLOSED_OUT)
     _closed_count = f'<span class="n">{shut}</span>' if shut else ""
 
+    # Roles judged a real fit against the CV, not merely eligible against the
+    # filters. -1 means unranked, which is not the same as bad.
+    good = sum(1 for r in rows if (r["fit"] or -1) >= 70)
+    _fit_count = f'<span class="n">{good}</span>' if good else ""
+
     sec = Counter((r["sector"] or "other") for r in rows)
     chips = "".join(
         f'<button aria-pressed="false" data-sec="{_h.escape(s, quote=True)}">'
@@ -315,11 +368,14 @@ def render(con) -> str:
 <div class="seg" role="tablist" aria-label="Filter roles">
   <button role="tab" aria-selected="true"  data-f="all">All</button>
   <button role="tab" aria-selected="false" data-f="new">New{_new_count}</button>
+  <button role="tab" aria-selected="false" data-f="fit">Best fit{_fit_count}</button>
   <button role="tab" aria-selected="false" data-f="live">In flight{_live_count}</button>
   <button role="tab" aria-selected="false" data-f="closed">Closed{_closed_count}</button>
   <button role="tab" aria-selected="false" data-f="open">Open</button>
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
+<div class="actions"><button id="rank" type="button">Rank against my CV</button>
+  <span id="rankinfo"></span></div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="selects">
@@ -363,6 +419,16 @@ def _row(r, arts, job, run=0) -> str:
     # than behind a link to a file. <details> gives the minimise for free and
     # keeps working with JavaScript off. Open by default: you clicked Screen
     # to read it, and a collapsed answer is one more click for no reason.
+    # The fit score, where it can be read next to the role rather than only
+    # in a sort order.
+    fitline = ""
+    fv = r["fit"] if r["fit"] is not None else -1
+    if fv >= 0:
+        band = "good" if fv >= 70 else ("mid" if fv >= 50 else "low")
+        fitline = (f'<div class="fit {band}"><b>{fv}</b> fit'
+                   + (f'<span>{_h.escape(r["fit_why"] or "")}</span>'
+                      if r["fit_why"] else "") + '</div>')
+
     screening = ""
     if "screen" in arts:
         v = arts["screen"]["summary"] or "screened"
@@ -407,6 +473,8 @@ def _row(r, arts, job, run=0) -> str:
         f'data-status="{_h.escape(r["status"], quote=True)}" '
         f'data-pay="{1 if paid else 0}" '
         f'data-new="{1 if r["uid"] in run else 0}" '
+        f'data-fit="{r["fit"] if r["fit"] is not None else -1}" '
+        f'data-score="{r["score"] or 0}" '
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
         f'data-mode="{_h.escape(r["work_mode"] or "unstated", quote=True)}" '
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '
@@ -422,6 +490,7 @@ def _row(r, arts, job, run=0) -> str:
         # carrying a salary that was never compared to the floor, and only
         # the first ever appeared.
         + "".join(f'<div class="note">{_h.escape(n)}</div>' for n in notes)
+        + fitline
         + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
         + screening
         + '<div class="acts">'

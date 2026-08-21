@@ -64,6 +64,26 @@ class Handler(BaseHTTPRequestHandler):
                 return self._html(interactive.render(con))
             finally:
                 con.close()
+        if path == "/api/rank":
+            # The estimate, plus whatever a run in progress has finished. The
+            # click has to be able to show a cost before spending anything.
+            con = store.connect(self.db_path)
+            try:
+                from . import rank as rank_mod
+                rows = rank_mod.candidates(con)
+                batches, tokens = rank_mod.estimate(rows)
+                return self._json({
+                    "pending": len(rows), "batches": batches, "tokens": tokens,
+                    "screen_tokens": len(rows) * 60_000,
+                    "state": store.get_meta(con, "rank_state", "idle"),
+                    "done": int(store.get_meta(con, "rank_done", "0") or 0),
+                    "total": int(store.get_meta(con, "rank_total", "0") or 0),
+                    "scored": con.execute(
+                        "SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"],
+                })
+            finally:
+                con.close()
+
         if path == "/api/jobs":
             con = store.connect(self.db_path)
             try:
@@ -156,6 +176,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "cross-origin request refused"}, 403)
         path = urlparse(self.path).path
         data = self._body()
+
+        if path == "/api/rank":
+            # Not per-role, so it does not carry a uid and must be handled
+            # before the uid check below.
+            con = store.connect(self.db_path)
+            try:
+                if store.get_meta(con, "rank_state", "idle") == "running":
+                    return self._json(
+                        {"ok": False, "error": "already ranking"}, 429)
+                from . import rank as rank_mod
+                rows = rank_mod.candidates(con, refresh=bool(data.get("refresh")))
+                if not rows:
+                    return self._json(
+                        {"ok": False,
+                         "error": "every role with a description already has a "
+                                  "fit score"}, 409)
+                store.set_meta(con, "rank_state", "running")
+                store.set_meta(con, "rank_total", str(len(rows)))
+                store.set_meta(con, "rank_done", "0")
+            finally:
+                con.close()
+            _spawn_rank(self.db_path, self.config_path,
+                        refresh=bool(data.get("refresh")))
+            return self._json({"ok": True, "roles": len(rows)})
+
         uid = data.get("uid")
         # An unknown uid used to raise inside the handler and drop the
         # connection, so the browser's fetch rejected and the click silently
@@ -203,6 +248,36 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             con.close()
         self.send_error(404)
+
+
+def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
+    """Rank on a background thread so the click returns at once.
+
+    Progress goes in `meta` rather than a job row: ranking is about the board
+    rather than one role, and the jobs table has a foreign key to a role.
+    """
+    import threading
+
+    def work():
+        from . import rank as rank_mod
+        from .config import load as load_cfg
+        con = store.connect(db_path)
+        try:
+            cfg = load_cfg(config_path) if config_path else load_cfg()
+            rows = rank_mod.candidates(con, refresh=refresh)
+            rank_mod.rank(con, cfg, rows,
+                          on_batch=lambda done, total, scored:
+                              store.set_meta(con, "rank_done", str(done)))
+            store.set_meta(con, "rank_state", "idle")
+        except Exception as e:
+            # Never leave it stuck on "running": the button would spin for
+            # ever and refuse every later attempt.
+            store.set_meta(con, "rank_state", "idle")
+            store.set_meta(con, "rank_error", str(e)[:200])
+        finally:
+            con.close()
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,

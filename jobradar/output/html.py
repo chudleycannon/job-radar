@@ -91,6 +91,27 @@ header{margin-bottom:var(--s5)}
 .brand span{font-size:1.375rem;font-weight:650;letter-spacing:-.022em;
   color:var(--ink)}
 
+.actions{display:flex;align-items:center;gap:12px;margin-bottom:var(--s4)}
+.actions button{font:inherit;font-size:.8125rem;font-weight:550;cursor:pointer;
+  padding:7px 14px;border-radius:8px;border:1px solid var(--accent);
+  background:transparent;color:var(--accent);
+  transition:background var(--dur) var(--ease),color var(--dur) var(--ease)}
+.actions button:hover:not(:disabled){background:var(--accent);color:#fff}
+.actions button:disabled{opacity:.5;cursor:default}
+.actions #rankinfo{font-size:.8125rem;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+
+/* Fit against the CV, from `job-radar rank`. Sits under the title because it
+   is a judgement about the role, not a property of it like salary. */
+.fit{grid-column:1/-1;margin-top:6px;font-size:.8125rem;color:var(--muted);
+  display:flex;align-items:baseline;gap:8px}
+.fit b{font-variant-numeric:tabular-nums;font-weight:650;padding:1px 7px;
+  border-radius:999px;font-size:.75rem;background:var(--line);color:var(--ink)}
+.fit.good b{background:rgba(95,191,141,.18);color:var(--pay)}
+.fit.mid b{background:rgba(216,165,90,.16);color:var(--flag)}
+.fit.low b{background:var(--line);color:var(--muted)}
+.fit span{color:var(--muted)}
+
 /* The screening, inline under the role it belongs to. */
 .screening{grid-column:1/-1;margin-top:var(--s3);border:1px solid var(--line);
   border-radius:10px;background:var(--surface-2);overflow:hidden}
