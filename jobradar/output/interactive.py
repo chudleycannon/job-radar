@@ -14,6 +14,10 @@ from collections import Counter
 from datetime import datetime
 
 from .. import store
+from .favicon import link_tag as _favicon_tag
+
+_FAVICON = _favicon_tag()
+
 from .html import _CSS, _cap_location, _SECTORS, _MODES
 
 _EXTRA_CSS = """
@@ -250,7 +254,7 @@ def render(con) -> str:
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Job radar</title><style>{_CSS}{_EXTRA_CSS}</style></head><body><div class="wrap">
+<title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body><div class="wrap">
 <header>
   <h1>{total} roles worth a look</h1>
   <p class="sub"><b>{paid}</b> with a salary &middot; <b>{settled}</b> settled &middot;

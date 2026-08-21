@@ -213,6 +213,11 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
     try:
         # Documents made before there was a column for their text.
         store.backfill_bodies(con)
+        # A generation cannot outlive the process that spawned it, so anything
+        # still "running" here is from a server that is gone.
+        orphans = store.reap_orphans(con, runner.TIMEOUT)
+        if orphans:
+            print(f"  cleared {orphans} interrupted generation(s)")
         n = runner.regate(con)
         if n:
             print(f"  rechecked {n} document(s)")

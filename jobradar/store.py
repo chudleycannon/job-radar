@@ -344,6 +344,35 @@ def running_count(con) -> int:
     return con.execute("SELECT COUNT(*) c FROM jobs WHERE state='running'").fetchone()["c"]
 
 
+def reap_orphans(con, timeout_s: int = 900) -> int:
+    """Fail jobs whose worker is gone, and say why.
+
+    A generation runs on a daemon thread inside the server process, so it
+    cannot outlive it. Restart the server mid-generation, or have it crash,
+    and the row stays 'running' for ever: the button spins on the dashboard
+    with nothing behind it, and because the queue guard is
+    `running_count >= 1`, every later generation is refused too. One
+    interrupted click silently disabled the whole feature.
+
+    Anything still marked running or pending when the server starts belongs to
+    a process that no longer exists. Anything older than the generation
+    timeout is dead whatever started it.
+    """
+    n = con.execute(
+        "UPDATE jobs SET state='failed', finished_at=?, error=? "
+        "WHERE state IN ('running','pending')",
+        (_now(), "interrupted: the server restarted while this was running. "
+                 "Nothing was charged for the unfinished part; click again."),
+    ).rowcount
+    stale = con.execute(
+        "UPDATE jobs SET state='failed', finished_at=?, error=? "
+        "WHERE state='running' AND "
+        "replace(started_at,'T',' ') < datetime('now','localtime',?)",
+        (_now(), f"gave up after {timeout_s // 60} minutes", f"-{timeout_s} seconds"),
+    ).rowcount
+    return n + stale
+
+
 # ------------------------------------------------------------------- meta
 
 def get_meta(con, k, default=None):

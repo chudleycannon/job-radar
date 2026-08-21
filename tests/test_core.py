@@ -1237,6 +1237,47 @@ def test_a_failed_job_stops_reporting_itself_after_two_minutes():
     assert con.execute(q).fetchall() == [], "a stale failure must not be re-reported"
 
 
+def test_the_favicon_is_inline_and_tiny():
+    """A favicon that costs a second request is a favicon that does not appear
+    on a page opened from file://, which is how the static export is read."""
+    from jobradar.output import favicon, interactive
+    from jobradar import store
+    assert len(favicon.SVG) < 2000, "must stay small enough to inline"
+    uri = favicon.data_uri()
+    assert uri.startswith("data:image/svg+xml,")
+    # A raw "#" starts a URL fragment, so an unencoded colour truncated the
+    # whole icon at the first fill and the browser received thirty bytes.
+    assert "#" not in uri, "colours must be percent-encoded"
+    assert len(uri) > len(favicon.SVG) * 0.8, "the whole SVG has to survive"
+    html = interactive.render(store.connect(":memory:"))
+    assert 'rel="icon"' in html
+    # The only http in there is the SVG namespace, which is an identifier and
+    # not something a browser fetches. Nothing else may reference a network.
+    body = favicon.SVG.replace('xmlns="http://www.w3.org/2000/svg"', "")
+    assert "http" not in body and "url(" not in body
+
+
+def test_an_interrupted_generation_does_not_block_the_queue_for_ever():
+    """A generation runs on a daemon thread inside the server, so it cannot
+    outlive it. Restart the server mid-click and the row stays 'running' for
+    ever: the button spins with nothing behind it, and since the queue guard
+    is `running_count >= 1`, every later generation is refused too. One
+    interrupted click silently disabled the whole feature."""
+    from jobradar import store
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "first_seen,last_seen) VALUES "
+                "('u','C','T','url','London','greenhouse','2026-08-21','2026-08-21')")
+    con.execute("INSERT INTO jobs (uid,kind,state,requested_at,started_at) "
+                "VALUES ('u','screen','running',datetime('now','localtime'),"
+                "datetime('now','localtime'))")
+    assert store.running_count(con) == 1
+    assert store.reap_orphans(con) == 1
+    assert store.running_count(con) == 0, "the queue must be free again"
+    row = con.execute("SELECT state,error FROM jobs").fetchone()
+    assert row["state"] == "failed" and "click again" in row["error"]
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

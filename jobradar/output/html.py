@@ -20,6 +20,11 @@ from pathlib import Path
 
 from ..models import Job
 
+from .favicon import link_tag as _favicon_tag
+
+_FAVICON = _favicon_tag()
+
+
 _CSS = """
 /* DESIGN PLAN — "Calm"
    PALETTE  bg #f5f5f7 (Apple system grey) / surface #fff / ink #1d1d1f
@@ -296,7 +301,7 @@ def render(new: list[Job], seen: list[Job], *, dropped, sources_ok, sources_tota
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_h.escape(title)}</title><style>{_CSS}</style></head><body><div class="wrap">
+<title>{_h.escape(title)}</title>{_FAVICON}<style>{_CSS}</style></head><body><div class="wrap">
 <header>
   <h1>{len(jobs)} roles worth a look</h1>
   <p class="sub">{stats}</p>
