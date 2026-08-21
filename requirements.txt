@@ -1,0 +1,9 @@
+# The dependencies live in pyproject.toml, which is the source of truth.
+#
+# This file exists because people reach for it by habit, and it defers rather
+# than repeating the list: two copies of a dependency set drift, and the one
+# that drifts is always the one nobody installs from.
+#
+#   pip install -r requirements.txt
+#   pip install -e .                  # identical
+-e .

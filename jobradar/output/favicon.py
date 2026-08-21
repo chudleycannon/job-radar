@@ -57,7 +57,7 @@ def link_tag() -> str:
 def write(path) -> None:
     """Write the standalone file, for anything that wants a real asset."""
     from pathlib import Path
-    Path(path).write_text(SVG)
+    Path(path).write_text(SVG, encoding="utf-8")
 
 
 def mark(size: int = 34) -> str:

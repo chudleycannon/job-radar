@@ -1489,6 +1489,73 @@ def test_smartrecruiters_links_are_not_dead():
         "https://jobs.smartrecruiters.com/Wise/123456"
 
 
+def test_every_text_file_is_read_and_written_as_utf8():
+    """Without an explicit encoding Python uses the OS locale, which on a UK
+    or US Windows install is cp1252. sources.json already ships "Conde Nast";
+    a job description with a pound sign comes back as mojibake; anything
+    outside cp1252 raises and takes the command with it. Python 3.15 makes
+    UTF-8 the default but this supports 3.10 upwards."""
+    import re
+    root = Path(__file__).resolve().parent.parent / "jobradar"
+    bad = []
+    for f in root.rglob("*.py"):
+        src = f.read_text(encoding="utf-8")
+        for call in re.finditer(r"\.(read_text|write_text)\(", src):
+            # Walk to the matching close paren; the encoding may be on a later
+            # line for a multi-line call.
+            i, depth = call.end() - 1, 0
+            while i < len(src):
+                depth += src[i] == "("
+                depth -= src[i] == ")"
+                if depth == 0:
+                    break
+                i += 1
+            if "encoding=" not in src[call.start():i]:
+                line = src[:call.start()].count("\n") + 1
+                bad.append(f"{f.name}:{line}")
+    assert not bad, f"text I/O without an explicit encoding: {bad}"
+
+
+def test_running_out_of_credit_is_not_treated_as_a_bad_answer():
+    """Returning [] for both meant a rank loop carried on and fired every
+    remaining batch, each failing the same way, then reported "0 scored" with
+    no reason attached."""
+    from jobradar.runner import looks_like_limit
+
+    for msg in ("Credit balance is too low to access the Anthropic API",
+                "API Error: 429 Too Many Requests",
+                "You have exceeded your usage limit for this month",
+                "overloaded_error"):
+        assert looks_like_limit(msg), msg
+    for msg in ("Error: ENOENT no such file",
+                "SyntaxError: unexpected token",
+                ""):
+        assert not looks_like_limit(msg), msg
+
+
+def test_the_cli_is_never_called_with_an_open_stdin():
+    """Nothing behind this has a terminal: the dashboard is a background
+    service and the scheduled jobs run from launchd. A read from stdin with
+    nothing attached blocks until the timeout, which is fifteen minutes of a
+    spinner for a question nobody can see."""
+    import re
+    root = Path(__file__).resolve().parent.parent / "jobradar"
+    for f in (root / "runner.py", root / "rank.py"):
+        src = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"subprocess\.run\(", src):
+            i, depth = m.end() - 1, 0
+            while i < len(src):
+                depth += src[i] == "("
+                depth -= src[i] == ")"
+                if depth == 0:
+                    break
+                i += 1
+            block = src[m.start():i]
+            if "claude" in block or "exe" in block or "cmd" in block:
+                assert "stdin=subprocess.DEVNULL" in block, \
+                    f"{f.name}: a CLI call without stdin closed"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

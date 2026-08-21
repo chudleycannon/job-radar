@@ -424,7 +424,7 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> int:   # used by disco
     `sources.extra` is -- so `--add` erased the explanation of `--add`.
     """
     import yaml
-    text = cfg_path.read_text() if cfg_path.exists() else ""
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
     raw = yaml.safe_load(text) or {}
     have = {s.get("url") for s in ((raw.get("sources") or {}).get("extra") or [])
             if isinstance(s, dict)}
@@ -472,7 +472,7 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> int:   # used by disco
             f"Refusing to write {cfg_path}: the result would not parse "
             f"({str(e).splitlines()[0]}). Add this by hand under "
             f"sources.extra:\n{block}")
-    cfg_path.write_text(result)
+    cfg_path.write_text(result, encoding="utf-8")
     return len(add)
 
 
@@ -508,7 +508,7 @@ def cmd_validate(args) -> int:
         Path(args.report).write_text(json.dumps({
             "checked": datetime.now().isoformat(timespec="seconds"),
             "total": len(rows), "dead": dead, "mismatch": mismatch, "rows": rows,
-        }, indent=1))
+        }, indent=1), encoding="utf-8")
         _say(f"  wrote {args.report}")
 
     if args.prune and not args.file:

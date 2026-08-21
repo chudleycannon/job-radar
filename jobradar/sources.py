@@ -17,7 +17,7 @@ def load_file(path: str | Path) -> list[Source]:
     p = Path(path)
     if not p.exists():
         return []
-    raw = json.loads(p.read_text())
+    raw = json.loads(p.read_text(encoding="utf-8"))
     items = raw.get("sources", raw) if isinstance(raw, dict) else raw
     out = []
     for d in items:
@@ -94,7 +94,7 @@ def save(sources: list[Source], path: str | Path, meta: dict | None = None) -> N
     existing = {}
     if p.exists():
         try:
-            prev = json.loads(p.read_text())
+            prev = json.loads(p.read_text(encoding="utf-8"))
             existing = prev.get("meta", {}) if isinstance(prev, dict) else {}
         except (json.JSONDecodeError, OSError):
             existing = {}
@@ -103,7 +103,7 @@ def save(sources: list[Source], path: str | Path, meta: dict | None = None) -> N
         "sources": [s.to_dict() for s in
                     sorted(sources, key=lambda x: (x.platform, x.company.lower()))],
     }
-    p.write_text(json.dumps(body, indent=1, ensure_ascii=False))
+    p.write_text(json.dumps(body, indent=1, ensure_ascii=False), encoding="utf-8")
 
 
 def age_days(path=None) -> int | None:
@@ -122,7 +122,7 @@ def age_days(path=None) -> int | None:
     """
     from datetime import date
     try:
-        meta = json.loads(Path(path or BUNDLED).read_text()).get("meta", {})
+        meta = json.loads(Path(path or BUNDLED).read_text(encoding="utf-8")).get("meta", {})
     except (OSError, ValueError, AttributeError):
         return None
     stamp = meta.get("checked") or meta.get("validated")

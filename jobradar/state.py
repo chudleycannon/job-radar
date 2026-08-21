@@ -31,7 +31,7 @@ class State:
         if not self.path.exists():
             return
         try:
-            d = json.loads(self.path.read_text())
+            d = json.loads(self.path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return
         self.seen = d.get("seen", {})
@@ -45,7 +45,7 @@ class State:
             "updated": date.today().isoformat(),
             "seen": self.seen,
             "source_counts": self.source_counts,
-        }, indent=1, sort_keys=True))
+        }, indent=1, sort_keys=True), encoding="utf-8")
 
     # ---- diffing ----
 

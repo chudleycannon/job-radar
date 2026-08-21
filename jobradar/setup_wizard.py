@@ -356,7 +356,7 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
                     from jobradar.runner import docx_to_text
                     text = docx_to_text(cv)
                 else:
-                    text = cv.read_text(errors="ignore")
+                    text = cv.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 text = ""
         if not text:

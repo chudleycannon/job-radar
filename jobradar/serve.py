@@ -85,6 +85,7 @@ class Handler(BaseHTTPRequestHandler):
                     "batch_size": rank_mod.BATCH,
                     "elapsed": _rank_elapsed(con),
                     "stopping": store.get_meta(con, "rank_cancel", "") == "1",
+                    "error": store.get_meta(con, "rank_error", "") or "",
                     "scored": con.execute(
                         "SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"],
                     "unrankable": rank_mod.unrankable(con),
@@ -196,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
 
             def git(*a, timeout=90):
                 return subprocess.run(["git", "-C", str(repo), *a],
-                                      capture_output=True, text=True,
+                                      capture_output=True, text=True, encoding="utf-8",
                                       timeout=timeout)
 
             if not (repo / ".git").exists():
@@ -263,6 +264,7 @@ class Handler(BaseHTTPRequestHandler):
                 store.set_meta(con, "rank_total", str(len(rows)))
                 store.set_meta(con, "rank_done", "0")
                 store.set_meta(con, "rank_cancel", "")
+                store.set_meta(con, "rank_error", "")
                 # Where the scored count stood before this run, so progress can
                 # be read live off the database rather than only advancing when
                 # a batch finishes.
@@ -367,8 +369,13 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
         except Exception as e:
             # Never leave it stuck on "running": the button would spin for
             # ever and refuse every later attempt.
+            from .runner import LimitReached
             store.set_meta(con, "rank_state", "idle")
-            store.set_meta(con, "rank_error", str(e)[:200])
+            store.set_meta(con, "rank_error", (
+                f"stopped: out of credit or rate limited ({e}). Everything "
+                f"scored so far is saved; run it again when the limit resets "
+                f"and it picks up where it left off."
+                if isinstance(e, LimitReached) else str(e))[:300])
         finally:
             con.close()
 

@@ -300,7 +300,7 @@ def _sectors(values) -> list[str]:
     from .sources import BUNDLED
     import json as _json
     try:
-        raw = _json.loads(BUNDLED.read_text())
+        raw = _json.loads(BUNDLED.read_text(encoding="utf-8"))
         items = raw.get("sources", raw) if isinstance(raw, dict) else raw
         known = {(d.get("sector") or "").lower() for d in items if isinstance(d, dict)}
         known.discard("")
@@ -377,7 +377,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
             f"No config at {p}. Run `job-radar setup` to create one, "
             f"or copy config.example.yaml."
         )
-    raw: dict[str, Any] = yaml.safe_load(p.read_text()) or {}
+    raw: dict[str, Any] = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     _check_keys(raw)
 
     titles = raw.get("titles") or {}

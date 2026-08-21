@@ -122,7 +122,7 @@ def _cv_text(cfg) -> str:
     p = Path(cfg.cv_path).expanduser()
     if not p.exists():
         raise SystemExit(f"No CV at {p}. Set cv.path in your config.")
-    text = docx_to_text(p) if p.suffix.lower() == ".docx" else p.read_text(errors="ignore")
+    text = docx_to_text(p) if p.suffix.lower() == ".docx" else p.read_text(encoding="utf-8", errors="ignore")
     # `docx_to_text` returns "" on anything it cannot open, including a
     # permission error, so a file that exists is not proof of a CV that can be
     # read. Ranking against an empty CV would still produce a full set of
@@ -139,13 +139,22 @@ def _cv_text(cfg) -> str:
 
 
 def _call(prompt: str, timeout: int = 600) -> list[dict]:
-    from .runner import claude_bin, _no_claude_msg
+    from .runner import claude_bin, _no_claude_msg, looks_like_limit, LimitReached
     exe = claude_bin()
     if not exe:
         raise SystemExit(_no_claude_msg())
+    # stdin closed: there is no terminal behind the dashboard or the scheduled
+    # jobs, so anything the CLI tried to read would block until the timeout.
     r = subprocess.run([exe, "-p", prompt, "--model", MODEL, "--allowedTools", ""],
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, encoding="utf-8",
+                       stdin=subprocess.DEVNULL, timeout=timeout)
     if r.returncode:
+        # An exhausted limit is not a bad response. Returning [] for both meant
+        # the loop carried on and fired every remaining batch, each failing the
+        # same way, and reported "0 scored" with no reason attached.
+        hit = looks_like_limit(r.stderr, r.stdout)
+        if hit:
+            raise LimitReached(hit)
         return []
     text = r.stdout.strip()
     a, b = text.find("["), text.rfind("]")
@@ -183,6 +192,7 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
     Everything already scored is kept, so stopping costs the batch in flight
     and nothing else.
     """
+    from .runner import LimitReached
     cv, wants = _cv_text(cfg), _wants(cfg)
     done = 0
     for i in range(0, len(rows), BATCH):
@@ -190,8 +200,14 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
             break
         chunk = rows[i:i + BATCH]
         by_id = {r["uid"][:8]: r["uid"] for r in chunk}
-        out = _call(PROMPT.format(cv=cv, wants=wants,
-                                  roles="\n".join(_digest(r) for r in chunk)))
+        try:
+            out = _call(PROMPT.format(cv=cv, wants=wants,
+                                      roles="\n".join(_digest(r) for r in chunk)))
+        except LimitReached:
+            # Stop where we are. Everything scored so far is already written,
+            # and the roles not reached keep fit -1, so re-running later picks
+            # up exactly where this left off rather than starting again.
+            raise
         for d in out:
             uid = by_id.get(str(d.get("id", ""))[:8])
             if not uid:

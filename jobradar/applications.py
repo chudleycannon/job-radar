@@ -69,7 +69,7 @@ class Tracker:
         p = Path(path) if path else next((x for x in SEARCH_PATH if x.exists()), None)
         if not p or not p.exists():
             return cls()
-        raw = yaml.safe_load(p.read_text()) or {}
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         rows = raw.get("applications") if isinstance(raw, dict) else raw
         apps = []
         for r in rows or []:

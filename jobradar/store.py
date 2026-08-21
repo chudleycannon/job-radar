@@ -287,7 +287,7 @@ def _read_text(path) -> str:
             except Exception:
                 return ""
     try:
-        return p.read_text(errors="ignore")[:200_000]
+        return p.read_text(encoding="utf-8", errors="ignore")[:200_000]
     except OSError:
         return ""
 
@@ -497,7 +497,7 @@ def migrate(con, state_path="state/seen.json", apps_path=None) -> dict:
     sp = Path(state_path)
     if sp.exists():
         try:
-            data = json.loads(sp.read_text())
+            data = json.loads(sp.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             data = {}
         for uid, e in (data.get("seen") or {}).items():

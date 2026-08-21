@@ -174,7 +174,10 @@ async function refreshRankInfo(){
     if(d.pending) bits.push(`${d.pending} to rank`);
     if(d.scored) bits.push(`${d.scored} ranked`);
     if(d.unrankable) bits.push(`${d.unrankable} listing-only, nothing to rank`);
-    rankInfo.textContent = bits.join(' · ');}
+    rankInfo.textContent = bits.join(' · ');
+    // A run that stopped because the account ran out looks exactly like one
+    // that finished, unless it says so.
+    if(d.error) say(d.error, 12000);}
   return d;}
 refreshRankInfo();
 

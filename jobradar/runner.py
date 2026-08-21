@@ -105,6 +105,17 @@ def _write_jd(d: Path, row) -> Path:
     return p
 
 
+# Every call to the CLI closes stdin.
+#
+# There is no terminal behind any of this: the dashboard runs as a background
+# service and the scheduled jobs run from launchd. That is fine as long as the
+# CLI never asks for anything, and it does not, because permissions are passed
+# on the command line. But if it ever did -- an expired login, a confirmation,
+# a new consent prompt after an upgrade -- a read from stdin with nothing
+# attached blocks until the timeout, which is fifteen minutes of a button
+# spinning for a question nobody can see. DEVNULL turns that into an immediate
+# EOF and an error you can read.
+
 PROMPTS = {
 "screen": """Use the screen-role skill.
 
@@ -240,6 +251,29 @@ def claude_bin() -> str:
     return ""
 
 
+# Running out is not the same as failing, and the difference decides what a
+# person should do next. A wrong answer means try again; an exhausted limit
+# means stop, because every further call will fail the same way and a batch
+# loop will happily burn through the rest of the queue proving it.
+_LIMIT = re.compile(
+    r"credit balance is too low|usage limit|rate.?limit|quota|"
+    r"insufficient (?:credit|balance|funds)|billing|payment required|"
+    r"\b429\b|too many requests|overloaded_error|exceeded your", re.I)
+
+
+class LimitReached(RuntimeError):
+    """The account is out of credit, or over a rate limit."""
+
+
+def looks_like_limit(*chunks: str) -> str:
+    """The offending line, or "" if this was an ordinary failure."""
+    for chunk in chunks:
+        for line in (chunk or "").splitlines():
+            if _LIMIT.search(line):
+                return " ".join(line.split())[:200]
+    return ""
+
+
 def _no_claude_msg() -> str:
     return ("cannot find the `claude` CLI. It is not on this process's PATH "
             f"({os.environ.get('PATH', '')[:120]}...) and is not in any of the "
@@ -282,7 +316,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         cfg_file = (Path(config_path) if config_path else
                     next((Path(n) for n in ("config.local.yaml", "config.yaml")
                           if Path(n).exists()), None))
-        cfg = cfg_file.read_text()[:6000] if cfg_file else "(no config found)"
+        cfg = cfg_file.read_text(encoding="utf-8")[:6000] if cfg_file else "(no config found)"
 
         # Same reason: copy the base CV in rather than referencing it. The
         # path comes from the config, which validates it exists on load, so a
@@ -328,12 +362,19 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             if skills.exists():
                 cmd += ["--add-dir", str(skills)]
             proc = subprocess.run(cmd, cwd=str(d), capture_output=True,
-                                  text=True, timeout=TIMEOUT)
+                                  text=True, encoding="utf-8",
+                                  stdin=subprocess.DEVNULL, timeout=TIMEOUT)
             out = (proc.stdout or "")[-4000:]
             if proc.returncode != 0:
-                store.mark_job(con, job_id, "failed",
-                               error=(proc.stderr or "claude exited non-zero")[:400],
-                               log=out)
+                hit = looks_like_limit(proc.stderr, proc.stdout)
+                store.mark_job(
+                    con, job_id, "failed",
+                    error=(f"out of credit or rate limited: {hit}. Nothing was "
+                           f"written and nothing partial was charged; the "
+                           f"button works again once the limit resets."
+                           if hit else
+                           (proc.stderr or "claude exited non-zero")[:400]),
+                    log=out)
                 return
         except subprocess.TimeoutExpired:
             store.mark_job(con, job_id, "failed",
@@ -365,7 +406,7 @@ def _record(con, job, d: Path, log: str) -> None:
         verdict = ""
         vp = d / "verdict.txt"
         if vp.exists():
-            verdict = vp.read_text().strip().split("\n")[0][:40]
+            verdict = vp.read_text(encoding="utf-8").strip().split("\n")[0][:40]
         body = (d / "screening.md")
         # A screen run with --force on an empty posting came back
         # APPLY_WITH_CAVEATS while the document itself said the dealbreakers
@@ -391,7 +432,7 @@ def _record(con, job, d: Path, log: str) -> None:
             # Anchor on the "NN/100" form. A bare \d{1,3} took the first
             # number in the file, so a rating that opened "100-point rubric"
             # would have been recorded as 100.
-            txt = rp.read_text()
+            txt = rp.read_text(encoding="utf-8")
             m = re.search(r"\b(\d{1,3})\s*/\s*100\b", txt) or \
                 re.search(r"\b(\d{1,3})\b", txt)
             if m:
@@ -413,8 +454,8 @@ def _record(con, job, d: Path, log: str) -> None:
         cv_f, letter_f = d / "CV.md", d / "cover-letter.md"
         summary = ""
         if cv_f.exists() and letter_f.exists():
-            shared = shared_ngram(cv_f.read_text(errors="ignore"),
-                                  letter_f.read_text(errors="ignore"))
+            shared = shared_ngram(cv_f.read_text(encoding="utf-8", errors="ignore"),
+                                  letter_f.read_text(encoding="utf-8", errors="ignore"))
             gates["no_overlap_with_cv"] = not shared
             summary = f'shares "{shared}" with the CV' if shared else ""
         else:
@@ -462,7 +503,7 @@ def _to_docx(d: Path, md_name: str, docx_name: str):
         return ""
     try:
         from .docx import markdown_to_docx
-        return markdown_to_docx(md.read_text(errors="ignore"), d / docx_name)
+        return markdown_to_docx(md.read_text(encoding="utf-8", errors="ignore"), d / docx_name)
     except Exception:
         return md          # the Markdown is still there and still usable
 
@@ -520,12 +561,12 @@ def _gates(d: Path, name: str) -> dict:
     f = d / name
     if not f.exists():
         return {"written": False}
-    text = f.read_text(errors="ignore")
+    text = f.read_text(encoding="utf-8", errors="ignore")
     gates = {"written": True, "no_em_dash": "—" not in text}
     srcs = list(d.glob("source-cv.txt")) or list(d.glob("source-cv.*"))
     if srcs:
         try:
-            new_bits = _invented(text, srcs[0].read_text(errors="ignore"))
+            new_bits = _invented(text, srcs[0].read_text(encoding="utf-8", errors="ignore"))
             gates["unsourced_specifics"] = new_bits or False
         except OSError:
             pass
@@ -533,7 +574,7 @@ def _gates(d: Path, name: str) -> dict:
     if det.exists():
         try:
             r = subprocess.run(["python3", str(det), str(f)],
-                               capture_output=True, text=True, timeout=120)
+                               capture_output=True, text=True, encoding="utf-8", timeout=120)
             blob = r.stdout + r.stderr
             # Read the verdict line, not any occurrence of the word FAIL.
             # detect.py prints "Fix the FAIL/WARN lines above" as standing
@@ -571,8 +612,8 @@ def regate(con) -> int:
         if a["kind"] == "cover_letter":
             cv_f = d / "CV.md"
             if cv_f.exists():
-                shared = shared_ngram(cv_f.read_text(errors="ignore"),
-                                      path.read_text(errors="ignore"))
+                shared = shared_ngram(cv_f.read_text(encoding="utf-8", errors="ignore"),
+                                      path.read_text(encoding="utf-8", errors="ignore"))
                 gates["no_overlap_with_cv"] = not shared
                 summary = f'shares "{shared}" with the CV' if shared else ""
         con.execute("UPDATE artifacts SET gates=?, summary=? WHERE id=?",
