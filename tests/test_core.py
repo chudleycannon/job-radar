@@ -511,14 +511,40 @@ def test_spelled_out_us_states_are_not_uk():
 
 def test_role_folder_is_keyed_on_the_role_not_the_day():
     """A CV drafted Monday and a letter drafted Wednesday landed in different
-    folders, so the letter could not read the CV it must be checked against."""
+    folders, so the letter could not read the CV it must be checked against.
+
+    And two roles must never share one: the same employer advertising the same
+    title in two offices is the common case, and one folder for both means the
+    second run overwrites the first's job-description snapshot, the artifact
+    row points at the wrong document, and the overlap gate compares a letter
+    against another role's CV. The old version of this test used a single role
+    and so could not see any of that.
+    """
     import tempfile
     from jobradar.runner import role_dir
     base = Path(tempfile.mkdtemp())
-    row = {"company": "Acme", "title": "Engineering Manager"}
-    monday = base / "2026-08-17-acme-engineering-manager"
+    row = {"company": "Acme", "title": "Engineering Manager", "uid": "abc123def"}
+    monday = base / "2026-08-17-acme-engineering-manager-abc123"
     monday.mkdir(parents=True)
-    assert role_dir(row, base) == monday
+    assert role_dir(row, base) == monday, "an existing folder is reused"
+
+    other = {"company": "Acme", "title": "Engineering Manager", "uid": "999zzz888"}
+    assert role_dir(other, base) != role_dir(row, base), \
+        "two roles must not share a folder"
+
+    # Long titles that differ only at the end survive slug() truncation.
+    a = {"company": "Financial Conduct Authority", "uid": "aaa111bbb",
+         "title": "Senior Engineering Manager, Payments and Digital Platform, London"}
+    b = dict(a, uid="ccc222ddd",
+             title="Senior Engineering Manager, Payments and Digital Platform, Edinburgh")
+    assert role_dir(a, base) != role_dir(b, base)
+
+    # A folder made before the uid was in the name is still found, so an
+    # upgrade does not orphan documents somebody already has.
+    legacy_row = {"company": "Older", "title": "Engineering Manager", "uid": "f00d1234"}
+    legacy = base / "2026-08-01-older-engineering-manager"
+    legacy.mkdir(parents=True)
+    assert role_dir(legacy_row, base) == legacy
 
 
 def test_source_meta_survives_a_prune():
@@ -1551,7 +1577,10 @@ def test_the_cli_is_never_called_with_an_open_stdin():
                     break
                 i += 1
             block = src[m.start():i]
-            if "claude" in block or "exe" in block or "cmd" in block:
+            # Only the CLI invocations. Matching on "exe" also caught
+            # `sys.executable`, which is the writing-linter call and does not
+            # need this.
+            if "claude" in block or "[exe," in block or "(cmd," in block:
                 assert "stdin=subprocess.DEVNULL" in block, \
                     f"{f.name}: a CLI call without stdin closed"
 

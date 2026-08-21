@@ -294,10 +294,65 @@ def _enrich_step(con, cfg) -> None:
     _say(f"  fetching {len(rows)} postings that arrived as headlines only...")
     got, tried = enrich.run(con, cfg, rows)
     if got:
+        dropped = _rescreen(con, cfg)
         _say(f"  filled in {got} of {tried}; they can now be screened, ranked "
              f"and compared to your salary floor")
+        if dropped:
+            _say(f"  {dropped} of them failed a rule once their text was "
+                 f"readable and have been hidden")
     else:
         _say(f"  none of the {tried} could be fetched. They stay as listings.")
+
+
+def _rescreen(con, cfg) -> int:
+    """Re-apply the filters to roles whose description has just arrived.
+
+    Screening happens during the scan, against whatever text the source
+    returned, which for LinkedIn, Workday and SmartRecruiters is nothing. So
+    the filters ran on an empty string: a hard dealbreaker cannot match text
+    that is not there, and a salary floor cannot compare a figure that was
+    never parsed. Enrichment then fetched the text and nothing looked at it,
+    which is the worst of both -- the tool had the sentence that disqualifies
+    the role and showed the role anyway.
+    """
+    from . import screen as screen_mod, store
+    from .models import Job, Salary
+    import json as _json
+
+    dropped = 0
+    rows = con.execute(
+        "SELECT r.* FROM roles r LEFT JOIN role_state s ON s.uid=r.uid "
+        "WHERE COALESCE(s.status,'new')='new' "
+        f"AND {store.LIVE_SQL} "
+        "AND LENGTH(TRIM(COALESCE(r.description,'')))>=200").fetchall()
+    for r in rows:
+        job = Job(company=r["company"], title=r["title"], url=r["url"],
+                  location=r["location"] or "", platform=r["platform"] or "",
+                  description=r["description"] or "",
+                  salary=Salary(min=r["salary_min"], max=r["salary_max"],
+                                currency=r["salary_currency"],
+                                period=r["salary_period"] or "year",
+                                confirmed=bool(r["salary_confirmed"]),
+                                raw=r["salary_label"]))
+        keep, _hits = screen_mod.screen(job, cfg)
+        if keep:
+            keep, _why = screen_mod.apply_salary(job, cfg)
+        if not keep:
+            # Settle it rather than delete it: a role you were shown and then
+            # told was wrong is worth being able to look back at, and deleting
+            # it would make it "new" again on the next scan.
+            store.set_status(con, r["uid"], "closed",
+                             "hidden after its full description was read")
+            dropped += 1
+            continue
+        # The old flags were written against an empty description and now
+        # claim things that are no longer true.
+        flags = [f for f in _json.loads(r["flags"] or "[]")
+                 if "not screened" not in f]
+        flags += [f for f in job.flags if f not in flags]
+        con.execute("UPDATE roles SET flags=? WHERE uid=?",
+                    (_json.dumps(flags), r["uid"]))
+    return dropped
 
 
 def _staleness_note(cfg) -> None:
@@ -515,9 +570,23 @@ def cmd_validate(args) -> int:
         _say("  --prune needs --file: it rewrites a source list, and there is "
              "no file to rewrite without one.")
     if args.prune and args.file:
-        # Compare whole URLs. Source.key deliberately keeps the query string
-        # (LinkedIn searches differ only by it), so matching it against a
-        # stripped URL never matched and 82% of sources could never be pruned.
+        # A prune has to be able to tell "these boards are gone" from "this
+        # machine has no network". Every failed fetch counts as zero postings
+        # and therefore as dead, so behind a broken proxy the whole list is
+        # dead and the file is emptied -- then stamped with today's date, so
+        # the staleness warning goes quiet about it too. This runs unattended
+        # every Sunday in Actions, on runners the README itself says get
+        # throttled sooner than a laptop.
+        share = len(dead) / max(1, len(rows))
+        if share > 0.25 and len(dead) > 5:
+            _say(f"\n  REFUSING TO PRUNE: {len(dead)} of {len(rows)} sources "
+                 f"({share:.0%}) came back empty.")
+            _say("  That is a network or rate-limit problem, not that many "
+                 "boards dying at once. Nothing was changed.")
+            _say("  Re-run when the connection is good, or use --force-prune "
+                 "if the list really has collapsed.")
+            if not args.force_prune:
+                return 1
         dead_urls = {r["url"] for r in dead}
         keep = [s for s in srcs if s.url not in dead_urls]
         src_mod.save(keep, args.file, meta={"pruned": len(srcs) - len(keep),
@@ -930,6 +999,9 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--report", default=None)
     v.add_argument("--limit", type=int, default=0)
     v.add_argument("--prune", action="store_true", help="rewrite --file without dead sources")
+    v.add_argument("--force-prune", action="store_true",
+                   help="prune even when most of the list came back empty, "
+                        "which normally means the network is the problem")
     v.set_defaults(func=cmd_validate)
 
     c = sub.add_parser("coverage", help="where the source list is thin")

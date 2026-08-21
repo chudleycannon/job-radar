@@ -155,8 +155,21 @@ def _call(prompt: str, timeout: int = 600) -> list[dict]:
         hit = looks_like_limit(r.stderr, r.stdout)
         if hit:
             raise LimitReached(hit)
-        return []
-    text = r.stdout.strip()
+        # Any other hard failure -- a model id that no longer exists, expired
+        # auth, a crash -- also has to be visible. Returning [] for it reported
+        # "5/5 scored" against nothing scored and then said "Ranked", because
+        # progress counted batches attempted rather than roles written.
+        raise CallFailed((r.stderr or r.stdout or "claude exited "
+                          f"{r.returncode}").strip()[:200])
+    return _parse(r.stdout)
+
+
+class CallFailed(RuntimeError):
+    """The CLI ran and failed for a reason that is not an exhausted limit."""
+
+
+def _parse(stdout: str) -> list[dict]:
+    text = (stdout or "").strip()
     a, b = text.find("["), text.rfind("]")
     if a < 0 or b < a:
         return []
@@ -220,7 +233,9 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
                         (fit, str(d.get("why", ""))[:400], uid))
             done += 1
         if on_batch:
-            on_batch(min(i + BATCH, len(rows)), len(rows), done)
+            # `done`, not the batch index. Reporting the index meant a run
+            # where every call failed still counted up to "5/5 scored".
+            on_batch(done, len(rows), done)
     return done
 
 

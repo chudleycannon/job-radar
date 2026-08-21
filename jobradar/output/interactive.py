@@ -20,7 +20,7 @@ from .markdown import to_html as _md
 _FAVICON = _favicon_tag()
 _MARK = _favicon_mark()
 
-from .html import _CSS, _cap_location, _SECTORS, _MODES
+from .html import _CSS, _cap_location, _SECTORS, _MODES, safe_url
 
 _EXTRA_CSS = """
 /* Actions. Kept quiet: the row is the content, these are what you do to it. */
@@ -596,7 +596,7 @@ def _row(r, arts, job, run=0) -> str:
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '
         f'data-city="{_h.escape(r["city"] or "", quote=True)}">'
         f'<div><div class="role">'
-        f'<a href="{_h.escape(r["url"])}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
+        f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
         f'{status_pill}</div>'
         f'<div class="meta">{_h.escape(meta)}</div></div>'
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
@@ -613,7 +613,7 @@ def _row(r, arts, job, run=0) -> str:
         + b("screen", "Screen", "primary")
         + b("cv", "CV")
         + letter_btn
-        + f'<a class="btn" href="{_h.escape(r["url"])}" target="_blank" rel="noopener" '
+        + f'<a class="btn" href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener" '
           f'data-apply="1">Apply</a>'
         + '<button data-status="skipped">Skip</button>'
         + ('<button data-status="interested">Unskip</button>' if settled else '')

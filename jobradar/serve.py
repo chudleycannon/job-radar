@@ -249,12 +249,16 @@ class Handler(BaseHTTPRequestHandler):
             # before the uid check below.
             con = store.connect(self.db_path)
             try:
-                if store.get_meta(con, "rank_state", "idle") == "running":
+                # An atomic claim, not a read-then-decide: three parallel
+                # requests all passed the old check and started three full
+                # runs, which on a 300-role board is triple the spend.
+                if not store.claim(con, "rank"):
                     return self._json(
                         {"ok": False, "error": "already ranking"}, 429)
                 from . import rank as rank_mod
                 rows = rank_mod.candidates(con, refresh=bool(data.get("refresh")))
                 if not rows:
+                    store.release(con, "rank")
                     return self._json(
                         {"ok": False,
                          "error": "every role with a description already has a "
@@ -306,7 +310,10 @@ class Handler(BaseHTTPRequestHandler):
                         {"ok": False,
                          "error": "draft the CV first: the letter is checked "
                                   "against it for repeated phrasing"}, 409)
-                if kind == "screen":
+                if kind in ("screen", "cv", "cover_letter"):
+                    # Not screen alone. A CV drafted against "_No description
+                    # available from this source._" is a full agent run, a
+                    # rating, and a document tailored to nothing.
                     row = con.execute("SELECT description FROM roles WHERE uid=?",
                                       (uid,)).fetchone()
                     if len((row["description"] or "").strip()) < 200:
@@ -315,10 +322,18 @@ class Handler(BaseHTTPRequestHandler):
                              "error": "this posting has no description, so there "
                                       "is nothing to screen. Open the advert "
                                       "instead."}, 409)
-                if store.running_count(con) >= 1:
+                # Same reasoning. The old count-then-insert lost to a
+                # double-click: two job rows for one role, two subprocesses in
+                # one directory, four artifact rows. The button only disables
+                # after the first response comes back, so the window is real.
+                if not store.claim(con, "generate"):
                     return self._json(
                         {"ok": False, "error": "one generation at a time"}, 429)
-                job_id = store.enqueue(con, uid, kind)
+                try:
+                    job_id = store.enqueue(con, uid, kind)
+                except Exception:
+                    store.release(con, "generate")
+                    raise
                 runner.spawn(job_id, db_path=self.db_path, base=self.docs_base,
                              config_path=self.config_path)
                 return self._json({"ok": True, "job": job_id, "kind": kind})
@@ -375,8 +390,11 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
                 f"stopped: out of credit or rate limited ({e}). Everything "
                 f"scored so far is saved; run it again when the limit resets "
                 f"and it picks up where it left off."
-                if isinstance(e, LimitReached) else str(e))[:300])
+                if isinstance(e, LimitReached) else
+                f"ranking failed: {e}. Nothing was scored; the roles are "
+                f"unchanged.")[:300])
         finally:
+            store.release(con, "rank")
             con.close()
 
     threading.Thread(target=work, daemon=True).start()
@@ -403,6 +421,10 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
             store.set_meta(con, "rank_state", "idle")
             store.set_meta(con, "rank_cancel", "")
             print("  cleared an interrupted ranking run")
+        # A lock outlives the process that took it, so a crash mid-run would
+        # otherwise refuse every generation and every rank for ever.
+        if store.clear_locks(con):
+            print("  released locks held by a previous run")
         n = runner.regate(con)
         if n:
             print(f"  rechecked {n} document(s)")

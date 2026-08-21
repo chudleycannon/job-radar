@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 from datetime import date
 from pathlib import Path
@@ -48,11 +49,24 @@ def role_dir(row, base: Path | None = None) -> Path:
     against -- and an absent check rendered identically to a passing one.
     """
     base = Path(base or os.environ.get("JOB_RADAR_DOCS") or DEFAULT_BASE)
-    name = slug(row["company"], row["title"])
+    # The uid is part of the name. Keyed on company and title alone, the same
+    # employer advertising the same title in two offices produced one folder
+    # for both: the second run overwrote the first's JD snapshot, the artifact
+    # row pointed at the wrong document, and the cover-letter overlap gate
+    # compared against another role's CV. slug()'s truncation gave a second
+    # collision path, for long titles differing only at the end.
+    tag = str(row["uid"])[:6]
+    name = f'{slug(row["company"], row["title"])}-{tag}'
     if base.exists():
+        # Folders made before the uid was in the name, so an upgrade does not
+        # orphan documents somebody already has.
         existing = sorted(p for p in base.glob(f"*-{name}") if p.is_dir())
+        legacy = sorted(p for p in base.glob(f'*-{slug(row["company"], row["title"])}')
+                        if p.is_dir())
         if existing:
             return existing[0]
+        if legacy:
+            return legacy[0]
     return base / f"{date.today().isoformat()}-{name}"
 
 
@@ -358,7 +372,8 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             cmd = [claude, "-p", prompt,
                    "--permission-mode", "acceptEdits",
                    "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
-                   "Bash(python3:*)"]
+                   # Both spellings: the interpreter is `python` on Windows.
+                   "Bash(python3:*)", "Bash(python:*)"]
             if skills.exists():
                 cmd += ["--add-dir", str(skills)]
             proc = subprocess.run(cmd, cwd=str(d), capture_output=True,
@@ -567,13 +582,23 @@ def _gates(d: Path, name: str) -> dict:
     if srcs:
         try:
             new_bits = _invented(text, srcs[0].read_text(encoding="utf-8", errors="ignore"))
-            gates["unsourced_specifics"] = new_bits or False
+            # True means passed, like every other gate here. Storing the list
+            # of offending tokens in this slot inverted the meaning: a clean
+            # draft stored False and was reported as a failure, and a draft
+            # that invented "45 engineers" and "250%" stored a truthy list and
+            # was reported as passing. The tokens go in their own key.
+            gates["unsourced_specifics"] = not new_bits
+            if new_bits:
+                gates["unsourced_found"] = new_bits
         except OSError:
             pass
     det = Path.home() / ".claude/skills/natural-writing/scripts/detect.py"
     if det.exists():
         try:
-            r = subprocess.run(["python3", str(det), str(f)],
+            # sys.executable, not "python3": that name does not exist on a
+            # standard Windows install, so the gate reported None and the
+            # dashboard, which counts only `is False`, showed nothing at all.
+            r = subprocess.run([sys.executable, str(det), str(f)],
                                capture_output=True, text=True, encoding="utf-8", timeout=120)
             blob = r.stdout + r.stderr
             # Read the verdict line, not any occurrence of the word FAIL.
@@ -624,7 +649,17 @@ def regate(con) -> int:
 
 def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
     """Run a job on a daemon thread so the click returns immediately."""
-    threading.Thread(target=run_job, args=(job_id,),
-                     kwargs={"db_path": db_path, "base": base,
-                             "config_path": config_path},
-                     daemon=True).start()
+    def work():
+        try:
+            run_job(job_id, db_path=db_path, base=base, config_path=config_path)
+        finally:
+            # However it ended. A lock left behind refuses every later
+            # generation until the server restarts, which is the same wedge
+            # the orphan reaper exists to undo.
+            con = store.connect(db_path)
+            try:
+                store.release(con, "generate")
+            finally:
+                con.close()
+
+    threading.Thread(target=work, daemon=True).start()

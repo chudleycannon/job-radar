@@ -287,6 +287,23 @@ _MODES = {"remote": "Remote", "hybrid": "Hybrid", "office": "Office",
           "unstated": "Not stated"}
 
 
+# A job board supplies the apply URL, and six adapters read it straight out of
+# third-party JSON -- on several of them it is employer-supplied. Escaping it
+# stops the attribute breaking out; it does nothing about the scheme, so a
+# javascript: href rendered as a live link in an origin that owns /api/generate
+# and /api/status. Same-origin, so the CSRF check waves it through.
+_SAFE_SCHEMES = ("http://", "https://", "mailto:")
+
+
+def safe_url(url: str) -> str:
+    """The URL if a browser may follow it, "" if it must not."""
+    u = (url or "").strip()
+    # Control characters and whitespace are stripped by parsers before the
+    # scheme is read, so "java\tscript:" is javascript: to a browser.
+    bare = "".join(c for c in u if c.isprintable() and not c.isspace()).lower()
+    return u if bare.startswith(_SAFE_SCHEMES) else ""
+
+
 def _cap_location(loc: str) -> str:
     """Shorten a location without lying about it.
 
@@ -326,7 +343,7 @@ def _row(j: Job, is_new: bool) -> str:
         f'data-country="{_h.escape(j.country or "unknown", quote=True)}" '
         f'data-city="{_h.escape(j.city or "", quote=True)}">'
         f'<div><div class="role">{"<span class=dot></span>" if is_new else ""}'
-        f'<a href="{_h.escape(j.url)}" target="_blank" rel="noopener">{_h.escape(j.title)}</a>'
+        f'<a href="{_h.escape(safe_url(j.url))}" target="_blank" rel="noopener">{_h.escape(j.title)}</a>'
         + (f'<span class="status {_h.escape(j.app_status, quote=True)}">'
            f'{_h.escape(j.app_status)}</span>' if j.app_status else '')
         + '</div>'

@@ -101,6 +101,12 @@ IN_FLIGHT = {"applied", "submitted", "interviewing", "offer"}
 # to those, so they are noise in a record of what you actually went for.
 CLOSED_OUT = {"rejected", "withdrawn", "closed"}
 
+# How far along an application is, for deciding which of two records of the
+# same job to keep. A merge must never trade an interview for an "interested".
+PROGRESS = {"new": 0, "skipped": 1, "interested": 2, "applied": 3,
+            "submitted": 4, "closed": 5, "withdrawn": 6, "rejected": 7,
+            "interviewing": 8, "offer": 9}
+
 
 def connect(path: str | Path | None = None) -> sqlite3.Connection:
     p = Path(path or DEFAULT_PATH)
@@ -127,21 +133,67 @@ def open_db(path=None):
 
 # ------------------------------------------------------------------ roles
 
+def _try_alter(con, ddl: str) -> None:
+    """Run an ALTER, tolerating another thread having just run the same one."""
+    try:
+        con.execute(ddl)
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
+
+
+def claim(con, name: str) -> bool:
+    """Take an exclusive lock named `name`, or return False.
+
+    Every guard in this tool used to be check-then-act: read a count, decide,
+    then write. Under a ThreadingHTTPServer that loses every race that matters
+    -- one double-click spawned two `claude` subprocesses into the same folder,
+    and three parallel rank requests started three full runs. An INSERT on a
+    primary key is atomic, so the database decides instead of the handler.
+    """
+    _ensure_columns(con)
+    try:
+        con.execute("INSERT INTO locks (name, taken_at) VALUES (?,?)",
+                    (name, _now()))
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def release(con, name: str) -> None:
+    con.execute("DELETE FROM locks WHERE name=?", (name,))
+
+
+def clear_locks(con) -> int:
+    """Drop every lock. Called on server start: a lock outlives the process
+    that took it, and a stale one refuses work for ever."""
+    try:
+        return con.execute("DELETE FROM locks").rowcount
+    except sqlite3.OperationalError:
+        return 0
+
+
 def _ensure_columns(con) -> None:
     """Add columns to a database made by an older version."""
+    # Twelve simultaneous opens produced eleven "duplicate column name"
+    # crashes: this is a check then an ALTER, with a ThreadingHTTPServer
+    # opening a connection per request and the page firing three at once. The
+    # loser of the race is not wrong, it is late.
     cols = {r["name"] for r in con.execute("PRAGMA table_info(roles)")}
     if "first_run" not in cols:
-        con.execute("ALTER TABLE roles ADD COLUMN first_run INTEGER DEFAULT 0")
+        _try_alter(con, "ALTER TABLE roles ADD COLUMN first_run INTEGER DEFAULT 0")
     # Fit against the CV, from `job-radar rank`. -1 means "not yet judged",
     # which is different from 0 ("judged, and wrong for you") and has to stay
     # different or an unranked board sorts as though every role were terrible.
     if "fit" not in cols:
-        con.execute("ALTER TABLE roles ADD COLUMN fit INTEGER DEFAULT -1")
+        _try_alter(con, "ALTER TABLE roles ADD COLUMN fit INTEGER DEFAULT -1")
     if "fit_why" not in cols:
-        con.execute("ALTER TABLE roles ADD COLUMN fit_why TEXT DEFAULT ''")
+        _try_alter(con, "ALTER TABLE roles ADD COLUMN fit_why TEXT DEFAULT ''")
     acols = {r["name"] for r in con.execute("PRAGMA table_info(artifacts)")}
     if "body" not in acols:
-        con.execute("ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")
+        _try_alter(con, "ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")
+    con.execute("CREATE TABLE IF NOT EXISTS locks ("
+                "name TEXT PRIMARY KEY, taken_at TEXT NOT NULL)")
 
 
 def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
@@ -166,11 +218,31 @@ def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
         )
         if row:
             seen += 1
+            # Never overwrite a longer description, or a confirmed salary,
+            # with the emptier version the list endpoint returns.
+            #
+            # LinkedIn, Workday and SmartRecruiters all omit the description
+            # from their search results, which is why `enrich` exists to fetch
+            # it per job. An unconditional UPDATE meant every scan threw that
+            # work away and re-fetched it, and with --no-enrich it was
+            # destroyed and never came back.
             con.execute("""UPDATE roles SET company=?,title=?,url=?,location=?,city=?,
-                country=?,work_mode=?,sector=?,platform=?,department=?,salary_min=?,
-                salary_max=?,salary_currency=?,salary_period=?,salary_confirmed=?,
-                salary_label=?,posted_at=?,description=?,score=?,reasons=?,flags=?,
-                last_seen=? WHERE uid=?""", vals + (j.uid,))
+                country=?,work_mode=?,sector=?,platform=?,department=?,
+                salary_min=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_min END,
+                salary_max=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_max END,
+                salary_currency=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_currency END,
+                salary_period=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_period END,
+                salary_confirmed=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_confirmed END,
+                salary_label=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_label END,
+                posted_at=?,
+                description=CASE WHEN LENGTH(?) >= LENGTH(COALESCE(description,''))
+                                 THEN ? ELSE description END,
+                score=?,reasons=?,flags=?,last_seen=? WHERE uid=?""",
+                vals[:10]
+                + (vals[14], vals[10], vals[14], vals[11], vals[14], vals[12],
+                   vals[14], vals[13], vals[14], vals[14], vals[14], vals[15])
+                + (vals[16], vals[17], vals[17])
+                + vals[18:] + (j.uid,))
         else:
             new += 1
             con.execute("""INSERT INTO roles (company,title,url,location,city,country,
@@ -360,10 +432,19 @@ def merge_duplicates(con) -> int:
             st = con.execute("SELECT status,note FROM role_state WHERE uid=?",
                              (lose["uid"],)).fetchone()
             if st and st["status"] != "new":
-                cur = con.execute("SELECT status FROM role_state WHERE uid=?",
+                cur = con.execute("SELECT status,note FROM role_state WHERE uid=?",
                                   (keep["uid"],)).fetchone()
-                if not cur or cur["status"] == "new":
+                cur_s = cur["status"] if cur else "new"
+                # Carry the further-along status across, not merely any status
+                # onto a blank one. The old rule only copied when the keeper
+                # was "new", so merging a role you were interviewing for into
+                # one you had merely marked interested threw the interview
+                # away -- and drafting a CV sets a role to "interested", so one
+                # click was enough to arm it. This runs unattended on scan.
+                if PROGRESS.get(st["status"], 0) > PROGRESS.get(cur_s, 0):
                     set_status(con, keep["uid"], st["status"], st["note"] or "")
+                elif st["note"] and not (cur and cur["note"]):
+                    set_status(con, keep["uid"], cur_s, st["note"])
             con.execute("UPDATE artifacts SET uid=? WHERE uid=?",
                         (keep["uid"], lose["uid"]))
             con.execute("DELETE FROM jobs WHERE uid=?", (lose["uid"],))

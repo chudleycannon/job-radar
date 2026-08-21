@@ -383,9 +383,19 @@ def work_rights(job: Job) -> str:
 
 def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
     """Dealbreaker scan over the description. Returns (keep, hits)."""
-    if not job.description:
-        if job.platform == "linkedin":
-            job.flags.append("not screened: no description from this source")
+    # Warn on a posting too thin to have been screened properly, but still run
+    # the patterns over whatever text is there.
+    #
+    # Two separate faults. The flag was added only for LinkedIn, so a Workday
+    # role whose enrichment failed passed every dealbreaker with no warning at
+    # all. And the first attempt at fixing that skipped the patterns entirely
+    # below a length threshold, which is worse: a thirty-character description
+    # saying "take home exercise" contains the disqualifying sentence, and
+    # refusing to read it is the same silent pass by another route.
+    text = (job.description or "").strip()
+    if len(text) < 200:
+        job.flags.append("not screened: no description from this source")
+    if not text:
         return True, []
 
     hits = []

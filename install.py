@@ -87,8 +87,9 @@ def main() -> int:
     say()
     say("Installed. From here on:")
     say(f"  {exe} <command>")
-    say(f"  or activate the environment first: "
-        f"{'.venv\\\\Scripts\\\\activate' if os.name == 'nt' else 'source .venv/bin/activate'}")
+    activate = (".venv\\Scripts\\activate" if os.name == "nt"
+                else "source .venv/bin/activate")
+    say(f"  or activate the environment first: {activate}")
     say()
 
     # Hand straight over. Setup asks for a CV, asks what you are looking for,

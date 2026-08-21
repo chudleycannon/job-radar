@@ -19,6 +19,10 @@ import re
 _BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
 _ITALIC = re.compile(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?!\*)", re.S)
 _CODE = re.compile(r"`([^`]+)`")
+# Kept out of the f-string below: a backslash inside an f-string
+# expression is a syntax error before Python 3.12.
+_BULLET = re.compile(r"^[-*+]\s+")
+
 _LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 
 
@@ -74,7 +78,8 @@ def to_html(md: str) -> str:
             if not in_list:
                 out.append("<ul>")
                 in_list = True
-            out.append(f"<li>{_inline(re.sub(r'^[-*+]\s+', '', stripped))}</li>")
+            item = _inline(_BULLET.sub("", stripped))
+            out.append(f"<li>{item}</li>")
             continue
 
         if re.match(r"^---+$", stripped):
