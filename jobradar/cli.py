@@ -140,6 +140,18 @@ def cmd_scan(args) -> int:
             # what new means.
             _say(f"  (only {args.limit} sources were read; roles on the rest "
                  f"will be marked new when a full scan first sees them)")
+    if not args.dry_run:
+        # Collapse copies of the same job that arrived from different sources
+        # on different runs, and repair links built with a path that 404s.
+        # Both are about rows already stored, which scan-time dedupe cannot
+        # reach.
+        fixed = store.repair_smartrecruiters_urls(con)
+        if fixed:
+            _say(f"  repaired {fixed} broken apply link(s)")
+        dupes = store.merge_duplicates(con)
+        if dupes:
+            _say(f"  merged {dupes} duplicate(s) into the employer's own listing")
+
     if not args.dry_run and not args.no_enrich:
         _enrich_step(con, cfg)
 

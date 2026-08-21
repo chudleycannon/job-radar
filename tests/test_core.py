@@ -418,8 +418,12 @@ def test_docx_text_extraction():
     or the CV job has nothing to work from."""
     from jobradar.runner import docx_to_text
     cv = Path.home() / "Downloads" / "Callum_McDonald_CV.docx"
-    if not cv.exists():
-        return                       # not this machine; nothing to assert
+    try:
+        # exists() is true for a file this process is not allowed to open, so
+        # the readability check has to be an actual read.
+        cv.open("rb").close()
+    except OSError:
+        return                       # not this machine, or not readable here
     text = docx_to_text(cv)
     assert len(text) > 500
     assert "\n" in text
@@ -1399,6 +1403,90 @@ def test_enrichment_only_targets_roles_that_need_it():
                     (uid, "C", "T", url, "London", plat, desc))
     got = [r["uid"] for r in enrich.candidates(con)]
     assert got == ["a"], f"only the empty LinkedIn role needs fetching, got {got}"
+
+
+def test_ranking_refuses_an_unreadable_cv():
+    """`docx_to_text` returns "" for anything it cannot open, a permission
+    error included, so a file that exists is not proof of a CV that can be
+    read. Ranking against an empty CV still produces a full set of
+    confident-looking scores, judged against nothing at all."""
+    import tempfile
+    from jobradar import rank
+    from jobradar.config import Config
+
+    d = Path(tempfile.mkdtemp())
+    empty = d / "cv.txt"
+    empty.write_text("Callum\n")          # exists, but nothing in it
+    try:
+        rank._cv_text(Config(cv_path=str(empty)))
+    except SystemExit as e:
+        assert "empty CV" in str(e)
+        return
+    raise AssertionError("an unreadable or empty CV must stop the run")
+
+
+def test_the_same_job_from_two_sources_keeps_the_employers_own():
+    """Wise's Risk API role arrived from LinkedIn on one run and from
+    SmartRecruiters on a later one under identical titles. Scan-time dedupe
+    only ever sees one run's results, so nothing was going to bring them back
+    together, and the merge has to keep whatever you did to the losing row."""
+    from jobradar import store
+    con = store.connect(":memory:")
+    for uid, plat, desc in (("a", "linkedin", ""),
+                            ("b", "smartrecruiters", "x" * 900)):
+        con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                    "description,first_seen,last_seen) VALUES "
+                    "(?,'Wise','Senior EM II - Risk API',?,?,?,?,"
+                    "'2026-08-21','2026-08-21')",
+                    (uid, f"https://x/{uid}", "London", plat, desc))
+    store.set_status(con, "a", "applied", "phone screen booked")
+    store.add_artifact(con, "a", "screen", body="SKIP for now")
+
+    assert store.merge_duplicates(con) == 1
+    rows = con.execute("SELECT uid,platform FROM roles").fetchall()
+    assert [r["platform"] for r in rows] == ["smartrecruiters"], \
+        "the employer's own board wins over a keyword search"
+    kept = rows[0]["uid"]
+    assert con.execute("SELECT status FROM role_state WHERE uid=?",
+                       (kept,)).fetchone()["status"] == "applied", \
+        "an application recorded on the losing row must survive"
+    assert con.execute("SELECT COUNT(*) c FROM artifacts WHERE uid=?",
+                       (kept,)).fetchone()["c"] == 1, "documents move across"
+
+
+def test_smartrecruiters_links_are_not_dead():
+    """Swapping the host in the API `ref` produced
+    jobs.smartrecruiters.com/<co>/postings/<id>, which 404s: the public path
+    has no /postings/ segment. Every link the tool offered for this platform
+    was dead, and a dead link is only found after someone decides to apply."""
+    from jobradar.adapters.platforms import parse_smartrecruiters
+    from jobradar.models import Source
+    from jobradar import store
+
+    payload = {"content": [{
+        "id": "744000143600504",
+        "name": "Senior Software Engineering Manager",
+        "ref": "https://api.smartrecruiters.com/v1/companies/servicenow"
+               "/postings/744000143600504",
+        "company": {"identifier": "ServiceNow", "name": "ServiceNow"},
+        "location": {"city": "Santa Clara", "country": "us"},
+    }]}
+    src = Source(company="ServiceNow", url="https://api.smartrecruiters.com/x",
+                 platform="smartrecruiters")
+    job = next(iter(parse_smartrecruiters(payload, src)))
+    assert "/postings/" not in job.url, job.url
+    assert job.url == ("https://jobs.smartrecruiters.com/ServiceNow"
+                       "/744000143600504")
+
+    # And the ones already stored get repaired rather than left to rot.
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "first_seen,last_seen) VALUES ('u','C','T',"
+                "'https://jobs.smartrecruiters.com/Wise/postings/123456',"
+                "'London','smartrecruiters','2026-08-21','2026-08-21')")
+    assert store.repair_smartrecruiters_urls(con) == 1
+    assert con.execute("SELECT url FROM roles").fetchone()["url"] == \
+        "https://jobs.smartrecruiters.com/Wise/123456"
 
 
 if __name__ == "__main__":

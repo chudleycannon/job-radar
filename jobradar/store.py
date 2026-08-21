@@ -305,6 +305,74 @@ def add_artifact(con, uid, kind, path="", rating=None, summary="", gates=None,
     return cur.lastrowid
 
 
+def repair_smartrecruiters_urls(con) -> int:
+    """Rewrite stored SmartRecruiters links that were built with /postings/.
+
+    The public path has no such segment, so every one of them 404s. A dead
+    link is only discovered after someone has decided to apply, so leaving
+    them for the next scan to overwrite is not good enough.
+    """
+    import re as _re
+    n = 0
+    for r in con.execute(
+            "SELECT uid,url FROM roles WHERE url LIKE "
+            "'%jobs.smartrecruiters.com/%/postings/%'").fetchall():
+        m = _re.match(r"(https://jobs\.smartrecruiters\.com/[^/]+)/postings?/(\d+)",
+                      r["url"])
+        if m:
+            con.execute("UPDATE roles SET url=? WHERE uid=?",
+                        (f"{m.group(1)}/{m.group(2)}", r["uid"]))
+            n += 1
+    return n
+
+
+def merge_duplicates(con) -> int:
+    """Collapse rows that are the same job from more than one source.
+
+    `dedupe` runs over one scan's results and then those are written to the
+    database, so it never sees a copy that was already stored from an earlier
+    run. Wise's Risk API role arrived from LinkedIn on one run and from
+    SmartRecruiters on a later one, under identical titles, and nothing was
+    ever going to bring them back together.
+
+    The employer's own board wins over a keyword search, because it is the
+    employer speaking and it carries the description the search does not. Any
+    status, note or generated document on the losing row moves across first:
+    the whole point of the merge is that you keep what you did.
+    """
+    from .screen import directness
+    groups: dict[tuple, list] = {}
+    for r in con.execute(
+            "SELECT uid, company, title, platform, description, salary_confirmed "
+            "FROM roles").fetchall():
+        key = (r["company"].strip().lower(), r["title"].strip().lower())
+        groups.setdefault(key, []).append(r)
+
+    merged = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda r: (directness(r["platform"]),
+                                    r["salary_confirmed"] or 0,
+                                    len(r["description"] or "")), reverse=True)
+        keep, losers = members[0], members[1:]
+        for lose in losers:
+            st = con.execute("SELECT status,note FROM role_state WHERE uid=?",
+                             (lose["uid"],)).fetchone()
+            if st and st["status"] != "new":
+                cur = con.execute("SELECT status FROM role_state WHERE uid=?",
+                                  (keep["uid"],)).fetchone()
+                if not cur or cur["status"] == "new":
+                    set_status(con, keep["uid"], st["status"], st["note"] or "")
+            con.execute("UPDATE artifacts SET uid=? WHERE uid=?",
+                        (keep["uid"], lose["uid"]))
+            con.execute("DELETE FROM jobs WHERE uid=?", (lose["uid"],))
+            con.execute("DELETE FROM role_state WHERE uid=?", (lose["uid"],))
+            con.execute("DELETE FROM roles WHERE uid=?", (lose["uid"],))
+            merged += 1
+    return merged
+
+
 def backfill_bodies(con) -> int:
     """Store the text of documents produced before there was a column for it."""
     _ensure_columns(con)

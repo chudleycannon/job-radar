@@ -123,6 +123,16 @@ def _cv_text(cfg) -> str:
     if not p.exists():
         raise SystemExit(f"No CV at {p}. Set cv.path in your config.")
     text = docx_to_text(p) if p.suffix.lower() == ".docx" else p.read_text(errors="ignore")
+    # `docx_to_text` returns "" on anything it cannot open, including a
+    # permission error, so a file that exists is not proof of a CV that can be
+    # read. Ranking against an empty CV would still produce a full set of
+    # confident-looking scores, judged against nothing. Fail instead.
+    if len(text.strip()) < 200:
+        raise SystemExit(
+            f"Could not read a CV out of {p} (got {len(text.strip())} "
+            f"characters). Scoring against an empty CV would give you numbers "
+            f"with nothing behind them. Check the file opens, and that this "
+            f"process can read it.")
     # The CV is the constant in every batch, so its length is multiplied by the
     # number of calls. Six thousand characters is a full two-page CV.
     return " ".join(text.split())[:6000]

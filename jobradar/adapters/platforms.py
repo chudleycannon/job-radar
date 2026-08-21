@@ -217,9 +217,14 @@ def parse_smartrecruiters(payload: Any, src: Source) -> Iterator[Job]:
             str(loc.get(k)) for k in ("city", "region", "country") if loc.get(k)
         ) if isinstance(loc, dict) else _text(loc)
         cid = j.get("id") or ""
-        url = (j.get("ref") or "").replace("api.smartrecruiters.com/v1/companies",
-                                           "jobs.smartrecruiters.com") or \
-            f"https://jobs.smartrecruiters.com/{src.company}/{cid}"
+        # `ref` is the API URL. Swapping the host in it produced
+        # jobs.smartrecruiters.com/<co>/postings/<id>, which 404s: the public
+        # path has no /postings/ segment. Every link the tool offered for this
+        # platform was dead, which is worse than not listing the role, because
+        # a dead link is only discovered after someone decides to apply.
+        ident = _text((j.get("company") or {}).get("identifier")) or src.company
+        url = (f"https://jobs.smartrecruiters.com/{ident}/{cid}" if cid
+               else (j.get("ref") or ""))
         yield Job(
             company=_text((j.get("company") or {}).get("name")) or src.company,
             title=_text(j.get("name")),

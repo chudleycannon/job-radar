@@ -338,6 +338,19 @@ _NO_SPONSOR = re.compile(
     r"|must\s+(?:already\s+)?have\s+(?:the\s+)?(?:full\s+)?rights?\s+to\s+work"
     r"|full\s+rights?\s+to\s+work", re.I)
 
+# US export control. A separate barrier from a visa and it stacks on top of
+# one: EAR and ITAR restrict releasing controlled technology to foreign
+# persons, so a role can be perfectly willing to sponsor and still be closed.
+# Datadog's posting carries this in its standard footer and says nothing at
+# all about sponsorship, so reading only for the word "sponsor" reported a
+# clean bill of health on a role with two immigration problems.
+_EXPORT_CONTROL = re.compile(
+    r"export control|\bITAR\b|\bEAR\b(?!\w)|"
+    r"eligible for any required authoriz|"
+    r"(?:must be|require[sd]?)\s+(?:a\s+)?(?:US|U\.S\.)\s+(?:person|citizen)|"
+    r"security clearance|\bSC clearance\b|developed vetting|"
+    r"\bDV cleared\b|baseline personnel security", re.I)
+
 _WILL_SPONSOR = re.compile(
     r"(?:can|able to|will|do|happy to|willing to)\s+(?:\w+\s+){0,2}?sponsor"
     r"|(?:visa|sponsorship)\s+(?:support\s+)?(?:is\s+)?(?:available|offered|provided)"
@@ -357,6 +370,12 @@ def work_rights(job: Job) -> str:
         return ""
     if _NO_SPONSOR.search(d):
         return "no sponsorship"
+    # Checked before the willing case: a role that sponsors and is also export
+    # controlled is still one you may not be allowed to do, and reporting
+    # "sponsorship offered" on it would be the more reassuring half of the
+    # truth.
+    if _EXPORT_CONTROL.search(d):
+        return "export control or clearance"
     if _WILL_SPONSOR.search(d):
         return "sponsorship offered"
     return ""
@@ -521,12 +540,26 @@ def score(job: Job, cfg: Config) -> float:
     return job.score
 
 
+# How direct a source is. A posting read from the employer's own applicant
+# tracking system is the employer speaking; the same role on a keyword search
+# is a copy, usually with no description, sometimes reposted by an agency. So
+# when the same job arrives twice, keep the one closest to the employer.
+def directness(platform: str) -> int:
+    return {"linkedin": 0, "nhs": 1}.get((platform or "").lower(), 2)
+
+
 def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
-    """Collapse the same role posted once per location.
+    """Collapse the same role posted once per location, or once per source.
 
     Several ATSs publish one posting per office, so a single job appears six
     times with six URLs. Merging them on company+title and joining the
     locations turns six rows back into the one job it actually is.
+
+    The same grouping catches a role that arrived from two sources: Wise's
+    Risk API role came in from both LinkedIn and SmartRecruiters under
+    identical titles. The SmartRecruiters copy is the one to keep, because it
+    is the employer's own board and carries the description that LinkedIn's
+    does not.
     """
     groups: dict[tuple[str, str], list[Job]] = {}
     for j in jobs:
@@ -537,7 +570,9 @@ def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
         if len(members) == 1:
             out.append(members[0])
             continue
-        best = max(members, key=lambda x: (x.salary.confirmed, len(x.description or "")))
+        best = max(members, key=lambda x: (directness(x.platform),
+                                           x.salary.confirmed,
+                                           len(x.description or "")))
         locs, seen_loc = [], set()
         for m in members:
             l = (m.location or "").strip()
@@ -552,7 +587,11 @@ def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
         shown = locs[:6]
         best.location = " / ".join(shown) + (f" +{len(locs) - len(shown)} more"
                                              if len(locs) > len(shown) else "")
-        best.flags.append(f"posted in {len(members)} locations")
+        if len({m.platform for m in members}) > 1:
+            others = sorted({m.platform for m in members} - {best.platform})
+            best.flags.append("also listed on " + ", ".join(others))
+        if len({(m.location or "").lower() for m in members}) > 1:
+            best.flags.append(f"posted in {len(locs)} locations")
         out.append(best)
     return out
 
