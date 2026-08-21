@@ -46,3 +46,4 @@ applications.local.yaml
 # The database. Holds your application history and document paths.
 data/
 *.db
+.backups/
