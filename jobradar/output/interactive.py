@@ -65,7 +65,10 @@ _EXTRA_CSS = """
 
 _JS = r"""
 const $=s=>document.querySelector(s), toast=$('#toast');
-let f='all', secs=new Set(), modes=new Set(), country='', city='';
+// Opens on Open, not All. All includes skipped and rejected, and they sort by
+// score like everything else, so a skipped role you already dismissed sat at
+// the top of the board every time you refreshed.
+let f='open', secs=new Set(), modes=new Set(), country='', city='';
 
 function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
   clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove('show'),ms);}
@@ -99,11 +102,29 @@ document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
   // filter score the rest of the board uses.
   const list=$('#list');
   const rows=[...list.querySelectorAll('.row')];
-  rows.sort(f==='fit'
-    ? (a,b)=>(+b.dataset.fit)-(+a.dataset.fit)||(+b.dataset.score)-(+a.dataset.score)
-    : (a,b)=>(+b.dataset.score)-(+a.dataset.score));
+  rows.sort(f==='fit' ? byFit : byRank);
   rows.forEach(r=>list.appendChild(r));
   apply();});
+// Rank order, used everywhere except Best fit. Applications you are in come
+// first because they are the ones with a deadline on them; things you settled
+// go last because you have already decided. Score breaks the tie in between.
+function tier(r){
+  const st=r.dataset.status;
+  if(IN_FLIGHT.has(st)) return 0;
+  if(SETTLED.has(st)) return 2;
+  return 1;}
+const byRank=(a,b)=>tier(a)-tier(b)||(+b.dataset.score)-(+a.dataset.score);
+const byFit=(a,b)=>tier(a)-tier(b)
+  ||(+b.dataset.fit)-(+a.dataset.fit)||(+b.dataset.score)-(+a.dataset.score);
+
+// Sort and filter once at load. The filter previously only ran on a click,
+// which was invisible while the default view was All and everything showed
+// anyway; the moment the default became Open, every settled role was still on
+// screen until you touched a tab.
+(function(){const list=$('#list');
+  [...list.querySelectorAll('.row')].sort(byRank).forEach(r=>list.appendChild(r));
+  apply();})();
+
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
   b.setAttribute('aria-pressed', on?'false':'true');
@@ -406,12 +427,12 @@ def render(con) -> str:
      live from the database, so anything you click sticks</p>
 </header>
 <div class="seg" role="tablist" aria-label="Filter roles">
-  <button role="tab" aria-selected="true"  data-f="all">All</button>
+  <button role="tab" aria-selected="false" data-f="all">All</button>
   <button role="tab" aria-selected="false" data-f="new">New{_new_count}</button>
   <button role="tab" aria-selected="false" data-f="fit">Best fit{_fit_count}</button>
   <button role="tab" aria-selected="false" data-f="live">In flight{_live_count}</button>
   <button role="tab" aria-selected="false" data-f="closed">Closed{_closed_count}</button>
-  <button role="tab" aria-selected="false" data-f="open">Open</button>
+  <button role="tab" aria-selected="true"  data-f="open">Open</button>
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
