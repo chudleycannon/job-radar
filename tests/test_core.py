@@ -1278,6 +1278,22 @@ def test_an_interrupted_generation_does_not_block_the_queue_for_ever():
     assert row["state"] == "failed" and "click again" in row["error"]
 
 
+def test_setups_first_scan_writes_beside_its_config():
+    """`--db None` means "data/job-radar.db relative to wherever you are
+    standing", which is right for `scan` inside a checkout and wrong for a
+    wizard given an explicit config path: a first-time user running
+    `job-radar -c ~/mine/c.yaml setup` from another project's directory wrote
+    their roles into that project's database."""
+    import inspect, tempfile
+    from jobradar import setup_wizard
+
+    src = inspect.getsource(setup_wizard.first_scan)
+    assert "config_path.expanduser().resolve().parent" in src, \
+        "paths must be derived from the config, not the cwd"
+    for field in ("db =", "state =", "out ="):
+        assert field in src, f"first_scan must set {field.strip(' =')} explicitly"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

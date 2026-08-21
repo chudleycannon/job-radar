@@ -71,12 +71,18 @@ function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
   clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove('show'),ms);}
 
 const SETTLED=new Set(['rejected','withdrawn','skipped','closed']);
+// Applications with something still owed on them, either way.
+const IN_FLIGHT=new Set(['applied','submitted','interviewing','offer']);
+// Applications that ended. Not "skipped": you never applied to those.
+const CLOSED_OUT=new Set(['rejected','withdrawn','closed']);
 function apply(){let n=0;
   for(const r of document.querySelectorAll('.row')){
     const st=r.dataset.status;
     const viewOk = f==='all' || (f==='open' && !SETTLED.has(st)) ||
                    (f==='pay' && r.dataset.pay==='1') ||
-                   (f==='new' && r.dataset.new==='1');
+                   (f==='new' && r.dataset.new==='1') ||
+                   (f==='live' && IN_FLIGHT.has(st)) ||
+                   (f==='closed' && CLOSED_OUT.has(st));
     const ok = viewOk
       && (secs.size===0  || secs.has(r.dataset.sector))
       && (modes.size===0 || modes.has(r.dataset.mode))
@@ -100,6 +106,25 @@ async function post(url,body){
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)});
   return {ok:r.ok, data:await r.json().catch(()=>({}))};}
+
+// The status select was rendered with all ten statuses and never wired to
+// anything, so picking "rejected" looked like it worked, changed nothing, and
+// reverted on the next refresh. It is a change event, not a click, which is
+// why the click handler below never saw it.
+document.addEventListener('change', async e=>{
+  const sel=e.target.closest('select.setstatus'); if(!sel) return;
+  const row=sel.closest('.row'); if(!row) return;
+  const status=sel.value; if(!status) return;
+  const prev=row.dataset.status;
+  const {ok,data}=await post('/api/status',{uid:row.dataset.uid,status});
+  if(!ok){ sel.value=prev||''; say(data.error||'could not save'); return; }
+  row.dataset.status=status;
+  row.classList.toggle('settled', SETTLED.has(status));
+  const pill=row.querySelector('.status');
+  if(pill){ pill.textContent=status; pill.className='status '+status; }
+  say('Marked '+status+(SETTLED.has(status)?'. It will not come back.':''));
+  apply();
+});
 
 document.addEventListener('click', async e=>{
   // Document links reveal the file in Finder. Without this they navigate the
@@ -246,6 +271,19 @@ def render(con) -> str:
     fresh = sum(1 for r in rows if r["uid"] in run)
     _new_count = f'<span class="n">{fresh}</span>' if fresh else ""
 
+    # Applications you are actually in. The board is mostly a list of things
+    # you have not done anything about; the handful you have is the part with
+    # a deadline attached, and it was scattered among three hundred rows.
+    inflight = sum(1 for r in rows if r["status"] in store.IN_FLIGHT)
+    _live_count = f'<span class="n">{inflight}</span>' if inflight else ""
+
+    # Rejections and withdrawals, which every other view hides. Worth being
+    # able to look at on purpose: it is the record of what you actually went
+    # for, and it is the only place to notice a pattern in what comes back.
+    # Skipped roles are not here -- you never applied to those.
+    shut = sum(1 for r in rows if r["status"] in store.CLOSED_OUT)
+    _closed_count = f'<span class="n">{shut}</span>' if shut else ""
+
     sec = Counter((r["sector"] or "other") for r in rows)
     chips = "".join(
         f'<button aria-pressed="false" data-sec="{_h.escape(s, quote=True)}">'
@@ -277,6 +315,8 @@ def render(con) -> str:
 <div class="seg" role="tablist" aria-label="Filter roles">
   <button role="tab" aria-selected="true"  data-f="all">All</button>
   <button role="tab" aria-selected="false" data-f="new">New{_new_count}</button>
+  <button role="tab" aria-selected="false" data-f="live">In flight{_live_count}</button>
+  <button role="tab" aria-selected="false" data-f="closed">Closed{_closed_count}</button>
   <button role="tab" aria-selected="false" data-f="open">Open</button>
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>

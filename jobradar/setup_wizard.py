@@ -240,9 +240,22 @@ def first_scan(config_path: Path) -> int:
     print("boards at four requests at a time, so give it two or three minutes.")
     print("Nothing is generated and nothing is sent anywhere; this only reads.\n")
 
+    # Paths follow the config, not the working directory.
+    #
+    # `--db None` means "data/job-radar.db relative to wherever you happen to
+    # be standing", which is right for `job-radar scan` run inside a checkout
+    # and wrong here: `job-radar -c /somewhere/else/c.yaml setup` wrote its
+    # roles, its output and its seen-set into the current directory's
+    # database. Run from another project's checkout, a first-time user's scan
+    # lands in someone else's data.
+    home = config_path.expanduser().resolve().parent
+
     class _Args:
         config = str(config_path)
-        out = state = db = docs = None
+        db = str(home / "data" / "job-radar.db")
+        state = str(home / "state" / "seen.json")
+        out = str(home / "out")
+        docs = None
         limit = 0
         dry_run = False
 
