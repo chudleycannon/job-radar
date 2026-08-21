@@ -201,6 +201,54 @@ the word NONE.""",
 }
 
 
+# Where the CLI usually installs itself, for when PATH does not have it.
+#
+# `shutil.which` alone is only right when the tool is run from the same shell
+# the person installed it in. Run from a launchd job, a cron entry, an IDE or
+# a desktop launcher, PATH is whatever the launcher supplies: on macOS a
+# launchd agent gets a non-interactive login shell, which reads .zprofile but
+# not .zshrc, so a CLI installed to ~/.local/bin is invisible and every
+# generation fails with "not on PATH" while `which claude` in a terminal
+# answers fine. Looking in the obvious places costs nothing and removes a
+# whole class of confusing failure.
+_CLAUDE_PATHS = (
+    "~/.local/bin/claude",
+    "~/.claude/local/claude",
+    "/usr/local/bin/claude",
+    "/opt/homebrew/bin/claude",
+    "~/.bun/bin/claude",
+    "~/.npm-global/bin/claude",
+    "/usr/bin/claude",
+)
+
+
+def claude_bin() -> str:
+    """Absolute path to the `claude` CLI, or "" if it cannot be found.
+
+    `JOB_RADAR_CLAUDE` overrides everything, for an install somewhere unusual.
+    """
+    override = os.environ.get("JOB_RADAR_CLAUDE", "").strip()
+    if override:
+        return override if Path(override).expanduser().exists() else ""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for c in _CLAUDE_PATHS:
+        p = Path(c).expanduser()
+        if p.exists() and os.access(p, os.X_OK):
+            return str(p)
+    return ""
+
+
+def _no_claude_msg() -> str:
+    return ("cannot find the `claude` CLI. It is not on this process's PATH "
+            f"({os.environ.get('PATH', '')[:120]}...) and is not in any of the "
+            f"usual places ({', '.join(_CLAUDE_PATHS[:4])}). If it is "
+            f"installed somewhere else, set JOB_RADAR_CLAUDE to its full path. "
+            f"Note that a dashboard started by launchd, cron or an IDE does "
+            f"not inherit the PATH from your terminal.")
+
+
 def build_prompt(kind: str, cfg_path: str, cv_source: str) -> str:
     return PROMPTS[kind].format(config=cfg_path, cv_source=cv_source)
 
@@ -223,9 +271,9 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         d.mkdir(parents=True, exist_ok=True)
         _write_jd(d, row)
 
-        if not shutil.which("claude"):
-            store.mark_job(con, job_id, "failed",
-                           error="the `claude` CLI is not on PATH")
+        claude = claude_bin()
+        if not claude:
+            store.mark_job(con, job_id, "failed", error=_no_claude_msg())
             return
 
         # Inline the filters rather than pointing at a path: the subprocess is
@@ -273,7 +321,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
 
         try:
             skills = Path.home() / ".claude" / "skills"
-            cmd = ["claude", "-p", prompt,
+            cmd = [claude, "-p", prompt,
                    "--permission-mode", "acceptEdits",
                    "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
                    "Bash(python3:*)"]

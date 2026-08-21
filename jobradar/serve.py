@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import html as _h
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -66,10 +67,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/jobs":
             con = store.connect(self.db_path)
             try:
+                # Two things were wrong with the obvious version of this
+                # comparison, and together they made a failed job re-assert
+                # its error onto the row for the rest of the day. So after a
+                # fix, the dashboard kept showing the old failure and it
+                # looked like nothing had been fixed.
+                #
+                #   * finished_at is written by Python as "...T13:59:13" while
+                #     SQLite's datetime() returns "... 13:59:13". Comparing
+                #     them as strings compares "T" against " ", and "T" always
+                #     wins, so every job finished today looked recent.
+                #   * datetime('now') is UTC; the stored value is local.
                 rows = con.execute(
                     "SELECT id,uid,kind,state,error FROM jobs "
                     "WHERE state IN ('pending','running') OR "
-                    "finished_at > datetime('now','-2 minutes')").fetchall()
+                    "replace(finished_at,'T',' ') > "
+                    "datetime('now','localtime','-2 minutes')").fetchall()
                 arts = con.execute(
                     "SELECT uid,kind,path,rating,summary FROM artifacts").fetchall()
                 states = con.execute("SELECT uid,status FROM role_state").fetchall()
@@ -87,6 +100,26 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             target = (q.get("path") or [""])[0]
             p = Path(unquote(target)) if target else None
+            if p and not p.exists():
+                # The file moved or was deleted. The text is in the database,
+                # so show that rather than telling someone a document they
+                # paid for is gone.
+                con = store.connect(self.db_path)
+                try:
+                    row = con.execute(
+                        "SELECT body,kind FROM artifacts WHERE path=? AND "
+                        "COALESCE(body,'')<>'' ORDER BY id DESC LIMIT 1",
+                        (str(p),)).fetchone()
+                finally:
+                    con.close()
+                if row:
+                    return self._html(
+                        "<pre style='white-space:pre-wrap;font:14px/1.6 "
+                        "ui-monospace,monospace;max-width:44rem;margin:3rem auto;"
+                        "padding:0 1.5rem'>"
+                        f"<b>{_h.escape(p.name)} is no longer on disk. This is "
+                        f"the copy kept in the database.</b>\n\n"
+                        f"{_h.escape(row['body'])}</pre>")
             if p and p.exists():
                 # check=False does not suppress FileNotFoundError, so on a
                 # machine without `open` this raised inside the handler and
@@ -178,6 +211,8 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
     # wrong rather than only applying to future runs.
     con = store.connect(db_path)
     try:
+        # Documents made before there was a column for their text.
+        store.backfill_bodies(con)
         n = runner.regate(con)
         if n:
             print(f"  rechecked {n} document(s)")

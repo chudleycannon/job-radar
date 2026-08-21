@@ -1155,6 +1155,88 @@ def test_saving_what_you_loaded_changes_nothing():
     assert norm(BUNDLED) == norm(out)
 
 
+def test_the_claude_cli_is_found_without_an_interactive_path():
+    """"Generation failed: the `claude` CLI is not on PATH", from a dashboard
+    that had been started by launchd.
+
+    A launchd agent gets a non-interactive login shell, which reads .zprofile
+    but not .zshrc, so a CLI installed to ~/.local/bin is invisible to it
+    while `which claude` in a terminal answers fine. Anyone running this from
+    cron, an IDE or a desktop launcher hits the same wall.
+    """
+    import os, stat, tempfile
+    from jobradar import runner
+
+    d = Path(tempfile.mkdtemp())
+    fake = d / "claude"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+
+    old_path, old_override = os.environ.get("PATH", ""), os.environ.get("JOB_RADAR_CLAUDE")
+    old_candidates = runner._CLAUDE_PATHS
+    try:
+        os.environ["PATH"] = "/usr/bin:/bin"          # no ~/.local/bin
+        os.environ.pop("JOB_RADAR_CLAUDE", None)
+        runner._CLAUDE_PATHS = (str(fake),)
+        assert runner.claude_bin() == str(fake), "should fall back to a known location"
+
+        # an explicit override wins over everything
+        os.environ["JOB_RADAR_CLAUDE"] = str(fake)
+        assert runner.claude_bin() == str(fake)
+
+        # and a genuinely missing CLI still says so, usefully
+        os.environ.pop("JOB_RADAR_CLAUDE")
+        runner._CLAUDE_PATHS = (str(d / "nope"),)
+        assert runner.claude_bin() == ""
+        msg = runner._no_claude_msg()
+        assert "JOB_RADAR_CLAUDE" in msg and "launchd" in msg
+    finally:
+        os.environ["PATH"] = old_path
+        runner._CLAUDE_PATHS = old_candidates
+        if old_override is None:
+            os.environ.pop("JOB_RADAR_CLAUDE", None)
+        else:
+            os.environ["JOB_RADAR_CLAUDE"] = old_override
+
+
+def test_a_generated_document_survives_losing_its_file():
+    """Storing only a path meant one moved folder and a screen you paid for
+    was gone. The text is a few kilobytes; keep it."""
+    import tempfile
+    from jobradar import store
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "first_seen,last_seen) VALUES "
+                "('u','C','T','url','London','greenhouse','2026-08-21','2026-08-21')")
+    d = Path(tempfile.mkdtemp())
+    f = d / "screening.md"
+    f.write_text("SKIP - the posting rules out sponsorship.\n")
+    store.add_artifact(con, "u", "screen", f, summary="SKIP")
+
+    f.unlink()                                   # the folder gets cleaned
+    row = con.execute("SELECT body,summary FROM artifacts WHERE uid='u'").fetchone()
+    assert "rules out sponsorship" in row["body"]
+    assert row["summary"] == "SKIP"
+
+
+def test_a_failed_job_stops_reporting_itself_after_two_minutes():
+    """finished_at is written as "...T13:59:13" and SQLite's datetime() gives
+    "... 13:59:13"; compared as strings "T" beats " ", so every job that
+    failed today looked recent and the dashboard kept re-showing an error
+    that had already been fixed. datetime('now') is UTC on top of that."""
+    from jobradar import store
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "first_seen,last_seen) VALUES "
+                "('u','C','T','url','London','greenhouse','2026-08-21','2026-08-21')")
+    con.execute("INSERT INTO jobs (uid,kind,state,requested_at,finished_at,error) "
+                "VALUES ('u','screen','failed',datetime('now','localtime'),"
+                "'2026-01-01T09:00:00','old failure')")
+    q = ("SELECT id FROM jobs WHERE state IN ('pending','running') OR "
+         "replace(finished_at,'T',' ') > datetime('now','localtime','-2 minutes')")
+    assert con.execute(q).fetchall() == [], "a stale failure must not be re-reported"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

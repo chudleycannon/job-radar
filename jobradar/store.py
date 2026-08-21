@@ -123,6 +123,9 @@ def _ensure_columns(con) -> None:
     cols = {r["name"] for r in con.execute("PRAGMA table_info(roles)")}
     if "first_run" not in cols:
         con.execute("ALTER TABLE roles ADD COLUMN first_run INTEGER DEFAULT 0")
+    acols = {r["name"] for r in con.execute("PRAGMA table_info(artifacts)")}
+    if "body" not in acols:
+        con.execute("ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")
 
 
 def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
@@ -241,12 +244,64 @@ def settled_uids(con) -> set[str]:
 
 # -------------------------------------------------------------- artifacts
 
-def add_artifact(con, uid, kind, path="", rating=None, summary="", gates=None) -> int:
-    cur = con.execute("""INSERT INTO artifacts (uid,kind,path,rating,summary,gates,created_at)
-        VALUES (?,?,?,?,?,?,?)""",
+# Text small enough to keep forever. A .docx is a container, so its bytes are
+# not worth storing, but the markdown it was built from is.
+_TEXT_KINDS = {"screen", "jd_snapshot", "cover_letter", "cv"}
+
+
+def _read_text(path) -> str:
+    """The document's text, for keeping in the database.
+
+    A generated screen costs real money and takes a minute, and storing only
+    the file path meant one `rm -rf`, one moved folder, or one cleaned temp
+    directory and it had to be bought again. The text is a few kilobytes.
+    """
+    p = Path(str(path or ""))
+    if not p.exists() or p.is_dir():
+        return ""
+    if p.suffix.lower() == ".docx":
+        # Prefer the markdown it was rendered from; fall back to extraction.
+        md = p.with_suffix(".md")
+        if md.exists():
+            p = md
+        else:
+            try:
+                from .runner import docx_to_text
+                return docx_to_text(p)[:200_000]
+            except Exception:
+                return ""
+    try:
+        return p.read_text(errors="ignore")[:200_000]
+    except OSError:
+        return ""
+
+
+def add_artifact(con, uid, kind, path="", rating=None, summary="", gates=None,
+                 body=None) -> int:
+    _ensure_columns(con)
+    if body is None:
+        body = _read_text(path) if kind in _TEXT_KINDS else ""
+    cur = con.execute(
+        """INSERT INTO artifacts (uid,kind,path,rating,summary,gates,created_at,body)
+        VALUES (?,?,?,?,?,?,?,?)""",
         (uid, kind, str(path), rating, summary, json.dumps(gates or {}),
-         date.today().isoformat()))
+         date.today().isoformat(), body))
     return cur.lastrowid
+
+
+def backfill_bodies(con) -> int:
+    """Store the text of documents produced before there was a column for it."""
+    _ensure_columns(con)
+    n = 0
+    for a in con.execute("SELECT id,kind,path FROM artifacts "
+                         "WHERE COALESCE(body,'')='' ").fetchall():
+        if a["kind"] not in _TEXT_KINDS:
+            continue
+        text = _read_text(a["path"])
+        if text:
+            con.execute("UPDATE artifacts SET body=? WHERE id=?", (text, a["id"]))
+            n += 1
+    return n
 
 
 def artifacts_for(con, uid) -> list[dict]:
