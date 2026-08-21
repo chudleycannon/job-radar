@@ -1556,6 +1556,39 @@ def test_the_cli_is_never_called_with_an_open_stdin():
                     f"{f.name}: a CLI call without stdin closed"
 
 
+def test_the_installer_needs_nothing_installed():
+    """`install.py` runs from a fresh clone, before anything exists, so it
+    cannot import the package it is about to install or any dependency of it.
+    A single stray import turns "one command" back into a traceback."""
+    import ast
+    src = Path(__file__).resolve().parent.parent / "install.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+    std = set(sys.stdlib_module_names)
+    for node in ast.walk(tree):
+        mods = ([a.name for a in node.names] if isinstance(node, ast.Import)
+                else [node.module] if isinstance(node, ast.ImportFrom) and node.module
+                else [])
+        for m in mods:
+            top = (m or "").split(".")[0]
+            assert top in std, f"install.py imports {top}, which will not exist yet"
+
+    # It also has to run on a Python it has not checked yet, so an old
+    # interpreter must be turned away before anything is attempted. Checked by
+    # running it rather than by reading the source in order: the helper that
+    # shells out is defined above main(), so source position proves nothing.
+    import importlib.util, subprocess as sp, unittest.mock as mock
+    spec = importlib.util.spec_from_file_location("_installer", src)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    calls = []
+    with mock.patch.object(sp, "run", lambda *a, **k: calls.append(a)), \
+         mock.patch.object(mod.sys, "version_info", (3, 8, 0)):
+        rc = mod.main()
+    assert rc == 1, "an old Python must be refused"
+    assert calls == [], "nothing may run before the version is checked"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

@@ -14,8 +14,20 @@ that fails rules you write down once.
 
 ```bash
 git clone https://github.com/maccydee/job-radar
-cd job-radar && pip install -e .
-job-radar setup     # asks for your CV, then seven questions, then scans
+cd job-radar && python3 install.py
+```
+
+That is the whole install. It checks your Python is new enough, creates a
+virtual environment beside the checkout, installs the two dependencies, and
+hands straight over to setup, which asks for your CV, asks what you are
+looking for, and runs the first scan. `install.py` imports nothing outside the
+standard library, because it runs before anything is installed.
+
+Prefer to do it yourself, or already have an environment:
+
+```bash
+pip install -e .
+job-radar setup
 ```
 
 Setup runs the first scan itself rather than leaving you holding a config file
