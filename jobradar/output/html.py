@@ -115,15 +115,24 @@ header{margin-bottom:var(--s5)}
 
 /* Fit against the CV, from `job-radar rank`. Sits under the title because it
    is a judgement about the role, not a property of it like salary. */
-.fit{grid-column:1/-1;margin-top:6px;font-size:.8125rem;color:var(--muted);
-  display:flex;align-items:baseline;gap:8px}
-.fit b{font-variant-numeric:tabular-nums;font-weight:650;padding:1px 7px;
-  border-radius:999px;font-size:.75rem;background:var(--line);color:var(--ink)}
-.fit.good b{background:rgba(95,191,141,.18);color:var(--pay)}
+/* The fit number is the thing you scan the board for, so it is sized like a
+   number rather than like a label. It was .75rem, smaller than the body text
+   around it, which made the one figure you are looking for the quietest thing
+   in the row. */
+.fit{grid-column:1/-1;margin-top:8px;font-size:.8125rem;color:var(--muted);
+  display:flex;align-items:center;gap:10px}
+.fit b{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.0625rem;
+  letter-spacing:-.02em;line-height:1;padding:5px 10px;border-radius:8px;
+  background:var(--line);color:var(--ink);min-width:2.4em;text-align:center}
+.fit .lbl{font-size:.6875rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--muted);margin-left:-4px}
+.fit.good b{background:rgba(95,191,141,.20);color:var(--pay);
+  box-shadow:inset 0 0 0 1px rgba(95,191,141,.35)}
 .fit.mid b{background:rgba(216,165,90,.16);color:var(--flag)}
 .fit.low b{background:var(--line);color:var(--muted)}
-.fit.none b{background:transparent;color:var(--muted);padding-left:0}
-.fit span{color:var(--muted)}
+.fit.none b{background:transparent;color:var(--muted);padding-left:0;
+  font-size:.875rem;min-width:0}
+.fit span.why{color:var(--muted);line-height:1.45}
 
 /* The screening, inline under the role it belongs to. */
 .screening{grid-column:1/-1;margin-top:var(--s3);border:1px solid var(--line);

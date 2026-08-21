@@ -532,13 +532,14 @@ def _row(r, arts, job, run=0) -> str:
     if fv < 0 and len((r["description"] or "").strip()) < 200:
         # An absent score read as "not ranked yet" on a role that can never be
         # ranked. Say which it is, once, quietly.
-        fitline = ('<div class="fit none"><b>&mdash;</b> fit'
-                   '<span>no description from this source, so there is nothing '
-                   'to score against your CV</span></div>')
+        fitline = ('<div class="fit none"><b>&mdash;</b>'
+                   '<span class="why">no description from this source, so '
+                   'there is nothing to score against your CV</span></div>')
     elif fv >= 0:
         band = "good" if fv >= 70 else ("mid" if fv >= 50 else "low")
-        fitline = (f'<div class="fit {band}"><b>{fv}</b> fit'
-                   + (f'<span>{_h.escape(r["fit_why"] or "")}</span>'
+        fitline = (f'<div class="fit {band}"><b>{fv}</b>'
+                   f'<span class="lbl">fit</span>'
+                   + (f'<span class="why">{_h.escape(r["fit_why"] or "")}</span>'
                       if r["fit_why"] else "") + '</div>')
 
     screening = ""
