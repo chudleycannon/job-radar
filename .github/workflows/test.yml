@@ -7,14 +7,33 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Every version the package claims to support, and Windows.
+    #
+    # Pinning one version is why a backslash inside an f-string expression
+    # shipped: that is a syntax error before 3.12, so `serve` and the
+    # installer could not even parse on the 3.10 and 3.11 that pyproject and
+    # the README badge both promise. A matrix is the only thing that catches a
+    # claim the code does not keep.
+    #
+    # Windows is here for the same reason. Text I/O without an explicit
+    # encoding uses cp1252 there, and the shipped source list already contains
+    # an accented company name.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest]
+        include:
+          - python-version: "3.12"
+            os: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - run: pip install -e .
       # No pytest dependency on purpose: the suite runs standalone so that
       # anyone can check the salary and location logic without installing
       # anything beyond the tool itself.
-      - run: python3 tests/test_core.py
+      - run: python tests/test_core.py

@@ -354,6 +354,74 @@ def test_bad_status_is_refused():
     raise AssertionError("an unknown status should not be storable")
 
 
+def test_only_one_claim_wins_under_real_parallelism():
+    """Every guard was check-then-act, which loses the race that matters: one
+    double-click spawned two subprocesses into the same folder and wrote four
+    artifact rows, and three parallel rank requests started three full runs.
+    The old test called `enqueue` twice in a row on one connection, which
+    cannot detect any of that."""
+    import concurrent.futures as cf, tempfile
+    from jobradar import store
+
+    db = str(Path(tempfile.mkdtemp()) / "x.db")
+    store.connect(db).close()
+
+    def attempt(_):
+        con = store.connect(db)
+        try:
+            return store.claim(con, "generate")
+        finally:
+            con.close()
+
+    with cf.ThreadPoolExecutor(12) as ex:
+        wins = sum(ex.map(attempt, range(12)))
+    assert wins == 1, f"{wins} claimants won a lock that admits one"
+
+    con = store.connect(db)
+    store.release(con, "generate")
+    assert store.claim(con, "generate"), "released locks are reusable"
+    # A lock outlives the process that took it, so a crash must not wedge it.
+    assert store.clear_locks(con) == 1
+
+
+def test_many_connections_can_open_at_once():
+    """`_ensure_columns` is a check then an ALTER, and the dashboard opens a
+    connection per request on a ThreadingHTTPServer. Twelve simultaneous opens
+    produced eleven duplicate-column crashes inside request handlers."""
+    import concurrent.futures as cf, tempfile
+    from jobradar import store
+
+    db = str(Path(tempfile.mkdtemp()) / "x.db")
+    store.connect(db).close()
+
+    def openit(_):
+        try:
+            store.connect(db).close()
+            return None
+        except Exception as e:
+            return f"{type(e).__name__}: {e}"
+
+    with cf.ThreadPoolExecutor(16) as ex:
+        errs = [e for e in ex.map(openit, range(16)) if e]
+    assert not errs, errs
+
+
+def test_a_job_board_cannot_hand_us_a_javascript_link():
+    """The apply URL comes from third-party JSON in six adapters and is
+    employer-supplied on several. Escaping stops the attribute breaking out
+    and does nothing about the scheme, so a javascript: href rendered as a
+    live link in the origin that owns /api/generate."""
+    from jobradar.output.html import safe_url
+
+    for good in ("https://boards.greenhouse.io/x/jobs/1", "http://x/y",
+                 "mailto:a@b.c"):
+        assert safe_url(good) == good
+    for bad in ("javascript:fetch('/api/generate')", "JaVaScRiPt:alert(1)",
+                "java\tscript:alert(1)", "  javascript:alert(1)",
+                "data:text/html,<script>x</script>", "vbscript:x", ""):
+        assert safe_url(bad) == "", bad
+
+
 def test_generation_is_not_queued_twice():
     """Clicking the button twice should not spawn two Claude processes."""
     from jobradar import store
@@ -608,6 +676,36 @@ def test_excluded_titles_with_punctuation_match_correctly():
     assert not r.search("Healthcare Assistant Bank Staff")
     assert r.search("Sales Manager")
     assert not r.search("Salesforce Engineer")     # \b still does its job
+
+
+def test_a_clean_draft_passes_the_invention_gate_and_a_dirty_one_fails():
+    """The gate stored the list of invented tokens on failure and False when
+    clean, while the dashboard counts `is False` as a failure. So a CV
+    inventing "45 engineers" and "250%" was reported as passing everything and
+    a truthful one was flagged. Asserted through `_gates`, not `_invented`,
+    because the inversion lived in the wiring between them."""
+    import tempfile
+    from jobradar.runner import _gates
+
+    d = Path(tempfile.mkdtemp())
+    (d / "source-cv.txt").write_text("Ran the newsletter. Grew signups 40%.",
+                                     encoding="utf-8")
+
+    (d / "CV.md").write_text("Ran the newsletter. Grew signups 40%.", encoding="utf-8")
+    clean = _gates(d, "CV.md")
+    assert clean["unsourced_specifics"] is True, "a truthful CV must pass"
+    assert "unsourced_found" not in clean
+
+    (d / "CV.md").write_text("Led 45 engineers. Grew revenue 250% nationwide.",
+                             encoding="utf-8")
+    dirty = _gates(d, "CV.md")
+    assert dirty["unsourced_specifics"] is False, "an inventing CV must fail"
+    assert "45" in dirty["unsourced_found"]
+
+    # And the dashboard's own rule, which is what a person actually sees.
+    failed = [k for k, v in dirty.items() if v is False]
+    assert "unsourced_specifics" in failed
+    assert [k for k, v in clean.items() if v is False] == []
 
 
 def test_empty_cv_path_does_not_look_like_a_valid_file():
@@ -1090,11 +1188,24 @@ def test_a_draft_that_adds_a_specific_is_caught():
 
 def test_a_rating_is_read_from_the_score_not_the_first_number():
     """`re.search(r"\d{1,3}")` would record a file opening "100-point rubric"
-    as 100."""
-    import re
-    txt = "100-point rubric\n\nOverall: 68/100 (solid)"
-    m = re.search(r"\b(\d{1,3})\s*/\s*100\b", txt)
-    assert m and m.group(1) == "68"
+    as 100. The old version of this test re-implemented the regex in its own
+    body and asserted the copy worked, so it would have passed against a full
+    regression of the bug."""
+    import tempfile
+    from jobradar import store, runner
+
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "first_seen,last_seen) VALUES ('u','C','T','x','London','gh',"
+                "'2026-08-21','2026-08-21')")
+    d = Path(tempfile.mkdtemp())
+    (d / "CV.md").write_text("A CV.\n", encoding="utf-8")
+    (d / "cv-rating.txt").write_text("100-point rubric\n\nOverall: 68/100 (solid)",
+                                     encoding="utf-8")
+    job = {"uid": "u", "kind": "cv"}
+    runner._record(con, job, d, "")
+    got = con.execute("SELECT rating FROM artifacts WHERE kind='cv'").fetchone()
+    assert got["rating"] == 68.0, f"read {got['rating']} from a 68/100 file"
 
 
 def test_the_dashboard_survives_a_limited_scan():
@@ -1616,6 +1727,166 @@ def test_the_installer_needs_nothing_installed():
         rc = mod.main()
     assert rc == 1, "an old Python must be refused"
     assert calls == [], "nothing may run before the version is checked"
+
+
+def test_a_merge_never_trades_an_interview_for_an_interested():
+    """The old rule copied the loser's status only when the keeper's was
+    `new`, so merging a role you were interviewing for into one marked
+    interested lost the interview and its note. Drafting a CV sets a role to
+    interested, so one click armed it, and the merge runs unattended on scan.
+    The previous test only ever set a status on the loser, so the branch the
+    bug lived in was the untested half."""
+    from jobradar import store
+
+    def merge(loser_status, loser_note, keeper_status, keeper_note):
+        con = store.connect(":memory:")
+        for uid, plat, desc in (("a", "linkedin", ""),
+                                ("b", "smartrecruiters", "x" * 900)):
+            con.execute("INSERT INTO roles (uid,company,title,url,location,"
+                        "platform,description,first_seen,last_seen) VALUES "
+                        "(?,'Wise','EM',?,'London',?,?,'2026-08-21','2026-08-21')",
+                        (uid, f"https://x/{uid}", plat, desc))
+        store.set_status(con, "a", loser_status, loser_note)
+        store.set_status(con, "b", keeper_status, keeper_note)
+        store.merge_duplicates(con)
+        r = con.execute("SELECT status,note FROM role_state").fetchone()
+        return r["status"], r["note"]
+
+    assert merge("interviewing", "2nd round 3 Sept", "interested", "looks ok") \
+        == ("interviewing", "2nd round 3 Sept")
+    assert merge("interested", "", "offer", "165k")[0] == "offer"
+    assert merge("applied", "sent it", "new", "")[0] == "applied"
+    assert merge("new", "", "applied", "sent 19 Aug")[0] == "applied"
+
+
+def test_enrichment_makes_the_filters_actually_run():
+    """Screening happens during the scan against whatever the source returned,
+    which for three platforms is nothing, so the filters ran on an empty
+    string. Enrichment then fetched the text and no filter looked at it: the
+    tool held the sentence that disqualifies the role and showed the role
+    anyway. The existing enrichment test stops at candidate selection."""
+    import tempfile, textwrap
+    from jobradar import store, cli
+    from jobradar.config import load
+
+    d = Path(tempfile.mkdtemp())
+    (d / "cv.txt").write_text("Callum. EM, 8 years.", encoding="utf-8")
+    cfgp = d / "c.yaml"
+    cfgp.write_text(textwrap.dedent(f"""
+        titles:
+          include: [engineering manager]
+        locations:
+          countries: [UK]
+        cv:
+          path: {d / 'cv.txt'}
+        salary:
+          floor: 90000
+          currency: GBP
+        dealbreakers:
+          - name: coding round
+            pattern: 'take.?home'
+            hard: true
+    """), encoding="utf-8")
+    cfg = load(cfgp)
+
+    con = store.connect(":memory:")
+
+    def add(uid, desc, lo, hi, label):
+        con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                    "description,salary_min,salary_max,salary_currency,"
+                    "salary_period,salary_confirmed,salary_label,score,reasons,"
+                    "flags,first_seen,last_seen) VALUES (?,'Acme',"
+                    "'Engineering Manager','https://x','London','workday',?,?,?,"
+                    "'GBP','year',1,?,70,'[]',?,'2026-08-21','2026-08-21')",
+                    (uid, desc, lo, hi, label,
+                     '["not screened: no description from this source"]'))
+        con.execute("INSERT INTO role_state (uid,status,updated_at) "
+                    "VALUES (?,'new','2026-08-21')", (uid,))
+
+    add("u1", "We need an EM. There is a take-home exercise. " + "detail " * 60,
+        150000, 180000, "\u00a3150k - \u00a3180k")
+    add("u2", "A fine EM role, no tricks. " + "detail " * 60,
+        40000, 45000, "\u00a340k - \u00a345k")
+    add("u3", "A fine EM role, well paid. " + "detail " * 60,
+        150000, 180000, "\u00a3150k - \u00a3180k")
+
+    assert cli._rescreen(con, cfg) == 2, "the dealbreaker and the floor must act"
+    got = dict(con.execute("SELECT uid,status FROM role_state").fetchall()
+               and [(r["uid"], r["status"]) for r in
+                    con.execute("SELECT uid,status FROM role_state")])
+    assert got["u1"] == "closed" and got["u2"] == "closed"
+    assert got["u3"] == "new"
+    # The stale warning must go, or it now lies in the other direction.
+    flags = con.execute("SELECT flags FROM roles WHERE uid='u3'").fetchone()["flags"]
+    assert "not screened" not in flags
+
+
+def test_a_scan_does_not_destroy_an_enriched_description():
+    """Three platforms omit the description from their list endpoints, which
+    is why enrichment exists. An unconditional UPDATE meant every scan threw
+    that work away, and with --no-enrich it was destroyed and never came
+    back."""
+    from jobradar import store
+    from jobradar.models import Job, Salary
+
+    con = store.connect(":memory:")
+    thin = Job(company="X", title="EM", url="u", location="London",
+               platform="workday", description="", salary=Salary())
+    store.upsert_roles(con, [thin])
+    con.execute("UPDATE roles SET description=?, salary_confirmed=1, "
+                "salary_label='\u00a340k - \u00a345k' WHERE uid=?",
+                ("LONG " * 400, thin.uid))
+
+    store.upsert_roles(con, [thin])          # the next scan, same empty payload
+    row = con.execute("SELECT LENGTH(description) n, salary_confirmed c, "
+                      "salary_label l FROM roles").fetchone()
+    assert row["n"] == 2000, "the fetched description must survive"
+    assert row["c"] == 1 and "40k" in row["l"], "so must the parsed salary"
+
+
+def test_prune_refuses_when_the_network_is_the_problem():
+    """Every failed fetch counts as zero postings and therefore as dead, so
+    behind a broken proxy the whole list is dead, the file is emptied, and it
+    is stamped with today's date so the staleness warning goes quiet too. This
+    runs unattended every Sunday in Actions."""
+    import inspect
+    from jobradar import cli
+
+    src = inspect.getsource(cli.cmd_validate)
+    assert "REFUSING TO PRUNE" in src
+    assert "force_prune" in src, "there has to be a way past it when it is real"
+
+
+def test_a_thin_posting_is_still_read_but_flagged():
+    """Two faults in one line. The warning was added only for LinkedIn, so a
+    Workday role whose enrichment failed passed every dealbreaker silently.
+    And skipping the patterns below a length threshold is worse than the bug:
+    a thirty-character description saying "take home exercise" contains the
+    disqualifying sentence, and refusing to read it is the same silent pass by
+    another route."""
+    from jobradar.models import Job
+    from jobradar.config import Config, Dealbreaker
+    from jobradar.screen import screen
+
+    cfg = Config(titles_include=["x"],
+                 dealbreakers=[Dealbreaker("coding round", r"take.?home")])
+
+    def run(desc, platform="workday"):
+        j = Job(company="c", title="t", url="u", location="London",
+                platform=platform, description=desc)
+        keep, hits = screen(j, cfg)
+        return keep, hits, j.flags
+
+    keep, hits, flags = run("There is a take home exercise.")
+    assert keep is False and hits == ["coding round"], "short text is still read"
+    assert any("not screened" in f for f in flags), "and still flagged as thin"
+
+    keep, _, flags = run("A perfectly fine role. " * 20)
+    assert keep is True and flags == []
+
+    for platform in ("workday", "smartrecruiters", "greenhouse", "linkedin"):
+        _, _, flags = run("", platform)
+        assert any("not screened" in f for f in flags), platform
 
 
 if __name__ == "__main__":
