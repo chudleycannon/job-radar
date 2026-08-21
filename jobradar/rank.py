@@ -43,7 +43,13 @@ MODEL = "claude-sonnet-5"
 # Roles per call. Small enough that one bad response costs little and the
 # model keeps attention on every row; large enough that the CV, which is the
 # expensive constant, is sent a handful of times rather than two hundred.
-BATCH = 40
+#
+# Twenty rather than forty because progress is only observable between calls.
+# At forty the counter sat still for two minutes at a time and a live run was
+# indistinguishable from a hung one. The cost of halving it is one more copy
+# of the CV per extra call, about 1,500 tokens, which is worth paying to be
+# able to see that something is happening.
+BATCH = 20
 
 # Characters of each posting to send. The opening carries the title, the team,
 # the seniority and the must-haves; the rest is benefits, values and the
@@ -159,11 +165,19 @@ def candidates(con, refresh: bool = False) -> list:
     return con.execute(q + " ORDER BY r.score DESC").fetchall()
 
 
-def rank(con, cfg, rows, on_batch=None) -> int:
-    """Score `rows` and write the results back. Returns how many were scored."""
+def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
+    """Score `rows` and write the results back. Returns how many were scored.
+
+    `should_stop` is checked between batches, which is the only place it can
+    be: a batch is one request and there is no way to interrupt it partway.
+    Everything already scored is kept, so stopping costs the batch in flight
+    and nothing else.
+    """
     cv, wants = _cv_text(cfg), _wants(cfg)
     done = 0
     for i in range(0, len(rows), BATCH):
+        if should_stop and should_stop():
+            break
         chunk = rows[i:i + BATCH]
         by_id = {r["uid"][:8]: r["uid"] for r in chunk}
         out = _call(PROMPT.format(cv=cv, wants=wants,
@@ -182,6 +196,24 @@ def rank(con, cfg, rows, on_batch=None) -> int:
         if on_batch:
             on_batch(min(i + BATCH, len(rows)), len(rows), done)
     return done
+
+
+def unrankable(con) -> int:
+    """Roles on the board that can never get a fit score.
+
+    A LinkedIn listing carries a title, a company and a location. There is
+    nothing to judge fit against, so ranking skips it. Reporting only
+    "0 unranked" turned that into "everything is ranked", which was not true
+    of what the person was looking at: a quarter of the board had no score and
+    no explanation for why.
+    """
+    store._ensure_columns(con)
+    return con.execute(
+        "SELECT COUNT(*) c FROM roles r LEFT JOIN role_state s ON s.uid=r.uid "
+        "WHERE COALESCE(s.status,'new') NOT IN "
+        "('rejected','withdrawn','skipped','closed') "
+        f"AND {store.LIVE_SQL} AND COALESCE(r.fit,-1) < 0 "
+        "AND LENGTH(TRIM(COALESCE(r.description,''))) < 200").fetchone()["c"]
 
 
 def estimate(rows) -> tuple[int, int]:

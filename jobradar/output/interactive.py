@@ -136,18 +136,62 @@ const rankBtn=$('#rank'), rankInfo=$('#rankinfo');
 async function rankState(){
   const r=await fetch('/api/rank'); if(!r.ok) return null;
   return r.json();}
+const stopBtn=$('#rankstop');
+function mmss(t){const m=Math.floor(t/60),s=t%60;
+  return m?`${m}m ${String(s).padStart(2,'0')}s`:`${s}s`;}
+
+function paintRank(d, extra=0){
+  if(d.state!=='running') return;
+  const batch=Math.floor(d.done/d.batch_size)+1;
+  const of=Math.ceil(d.total/d.batch_size);
+  rankInfo.textContent = d.stopping
+    ? `stopping after this batch (${d.done}/${d.total} done)`
+    : `${d.done}/${d.total} scored · batch ${Math.min(batch,of)} of ${of} `+
+      `in flight · ${mmss(d.elapsed+extra)}`;}
+
 async function refreshRankInfo(){
   const d=await rankState(); if(!d) return d;
+  _rank=d; _tick=0;
   if(d.state==='running'){
     rankBtn.classList.add('busy'); rankBtn.disabled=true;
-    rankInfo.textContent=`ranking ${d.done}/${d.total}...`;
+    stopBtn.hidden=false;
+    // The counter only moves once per batch, roughly two minutes apart. With
+    // nothing else changing, a run in progress looked identical to one that
+    // had hung, so say which batch is in flight and how long it has been.
+    const batch=Math.floor(d.done/d.batch_size)+1;
+    const of=Math.ceil(d.total/d.batch_size);
+    rankInfo.textContent = d.stopping
+      ? `stopping after this batch (${d.done}/${d.total} done)`
+      : `${d.done}/${d.total} scored · batch ${Math.min(batch,of)} of ${of} `+
+        `in flight · ${mmss(d.elapsed)}`;
   }else{
     rankBtn.classList.remove('busy'); rankBtn.disabled=false;
-    rankInfo.textContent = d.pending
-      ? `${d.pending} unranked`
-      : (d.scored ? `${d.scored} ranked` : '');}
+    stopBtn.hidden=true;
+    // Say what is actually true. "0 unranked" was rendered as "everything is
+    // ranked", while a quarter of the board carried no score at all because
+    // those postings have no description to judge fit against.
+    const bits=[];
+    if(d.pending) bits.push(`${d.pending} to rank`);
+    if(d.scored) bits.push(`${d.scored} ranked`);
+    if(d.unrankable) bits.push(`${d.unrankable} listing-only, nothing to rank`);
+    rankInfo.textContent = bits.join(' · ');}
   return d;}
 refreshRankInfo();
+
+stopBtn.onclick=async ()=>{
+  stopBtn.disabled=true;
+  const {ok,data}=await post('/api/rank/stop',{});
+  say(ok ? (data.message||'stopping') : (data.error||'could not stop'),6000);
+  stopBtn.disabled=false; refreshRankInfo();};
+
+// Poll for the real numbers, and tick the clock locally in between, so the
+// line is visibly moving every second rather than freezing between polls.
+let _rank=null, _tick=0;
+setInterval(async ()=>{
+  const d=await rankState(); _rank=d; _tick=0;
+  if(d) paintRank(d);
+}, 3000);
+setInterval(()=>{ if(_rank && _rank.state==='running'){ _tick++; paintRank(_rank, _tick);} }, 1000);
 
 rankBtn.onclick=async ()=>{
   const d=await rankState(); if(!d) return;
@@ -436,6 +480,7 @@ def render(con) -> str:
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
+  <button id="rankstop" type="button" hidden>Stop</button>
   <span id="rankinfo"></span>{_sync}</div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
@@ -484,7 +529,13 @@ def _row(r, arts, job, run=0) -> str:
     # in a sort order.
     fitline = ""
     fv = r["fit"] if r["fit"] is not None else -1
-    if fv >= 0:
+    if fv < 0 and len((r["description"] or "").strip()) < 200:
+        # An absent score read as "not ranked yet" on a role that can never be
+        # ranked. Say which it is, once, quietly.
+        fitline = ('<div class="fit none"><b>&mdash;</b> fit'
+                   '<span>no description from this source, so there is nothing '
+                   'to score against your CV</span></div>')
+    elif fv >= 0:
         band = "good" if fv >= 70 else ("mid" if fv >= 50 else "low")
         fitline = (f'<div class="fit {band}"><b>{fv}</b> fit'
                    + (f'<span>{_h.escape(r["fit_why"] or "")}</span>'

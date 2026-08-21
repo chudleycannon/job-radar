@@ -1362,6 +1362,45 @@ def test_the_sync_nudge_fires_once_a_day_not_every_command():
     assert said == []
 
 
+def test_a_linkedin_url_yields_a_job_id_and_a_description():
+    """LinkedIn's search endpoint returns a headline and nothing else, so a
+    quarter of the board could not be screened, ranked or compared to a salary
+    floor. Worse than invisible: dealbreakers with no text to match pass by
+    default, which is the wrong way for a filter to fail."""
+    from jobradar import enrich
+
+    assert enrich.job_id(
+        "https://uk.linkedin.com/jobs/view/engineering-manager-at-arrive-4455232988"
+    ) == "4455232988"
+    assert enrich.job_id("https://example.com/jobs/abc") == ""
+
+    page = ('<section><div class="description__text description__text--rich">'
+            '<p>We want someone who has <strong>owned</strong> infrastructure.'
+            '</p><ul><li>On-call rota</li><li>&pound;90,000 salary</li></ul>'
+            '</div></section>')
+    text = enrich._text(page)
+    assert "description__text" not in text, "the class attribute is not content"
+    assert "owned" in text and "On-call rota" in text
+    assert "&pound;" not in text and "\u00a390,000" in text, "entities decoded"
+    # Line structure survives, because dealbreaker patterns read bullets.
+    assert "\n" in text
+
+
+def test_enrichment_only_targets_roles_that_need_it():
+    from jobradar import enrich, store
+    con = store.connect(":memory:")
+    rows = [("a", "linkedin", "", "https://uk.linkedin.com/jobs/view/x-111111"),
+            ("b", "linkedin", "x" * 500, "https://uk.linkedin.com/jobs/view/y-222222"),
+            ("c", "greenhouse", "", "https://boards.greenhouse.io/z")]
+    for uid, plat, desc, url in rows:
+        con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                    "description,first_seen,last_seen) VALUES "
+                    "(?,?,?,?,?,?,?,'2026-08-21','2026-08-21')",
+                    (uid, "C", "T", url, "London", plat, desc))
+    got = [r["uid"] for r in enrich.candidates(con)]
+    assert got == ["a"], f"only the empty LinkedIn role needs fetching, got {got}"
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

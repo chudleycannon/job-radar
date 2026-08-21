@@ -98,6 +98,8 @@ header{margin-bottom:var(--s5)}
   transition:background var(--dur) var(--ease),color var(--dur) var(--ease)}
 .actions button:hover:not(:disabled){background:var(--accent);color:#fff}
 .actions button:disabled{opacity:.5;cursor:default}
+#rankstop{border-color:#d98080;color:#d98080}
+#rankstop:hover:not(:disabled){background:#d98080;color:#fff}
 .actions #rankinfo{font-size:.8125rem;color:var(--muted);
   font-variant-numeric:tabular-nums}
 /* Upstream revalidates weekly, so past eight days you have missed a cycle and
@@ -120,6 +122,7 @@ header{margin-bottom:var(--s5)}
 .fit.good b{background:rgba(95,191,141,.18);color:var(--pay)}
 .fit.mid b{background:rgba(216,165,90,.16);color:var(--flag)}
 .fit.low b{background:var(--line);color:var(--muted)}
+.fit.none b{background:transparent;color:var(--muted);padding-left:0}
 .fit span{color:var(--muted)}
 
 /* The screening, inline under the role it belongs to. */

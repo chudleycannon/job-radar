@@ -140,6 +140,9 @@ def cmd_scan(args) -> int:
             # what new means.
             _say(f"  (only {args.limit} sources were read; roles on the rest "
                  f"will be marked new when a full scan first sees them)")
+    if not args.dry_run and not args.no_enrich:
+        _enrich_step(con, cfg)
+
     if kept:
         _coverage_note(kept, srcs, cfg)
     _staleness_note(cfg)
@@ -261,6 +264,28 @@ def cmd_discover(args) -> int:
 # missed cycle. Past that you are not looking at a slightly older list, you
 # are looking at one that has started losing boards as employers migrate.
 STALE_AFTER_DAYS = 8
+
+
+def _enrich_step(con, cfg) -> None:
+    """Fetch the full posting for roles whose source gave only a headline.
+
+    Part of the scan rather than a separate command you have to know about.
+    It is a read, it spends no tokens, and without it a quarter of the board
+    is unscreenable, unrankable and invisible to the salary floor: dealbreakers
+    have no text to match, so they pass by default, which is the worst way for
+    a filter to fail.
+    """
+    from . import enrich
+    rows = enrich.candidates(con)
+    if not rows:
+        return
+    _say(f"  fetching {len(rows)} postings that arrived as headlines only...")
+    got, tried = enrich.run(con, cfg, rows)
+    if got:
+        _say(f"  filled in {got} of {tried}; they can now be screened, ranked "
+             f"and compared to your salary floor")
+    else:
+        _say(f"  none of the {tried} could be fetched. They stay as listings.")
 
 
 def _staleness_note(cfg) -> None:
@@ -672,6 +697,38 @@ def cmd_generate(args) -> int:
         con.close()
 
 
+# ---------------------------------------------------------------- enrich
+def cmd_enrich(args) -> int:
+    """Fill in descriptions for roles whose source only returned a headline."""
+    from . import enrich, store
+    cfg = _cfg_or_default(args.config)
+    con = store.connect(args.db)
+    try:
+        rows = enrich.candidates(con, limit=args.limit)
+        if not rows:
+            _say("Nothing to fetch. Every role on the board already has its "
+                 "description.")
+            return 0
+        _say(f"{len(rows)} roles to fetch, one at a time with a "
+             f"{args.pause}s pause. No tokens are spent.")
+        if args.dry_run:
+            return 0
+
+        def progress(i, total, got):
+            if i % 10 == 0 or i == total:
+                _say(f"  {i}/{total}, {got} filled in")
+
+        got, tried = enrich.run(con, cfg, rows, pause=args.pause,
+                                on_each=progress)
+        _say(f"\nFilled in {got} of {tried}.")
+        if got:
+            _say("They can now be screened, ranked and compared to your "
+                 "salary floor. `job-radar rank` picks them up.")
+        return 0
+    finally:
+        con.close()
+
+
 # ---------------------------------------------------------------- rank
 def cmd_rank(args) -> int:
     """Score every role against the CV in one batched pass.
@@ -842,6 +899,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--state", default=None)
     s.add_argument("--db", default=None, help="database path (default data/job-radar.db)")
     s.add_argument("--limit", type=int, default=0)
+    s.add_argument("--no-enrich", action="store_true",
+                   help="skip fetching full postings for headline-only "
+                        "sources; they stay unscreenable")
     s.add_argument("--dry-run", action="store_true",
                    help="do not record what was seen (re-reports the same roles next time)")
     s.set_defaults(func=cmd_scan)
@@ -882,6 +942,15 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--force", action="store_true",
                    help="screen even when the posting has no description")
     g.set_defaults(func=cmd_generate)
+
+    en = sub.add_parser("enrich",
+                        help="fetch full postings for headline-only sources")
+    en.add_argument("--limit", type=int, default=0)
+    en.add_argument("--pause", type=float, default=1.0,
+                    help="seconds between requests; these are other people's servers")
+    en.add_argument("--dry-run", action="store_true")
+    en.add_argument("--db", default=None)
+    en.set_defaults(func=cmd_enrich)
 
     rk = sub.add_parser("rank", help="score every role against your CV, cheaply")
     rk.add_argument("--refresh", action="store_true",

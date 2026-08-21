@@ -76,10 +76,18 @@ class Handler(BaseHTTPRequestHandler):
                     "pending": len(rows), "batches": batches, "tokens": tokens,
                     "screen_tokens": len(rows) * 60_000,
                     "state": store.get_meta(con, "rank_state", "idle"),
-                    "done": int(store.get_meta(con, "rank_done", "0") or 0),
+                    "done": max(
+                        int(store.get_meta(con, "rank_done", "0") or 0),
+                        con.execute("SELECT COUNT(*) c FROM roles WHERE fit>=0")
+                           .fetchone()["c"]
+                        - int(store.get_meta(con, "rank_base", "0") or 0)),
                     "total": int(store.get_meta(con, "rank_total", "0") or 0),
+                    "batch_size": rank_mod.BATCH,
+                    "elapsed": _rank_elapsed(con),
+                    "stopping": store.get_meta(con, "rank_cancel", "") == "1",
                     "scored": con.execute(
                         "SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"],
+                    "unrankable": rank_mod.unrankable(con),
                 })
             finally:
                 con.close()
@@ -222,6 +230,19 @@ class Handler(BaseHTTPRequestHandler):
                 "message": f"pulled. source list {n or 'unchanged'}",
                 "age": src_mod.age_days()})
 
+        if path == "/api/rank/stop":
+            con = store.connect(self.db_path)
+            try:
+                if store.get_meta(con, "rank_state", "idle") != "running":
+                    return self._json({"ok": False, "error": "not running"}, 409)
+                store.set_meta(con, "rank_cancel", "1")
+            finally:
+                con.close()
+            # It stops between batches, not mid-request, so say so rather than
+            # letting the button imply it halted instantly.
+            return self._json({"ok": True,
+                               "message": "stopping after the current batch"})
+
         if path == "/api/rank":
             # Not per-role, so it does not carry a uid and must be handled
             # before the uid check below.
@@ -237,9 +258,18 @@ class Handler(BaseHTTPRequestHandler):
                         {"ok": False,
                          "error": "every role with a description already has a "
                                   "fit score"}, 409)
+                from datetime import datetime
                 store.set_meta(con, "rank_state", "running")
                 store.set_meta(con, "rank_total", str(len(rows)))
                 store.set_meta(con, "rank_done", "0")
+                store.set_meta(con, "rank_cancel", "")
+                # Where the scored count stood before this run, so progress can
+                # be read live off the database rather than only advancing when
+                # a batch finishes.
+                store.set_meta(con, "rank_base", str(con.execute(
+                    "SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"]))
+                store.set_meta(con, "rank_started",
+                               datetime.now().isoformat(timespec="seconds"))
             finally:
                 con.close()
             _spawn_rank(self.db_path, self.config_path,
@@ -295,6 +325,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+def _rank_elapsed(con) -> int:
+    """Seconds since the current rank run started, or 0.
+
+    The counter only moves once per batch, about two minutes apart, so without
+    a clock beside it a run in progress is indistinguishable from one that has
+    hung.
+    """
+    from datetime import datetime
+    stamp = store.get_meta(con, "rank_started", "")
+    if not stamp:
+        return 0
+    try:
+        return max(0, int((datetime.now() - datetime.fromisoformat(stamp)).total_seconds()))
+    except ValueError:
+        return 0
+
+
 def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
     """Rank on a background thread so the click returns at once.
 
@@ -310,10 +357,13 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
         try:
             cfg = load_cfg(config_path) if config_path else load_cfg()
             rows = rank_mod.candidates(con, refresh=refresh)
-            rank_mod.rank(con, cfg, rows,
-                          on_batch=lambda done, total, scored:
-                              store.set_meta(con, "rank_done", str(done)))
+            rank_mod.rank(
+                con, cfg, rows,
+                on_batch=lambda done, total, scored:
+                    store.set_meta(con, "rank_done", str(done)),
+                should_stop=lambda: store.get_meta(con, "rank_cancel", "") == "1")
             store.set_meta(con, "rank_state", "idle")
+            store.set_meta(con, "rank_cancel", "")
         except Exception as e:
             # Never leave it stuck on "running": the button would spin for
             # ever and refuse every later attempt.
@@ -338,6 +388,14 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
         orphans = store.reap_orphans(con, runner.TIMEOUT)
         if orphans:
             print(f"  cleared {orphans} interrupted generation(s)")
+        # A rank runs on a thread inside this process, so one marked running
+        # here belongs to a server that is gone. Left alone it wedges the
+        # button for ever, because starting a rank refuses while one is
+        # "running". Everything already scored is kept.
+        if store.get_meta(con, "rank_state", "idle") == "running":
+            store.set_meta(con, "rank_state", "idle")
+            store.set_meta(con, "rank_cancel", "")
+            print("  cleared an interrupted ranking run")
         n = runner.regate(con)
         if n:
             print(f"  rechecked {n} document(s)")
