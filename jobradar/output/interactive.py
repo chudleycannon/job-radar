@@ -147,6 +147,22 @@ rankBtn.onclick=async ()=>{
   },3000);
   refreshRankInfo();};
 
+// Only rendered when the list is behind, so it is a fix offered at the moment
+// the problem is visible rather than a control sitting there for ever.
+const pullBtn=$('#pull');
+if(pullBtn) pullBtn.onclick=async ()=>{
+  pullBtn.disabled=true; pullBtn.textContent='Pulling...';
+  const {ok,data}=await post('/api/pull',{});
+  if(!ok){ pullBtn.disabled=false; pullBtn.textContent='Pull';
+           say(data.error||'could not pull',7000); return; }
+  say(data.message||'pulled');
+  if(data.changed){ pullBtn.textContent='Pulled';
+    // The scan reads the source list at startup, so the new boards only
+    // arrive on the next scan. Say that rather than implying it is done.
+    setTimeout(()=>say('Run a scan to read the boards that just arrived',6000),1200);
+  } else { pullBtn.disabled=false; pullBtn.textContent='Pull'; }
+};
+
 $('#fcountry').onchange=e=>{country=e.target.value;apply()};
 $('#fcity').onchange=e=>{city=e.target.value;apply()};
 
@@ -337,6 +353,30 @@ def render(con) -> str:
     good = sum(1 for r in rows if (r["fit"] or -1) >= 70)
     _fit_count = f'<span class="n">{good}</span>' if good else ""
 
+    # When the bundled source list was last checked against reality. Shown
+    # because nothing else tells you: the weekly validation and growth jobs
+    # run upstream, so a clone's list freezes on the day it was cloned and a
+    # fork only ever prunes its own. A checkout months behind quietly loses
+    # boards as they migrate and looks exactly as healthy as a fresh one.
+    from .. import sources as _src
+    age = _src.age_days()
+    if age is None:
+        _sync = ('<span class="sync warn" title="sources.json carries no date">'
+                 'sources: never synced</span>'
+                 '<button id="pull" type="button">Pull</button>')
+    else:
+        when = "today" if age == 0 else ("yesterday" if age == 1
+                                         else f"{age} days ago")
+        # Upstream validates weekly, so eight days is one missed cycle.
+        cls = "sync warn" if age > 8 else "sync"
+        tip = ("Run `git pull` to get boards that have moved and employers "
+               "added since." if age > 8 else "Up to date with the weekly "
+               "upstream check.")
+        _sync = (f'<span class="{cls}" title="{_h.escape(tip, quote=True)}">'
+                 f'sources synced {when}</span>'
+                 + ('<button id="pull" type="button" title="git pull --ff-only '
+                    'in this checkout">Pull</button>' if age > 8 else ''))
+
     sec = Counter((r["sector"] or "other") for r in rows)
     chips = "".join(
         f'<button aria-pressed="false" data-sec="{_h.escape(s, quote=True)}">'
@@ -375,7 +415,7 @@ def render(con) -> str:
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
-  <span id="rankinfo"></span></div>
+  <span id="rankinfo"></span>{_sync}</div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="selects">

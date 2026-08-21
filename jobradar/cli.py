@@ -142,6 +142,7 @@ def cmd_scan(args) -> int:
                  f"will be marked new when a full scan first sees them)")
     if kept:
         _coverage_note(kept, srcs, cfg)
+    _staleness_note(cfg)
 
     if not kept:
         # An empty page reads as "the market is empty" when it usually means
@@ -251,6 +252,69 @@ def cmd_discover(args) -> int:
     elif good and not args.add:
         _say("\nRe-run with --add to write these into your config.")
     return 0 if results else 1
+
+
+# After this long without a check, the bundled list is worth refreshing. Chosen
+# to be quiet: the upstream job runs weekly, so anything under a month means
+# the person is simply a few merges behind and nothing is likely broken yet.
+# Upstream revalidates and extends the list weekly, so eight days means a
+# missed cycle. Past that you are not looking at a slightly older list, you
+# are looking at one that has started losing boards as employers migrate.
+STALE_AFTER_DAYS = 8
+
+
+def _staleness_note(cfg) -> None:
+    """Tell people their copy of the source list ages, and how to refresh it.
+
+    Nothing said this anywhere. The weekly validation and growth jobs run
+    upstream and open pull requests there; a clone freezes its list on the day
+    it was cloned, and a fork only prunes its own, because the crawler that
+    finds new employers deliberately does not ship in this repository. So a
+    six-month-old checkout quietly loses boards as they migrate and never
+    gains the ones that were added, while looking exactly as healthy as a
+    fresh one.
+    """
+    if not cfg.use_bundled_sources:
+        return
+    days = src_mod.age_days()
+    if days is None:
+        return
+    if days < STALE_AFTER_DAYS:
+        return
+    _say("")
+    _say(f"  Your source list was last checked {days} days ago, and upstream "
+         f"checks it weekly.")
+    _say(f"  `git pull` gets you boards that have moved since and employers "
+         f"added since. Without it this scan is quietly missing roles.")
+
+
+def _daily_sync_nudge(cfg, db=None) -> None:
+    """Say it once a day, on whatever command you happen to run.
+
+    A warning attached only to `scan` reaches someone who scans. Someone who
+    lives in `list` and `serve` never sees it, and their list is the one most
+    likely to be old. Once a day is the honest frequency: often enough to
+    matter within a week of a missed cycle, rare enough that it never becomes
+    something to scroll past.
+    """
+    if not cfg.use_bundled_sources:
+        return
+    days = src_mod.age_days()
+    if days is None or days < STALE_AFTER_DAYS:
+        return
+    from . import store
+    from datetime import date
+    con = store.connect(db)
+    try:
+        today = date.today().isoformat()
+        if store.get_meta(con, "sync_nudge", "") == today:
+            return
+        store.set_meta(con, "sync_nudge", today)
+    finally:
+        con.close()
+    _say(f"Your source list was last checked {days} days ago; upstream checks "
+         f"it weekly. Run `git pull` to pick up boards that have moved and "
+         f"employers added since.\n")
 
 
 # Keyword searches return leads, not postings: no description, no salary, and
@@ -864,6 +928,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        # Before the command, so it is read rather than scrolled past at the
+        # end of two hundred lines of scan output.
+        if args.cmd in ("scan", "list", "serve", "rank", "coverage"):
+            try:
+                _daily_sync_nudge(_cfg_or_default(args.config),
+                                  getattr(args, "db", None))
+            except Exception:
+                pass          # a nudge must never stop the command
         return args.func(args)
     except FileNotFoundError as e:
         _say(str(e))

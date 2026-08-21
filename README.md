@@ -342,6 +342,33 @@ guess is identity-checked before being offered.
 
 ---
 
+## Keeping the source list current
+
+The list is data, and data rots. Boards migrate between applicant tracking
+systems, tokens get renamed, companies get acquired. One revalidation pass
+found 23 dead boards, and 19 of those had simply moved ATS and were hiding
+762 live roles that the scan could no longer see.
+
+A weekly job here revalidates every board and opens a pull request for
+anything dead, and a second one adds new employers in whichever sectors the
+list is thinnest in. **Neither of those reaches your copy.**
+
+- **Cloned it?** Your source list is frozen at the day you cloned.
+  `git pull` brings the merged updates down.
+- **Forked it?** Your fork runs its own validation, so it prunes dead boards
+  for you. It never gains new ones: the crawler that finds employers lives in
+  a separate private repository on purpose, so that forking this does not set
+  a crawler loose. Pull from upstream for those.
+
+```bash
+git pull                                  # a clone
+git pull https://github.com/maccydee/job-radar main   # a fork
+```
+
+`job-radar scan` says so itself once the list is more than a month old, and
+`sources/sources.json` carries the date it was last checked in its `meta`
+block if you want to see for yourself.
+
 ## What this does not cover
 
 Worth saying plainly, because a tool that quietly fails at something looks

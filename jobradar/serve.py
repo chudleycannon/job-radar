@@ -177,6 +177,51 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         data = self._body()
 
+        if path == "/api/pull":
+            # `git pull` on the checkout the server is running from. Read-only
+            # in the sense that matters: it fetches and fast-forwards, and it
+            # is refused outright if the working tree has changes, because a
+            # button that silently merges over someone's edits is worse than
+            # no button. Nothing is pushed and no history is rewritten.
+            import subprocess
+            repo = Path(__file__).resolve().parent.parent
+
+            def git(*a, timeout=90):
+                return subprocess.run(["git", "-C", str(repo), *a],
+                                      capture_output=True, text=True,
+                                      timeout=timeout)
+
+            if not (repo / ".git").exists():
+                return self._json(
+                    {"ok": False,
+                     "error": "this is not a git checkout, so there is nothing "
+                              "to pull. Re-download the source list by hand."}, 409)
+            dirty = git("status", "--porcelain").stdout.strip()
+            if dirty:
+                return self._json(
+                    {"ok": False,
+                     "error": "you have uncommitted changes here, so this will "
+                              "not merge over them. Commit or stash, then pull "
+                              "from a terminal."}, 409)
+            before = git("rev-parse", "HEAD").stdout.strip()
+            r = git("pull", "--ff-only")
+            if r.returncode:
+                return self._json(
+                    {"ok": False,
+                     "error": (r.stderr or r.stdout).strip()[:300] or "pull failed"},
+                    409)
+            after = git("rev-parse", "HEAD").stdout.strip()
+            from . import sources as src_mod
+            if before == after:
+                return self._json({"ok": True, "changed": False,
+                                   "message": "already up to date"})
+            n = git("diff", "--shortstat", before, after, "--",
+                    "sources/sources.json").stdout.strip()
+            return self._json({
+                "ok": True, "changed": True,
+                "message": f"pulled. source list {n or 'unchanged'}",
+                "age": src_mod.age_days()})
+
         if path == "/api/rank":
             # Not per-role, so it does not carry a uid and must be handled
             # before the uid check below.

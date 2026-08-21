@@ -1294,6 +1294,74 @@ def test_setups_first_scan_writes_beside_its_config():
         assert field in src, f"first_scan must set {field.strip(' =')} explicitly"
 
 
+def test_a_stale_source_list_says_so():
+    """Nothing told anyone their copy of the list ages. The weekly validation
+    and growth jobs run upstream and open pull requests there; a clone freezes
+    its list on the day it was cloned, and a fork only prunes its own, because
+    the crawler that finds new employers deliberately does not ship here. So a
+    six-month-old checkout quietly loses boards as they migrate, never gains
+    the ones added since, and looks exactly as healthy as a fresh one."""
+    import json, tempfile
+    from datetime import date, timedelta
+    from jobradar import sources as S
+
+    d = Path(tempfile.mkdtemp())
+    old = d / "old.json"
+    old.write_text(json.dumps({
+        "meta": {"checked": (date.today() - timedelta(days=200)).isoformat()},
+        "sources": []}))
+    assert S.age_days(old) == 200
+
+    fresh = d / "fresh.json"
+    fresh.write_text(json.dumps({
+        "meta": {"validated": date.today().isoformat()}, "sources": []}))
+    assert S.age_days(fresh) == 0
+
+    # A list with no date at all must not be reported as brand new.
+    blank = d / "blank.json"
+    blank.write_text(json.dumps({"meta": {}, "sources": []}))
+    assert S.age_days(blank) is None
+
+
+def test_the_dashboard_says_when_the_source_list_is_behind():
+    """Upstream revalidates weekly, so past eight days you have missed a cycle
+    and are quietly losing boards as employers migrate. The date has to be on
+    the page, and the fix has to be next to it."""
+    import re
+    from unittest.mock import patch
+    from jobradar import store, sources
+    from jobradar.output import interactive
+    con = store.connect(":memory:")
+    for age, warn, button in ((0, False, False), (5, False, False),
+                              (9, True, True), (None, True, True)):
+        with patch.object(sources, "age_days", return_value=age):
+            html = interactive.render(con)
+        assert ('sync warn' in html) is warn, f"age {age} warn state wrong"
+        assert ('id="pull"' in html) is button, f"age {age} button wrong"
+
+
+def test_the_sync_nudge_fires_once_a_day_not_every_command():
+    """A warning on every command becomes something to scroll past, which is
+    the same as not having one."""
+    from unittest.mock import patch
+    from jobradar import cli, sources, store
+    from jobradar.config import Config
+
+    said = []
+    cfg = Config(titles_include=["x"], use_bundled_sources=True)
+    with patch.object(sources, "age_days", return_value=23), \
+         patch.object(cli, "_say", said.append):
+        cli._daily_sync_nudge(cfg, ":memory:")
+    assert len(said) == 1 and "git pull" in said[0]
+
+    # Fresh list: silent.
+    said.clear()
+    with patch.object(sources, "age_days", return_value=2), \
+         patch.object(cli, "_say", said.append):
+        cli._daily_sync_nudge(cfg, ":memory:")
+    assert said == []
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())
