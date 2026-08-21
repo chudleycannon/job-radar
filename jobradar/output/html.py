@@ -20,9 +20,10 @@ from pathlib import Path
 
 from ..models import Job
 
-from .favicon import link_tag as _favicon_tag
+from .favicon import link_tag as _favicon_tag, mark as _favicon_mark
 
 _FAVICON = _favicon_tag()
+_MARK = _favicon_mark()
 
 
 _CSS = """
@@ -78,6 +79,46 @@ a{color:inherit;text-decoration:none}
 }
 @layer components{
 header{margin-bottom:var(--s5)}
+/* The wordmark sits above the count rather than replacing it. The headline is
+   still the number of roles, because that is what someone came to find out;
+   the brand is a label, so it is small, muted and out of the way. */
+/* A masthead, not a footnote. It sits on its own line above the count, at a
+   size you would actually put on a site, with a rule under it so the page
+   reads as a product rather than a report someone exported. */
+.brand{display:flex;align-items:center;gap:12px;padding-bottom:var(--s4);
+  margin-bottom:var(--s4);border-bottom:1px solid var(--line)}
+.brand .mark{display:block;border-radius:9px;flex:0 0 auto}
+.brand span{font-size:1.375rem;font-weight:650;letter-spacing:-.022em;
+  color:var(--ink)}
+
+/* The screening, inline under the role it belongs to. */
+.screening{grid-column:1/-1;margin-top:var(--s3);border:1px solid var(--line);
+  border-radius:10px;background:var(--surface-2);overflow:hidden}
+.screening>summary{cursor:pointer;list-style:none;padding:10px 14px;
+  display:flex;align-items:center;gap:10px;font-size:.8125rem}
+.screening>summary::-webkit-details-marker{display:none}
+.screening>summary::after{content:"Hide";margin-left:auto;color:var(--muted);
+  font-size:.75rem}
+.screening:not([open])>summary::after{content:"Show"}
+.screening>summary:hover{background:var(--surface)}
+.screening .v{font-weight:650;letter-spacing:.02em;font-size:.6875rem;
+  text-transform:uppercase;padding:3px 8px;border-radius:999px;
+  background:var(--line);color:var(--ink)}
+.screening .v.skip{background:rgba(200,80,80,.16);color:#d98080}
+.screening .v.apply{background:rgba(95,191,141,.16);color:var(--pay)}
+.screening .lbl{color:var(--muted)}
+.md{padding:2px 16px 14px;font-size:.875rem;line-height:1.62;color:var(--ink)}
+.md h4,.md h5,.md h6{font-size:.8125rem;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--muted);margin:var(--s4) 0 var(--s2);
+  font-weight:650}
+.md h4:first-child{margin-top:var(--s2)}
+.md p{margin:0 0 var(--s3)}
+.md ul{margin:0 0 var(--s3);padding-left:1.15rem}
+.md li{margin-bottom:6px}
+.md code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8125em;
+  background:var(--line);padding:1px 5px;border-radius:4px}
+.md hr{border:0;border-top:1px solid var(--line);margin:var(--s4) 0}
+.md strong{font-weight:650}
 h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 .sub{color:var(--muted);margin-top:var(--s2);font-size:.9375rem;letter-spacing:-.01em}
 .sub b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
@@ -303,6 +344,7 @@ def render(new: list[Job], seen: list[Job], *, dropped, sources_ok, sources_tota
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_h.escape(title)}</title>{_FAVICON}<style>{_CSS}</style></head><body><div class="wrap">
 <header>
+  <div class="brand">{_MARK}<span>job radar</span></div>
   <h1>{len(jobs)} roles worth a look</h1>
   <p class="sub">{stats}</p>
 </header>

@@ -58,3 +58,16 @@ def write(path) -> None:
     """Write the standalone file, for anything that wants a real asset."""
     from pathlib import Path
     Path(path).write_text(SVG)
+
+
+def mark(size: int = 34) -> str:
+    """The same mark, inline, for the page header.
+
+    Reusing the favicon's geometry rather than drawing a second logo keeps the
+    tab icon and the page header recognisably the same object. Rendered inline
+    rather than referenced, so the static export still shows it when opened
+    straight from a file.
+    """
+    return (SVG.replace("<svg ", f'<svg width="{size}" height="{size}" '
+                        'class="mark" aria-hidden="true" ')
+               .replace("\n", ""))

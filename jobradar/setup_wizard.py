@@ -221,6 +221,58 @@ DEFAULTS = {
 }
 
 
+def first_scan(config_path: Path) -> int:
+    """Scan immediately after setup, and hand over both ways of using it.
+
+    Ending setup with "run `job-radar scan` when you are ready" leaves someone
+    holding a config file and no evidence any of it works. The first scan is
+    also the one most likely to reveal a mistake worth fixing now: titles that
+    match nothing, a sector tag with no employers behind it, a floor that hides
+    everything. Doing it here means the wizard is the thing that finds those,
+    while the person is still sitting in front of it.
+
+    It is announced before it starts, because it takes a couple of minutes and
+    silence looks like a hang.
+    """
+    from . import cli
+
+    print("\nRunning your first scan now. It reads about three hundred job")
+    print("boards at four requests at a time, so give it two or three minutes.")
+    print("Nothing is generated and nothing is sent anywhere; this only reads.\n")
+
+    class _Args:
+        config = str(config_path)
+        out = state = db = docs = None
+        limit = 0
+        dry_run = False
+
+    try:
+        rc = cli.cmd_scan(_Args())
+    except KeyboardInterrupt:
+        print("\nStopped. Run `job-radar scan` whenever you like.")
+        return 0
+    except Exception as e:                       # a first run must not traceback
+        print(f"\nThe scan did not finish: {e}")
+        print("Your config is written. Try `job-radar scan` to see the error.")
+        return 0
+
+    print()
+    print("Two ways to use this, and they are the same data either way:")
+    print()
+    print("  job-radar serve      the dashboard, at http://127.0.0.1:8765")
+    print("                       filter, screen, draft, and mark what you applied to")
+    print()
+    print("  job-radar list       the same thing as text")
+    print("  job-radar list --new only what arrived since the last scan")
+    print()
+    print("The dashboard is optional. Everything it does has a command behind")
+    print("it, so if you would rather stay in the terminal, nothing is missing.")
+    print()
+    print("Once you have applied to something, record it with")
+    print("`job-radar applied <url>`. Settled roles stop coming back.")
+    return rc
+
+
 def ask_cv(existing: str = "") -> str:
     """Ask until we get a path to a file that actually exists.
 
@@ -244,7 +296,7 @@ def ask_cv(existing: str = "") -> str:
 
 
 def run(path: Path, non_interactive: bool = False, cv: str | None = None,
-        titles: str | None = None) -> int:
+        titles: str | None = None, scan: bool = False) -> int:
     if non_interactive:
         if not cv:
             print("A CV is required. Re-run with --cv /path/to/your-cv.docx")
@@ -263,7 +315,10 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         a["cv_path"] = str(p.resolve())
         a["titles_include"] = [x.strip() for x in titles.split(",") if x.strip()]
         write_config(path, a)
-        print(f"Wrote a default config to {path}. Edit it, then run `job-radar scan`.")
+        print(f"Wrote a default config to {path}.")
+        if scan:
+            return first_scan(path)
+        print("Edit it, then run `job-radar scan`.")
         return 0
 
     print("\njob-radar setup\n" + "-" * 40)
@@ -367,9 +422,4 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
 
     write_config(path, a)
     print(f"\nWrote {path}")
-    print("Run `job-radar scan` when you are ready.")
-    print()
-    print("One more thing worth knowing: once you have applied to something,")
-    print("record it with `job-radar applied <url>`. Roles you have settled")
-    print("stop coming back, and the rest show you where they stand.")
-    return 0
+    return first_scan(path)

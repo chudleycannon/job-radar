@@ -14,9 +14,11 @@ from collections import Counter
 from datetime import datetime
 
 from .. import store
-from .favicon import link_tag as _favicon_tag
+from .favicon import link_tag as _favicon_tag, mark as _favicon_mark
+from .markdown import to_html as _md
 
 _FAVICON = _favicon_tag()
+_MARK = _favicon_mark()
 
 from .html import _CSS, _cap_location, _SECTORS, _MODES
 
@@ -176,11 +178,22 @@ async function poll(){
       b.classList.toggle('busy',on);
       if(was && !on) b.disabled=false;});
     }
-    const failed=d.jobs.filter(j=>j.state==='failed');
-    for(const j of failed){
-      const row=document.querySelector(`.row[data-uid="${j.uid}"]`);
-      if(row){const e=row.querySelector('.err');e.hidden=false;
-              e.textContent='Generation failed: '+(j.error||'unknown');}}
+    // Show the newest job per role, not every failure ever returned. A retry
+    // that is already running was being covered by the error from the attempt
+    // it replaced, so the row said "generation failed" while the spinner span.
+    // Nothing cleared the message either, so once shown it stayed until the
+    // page was reloaded.
+    const newest=new Map();
+    for(const j of d.jobs){
+      const prev=newest.get(j.uid);
+      if(!prev || j.id>prev.id) newest.set(j.uid,j);}
+    for(const row of document.querySelectorAll('.row')){
+      const e=row.querySelector('.err'); if(!e) continue;
+      const j=newest.get(row.dataset.uid);
+      if(j && j.state==='failed'){
+        e.hidden=false; e.textContent='Generation failed: '+(j.error||'unknown');
+      }else if(j){
+        e.hidden=true; e.textContent='';}}
     const done=d.jobs.some(j=>j.state==='done');
     if(done){ clearInterval(polling); polling=null;
               say('Done. Reloading to show the documents.');
@@ -256,6 +269,7 @@ def render(con) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body><div class="wrap">
 <header>
+  <div class="brand">{_MARK}<span>job radar</span></div>
   <h1>{total} roles worth a look</h1>
   <p class="sub"><b>{paid}</b> with a salary &middot; <b>{settled}</b> settled &middot;
      live from the database, so anything you click sticks</p>
@@ -305,9 +319,26 @@ def _row(r, arts, job, run=0) -> str:
                 + ('overlaps the CV' if ov is False else 'overlap not checked')
                 + '</span>')
         docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">Cover letter</a> {warn}')
+    # The screening is the thing you asked for, so it goes in the row rather
+    # than behind a link to a file. <details> gives the minimise for free and
+    # keeps working with JavaScript off. Open by default: you clicked Screen
+    # to read it, and a collapsed answer is one more click for no reason.
+    screening = ""
     if "screen" in arts:
         v = arts["screen"]["summary"] or "screened"
-        docs.append(f'<a href="/open?path={_h.escape(quote(str(arts["screen"]["path"])), quote=True)}">Screening</a> <span class="rating">{_h.escape(v)}</span>')
+        body = (arts["screen"].get("body") or "").strip()
+        if body:
+            verdict_class = ("skip" if v.upper().startswith("SKIP")
+                             else "apply" if v.upper().startswith("APPLY") else "")
+            screening = (
+                f'<details class="screening" open><summary>'
+                f'<span class="v {verdict_class}">{_h.escape(v.replace("_", " "))}</span>'
+                f'<span class="lbl">screening</span></summary>'
+                f'<div class="md">{_md(body)}</div></details>')
+        else:
+            docs.append(
+                f'<a href="/open?path={_h.escape(quote(str(arts["screen"]["path"])), quote=True)}">'
+                f'Screening</a> <span class="rating">{_h.escape(v)}</span>')
 
     # The static page warns when a source gives no description; the served one
     # did not, and that is the page with the money buttons on it.
@@ -352,6 +383,7 @@ def _row(r, arts, job, run=0) -> str:
         # the first ever appeared.
         + "".join(f'<div class="note">{_h.escape(n)}</div>' for n in notes)
         + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
+        + screening
         + '<div class="acts">'
         + b("screen", "Screen", "primary")
         + b("cv", "CV")

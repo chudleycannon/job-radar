@@ -376,17 +376,13 @@ def _record(con, job, d: Path, log: str) -> None:
             verdict = "NEEDS_THE_ADVERT"
         store.add_artifact(con, uid, "screen", body if body.exists() else "",
                            summary=verdict)
-        if verdict.upper().startswith("SKIP"):
-            # "Too senior for you today" and "wrong forever" are different
-            # things, and skipped is a terminal state, so the screen does not
-            # apply it. It used to write "interested" instead, which showed a
-            # role the tool had just told you to skip under an Interested
-            # pill. Leave the status where the person put it; attach the note.
-            cur = con.execute("SELECT status FROM role_state WHERE uid=?",
-                              (uid,)).fetchone()
-            store.set_status(con, uid, (cur["status"] if cur else "new"),
-                             note=f"screened: {verdict}. Read screening.md "
-                                  f"before skipping.")
+        # No note is written. It used to say "screened: SKIP, read
+        # screening.md before skipping", which is a message telling you to go
+        # and open a file whose entire text is now three lines below it in the
+        # database. The dashboard shows the screening itself instead.
+        #
+        # The status is also left where the person put it: a SKIP verdict is
+        # an opinion, and skipped is a terminal state that hides the role.
 
     elif kind == "cv":
         rating = None
