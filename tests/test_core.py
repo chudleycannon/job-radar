@@ -1080,18 +1080,29 @@ def test_the_dashboard_survives_a_limited_scan():
     assert len(interactive._rows(con)) == 6
 
 
-def test_the_new_tab_reflects_the_current_run():
+def test_new_survives_a_second_scan_the_same_day():
+    """Keyed on the run number, a rescan the same afternoon bumped the counter
+    and every role from the morning stopped being new: the answer to "what
+    arrived today" became zero while twenty-one things had genuinely arrived.
+    Three scans ran on one real day and the count has to hold across all of
+    them."""
     from jobradar import store
     from jobradar.output import interactive
     con = store.connect(":memory:")
     store.set_meta(con, "runs", "4")
-    for uid, run in (("a", 4), ("b", 3)):
+    rows = [("a", "2026-08-20", 4), ("b", "2026-08-19", 3), ("c", "2026-08-20", 6)]
+    for uid, first, run in rows:
         con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
                     "first_seen,last_seen,first_run) VALUES "
-                    "(?,?,?,?,?,?,'2026-08-20','2026-08-20',?)",
-                    (uid, "C", "T", uid, "London", "greenhouse", run))
+                    "(?,?,?,?,?,?,?,'2026-08-20',?)",
+                    (uid, "C", "T", uid, "London", "greenhouse", first, run))
     html = interactive.render(con)
-    assert html.count('data-new="1"') == 1 and 'data-f="new"' in html
+    assert html.count('data-new="1"') == 2, "both of today's should be new"
+    assert 'data-f="new"' in html
+    # and bumping the counter, which is what a rescan does, changes nothing
+    store.set_meta(con, "runs", "9")
+    assert interactive.render(con).count('data-new="1"') == 2
+    assert len(store.new_today(con)) == 2
 
 
 def test_adding_the_same_source_twice_is_honest_and_idempotent():

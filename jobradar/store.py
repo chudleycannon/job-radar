@@ -178,10 +178,27 @@ LIVE_WINDOW_DAYS = 14
 LIVE_SQL = (f"r.last_seen >= date((SELECT MAX(last_seen) FROM roles), "
             f"'-{LIVE_WINDOW_DAYS} days')")
 
+# "New" means first seen on the most recent scan DATE, not on the most recent
+# run NUMBER.
+#
+# Keyed on the run number, a second scan the same afternoon bumped the counter
+# and every role from the morning stopped being new, so the answer to "what
+# arrived today" became zero while twenty-one things had genuinely arrived.
+# Rescanning is normal, and a person rescanning should see the same answer,
+# not lose it. The date is what they mean by "today".
+NEW_SQL = "r.first_seen = (SELECT MAX(last_seen) FROM roles)"
+
 
 def current_run(con) -> int:
     """The run number the last completed scan wrote."""
     return int(get_meta(con, "runs", "0"))
+
+
+def new_today(con) -> set[str]:
+    """Roles first seen on the latest scan date. Stable across rescans."""
+    _ensure_columns(con)
+    return {r["uid"] for r in con.execute(
+        f"SELECT uid FROM roles r WHERE {NEW_SQL}")}
 
 
 def new_since_last_run(con, uids: list[str]) -> set[str]:

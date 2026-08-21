@@ -629,11 +629,10 @@ def cmd_list(args) -> int:
             where.append("COALESCE(s.status,'new') NOT IN "
                          "('rejected','withdrawn','skipped','closed')")
         if args.new:
-            # Roles first seen on the most recent scan. This is the question a
-            # daily user actually has, and until now the only answer was a
-            # count printed by `scan` that scrolled away.
-            where.append("r.first_run = ?")
-            params.append(store.current_run(con))
+            # Roles first seen on the most recent scan date. This is the
+            # question a daily user actually has, and until now the only
+            # answer was a count printed by `scan` that scrolled away.
+            where.append(store.NEW_SQL)
         elif not args.all:
             # Same window the dashboard uses, so the two views agree. Without
             # it `list` accumulated every role ever seen and reported roles

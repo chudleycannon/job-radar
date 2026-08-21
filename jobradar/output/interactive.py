@@ -210,7 +210,9 @@ def _rows(con):
 
 def render(con) -> str:
     rows = _rows(con)
-    run = store.current_run(con)
+    # Keyed on the scan date rather than the run number, so a second scan the
+    # same day does not empty the New tab.
+    run = store.new_today(con)
     arts = {}
     for a in con.execute("SELECT * FROM artifacts ORDER BY id"):
         arts.setdefault(a["uid"], {})[a["kind"]] = dict(a)
@@ -224,7 +226,7 @@ def render(con) -> str:
     # "What changed since yesterday" is the whole point of running this daily,
     # and the count was previously only ever a line of stdout that scrolled
     # away. first_run is in the database already; this surfaces it.
-    fresh = sum(1 for r in rows if r["first_run"] and r["first_run"] == run)
+    fresh = sum(1 for r in rows if r["uid"] in run)
     _new_count = f'<span class="n">{fresh}</span>' if fresh else ""
 
     sec = Counter((r["sector"] or "other") for r in rows)
@@ -329,7 +331,7 @@ def _row(r, arts, job, run=0) -> str:
         f'<div class="row{" settled" if settled else ""}" data-uid="{_h.escape(r["uid"], quote=True)}" '
         f'data-status="{_h.escape(r["status"], quote=True)}" '
         f'data-pay="{1 if paid else 0}" '
-        f'data-new="{1 if r["first_run"] and r["first_run"] == run else 0}" '
+        f'data-new="{1 if r["uid"] in run else 0}" '
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
         f'data-mode="{_h.escape(r["work_mode"] or "unstated", quote=True)}" '
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '
