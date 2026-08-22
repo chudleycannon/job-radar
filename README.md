@@ -514,16 +514,23 @@ generic agent:
 | NHS Jobs, Serco and Thales (Phenom), Transport for London (SuccessFactors), Metro Bank (Avature), OSB Group (iCIMS) | allowed |
 | **LinkedIn** (`jobs-guest` endpoint) | **`Disallow: /`** |
 
-So the six bundled LinkedIn searches fetch a path LinkedIn's robots.txt tells
-crawlers not to. They are public pages served without a login, and this reads
+So the bundled LinkedIn source fetches a path LinkedIn's robots.txt tells
+crawlers not to. It is one entry that gets expanded into one search per job
+title you configure, so the request count follows your `titles.include` rather
+than being fixed. They are public pages served without a login, and this reads
 them at a handful of requests per run rather than at crawl scale, but that
 does not make it permitted.
 
+`enrich` then fetches the full posting for each LinkedIn result it kept, one
+request per role, on the same endpoint family and under the same caveat. That
+is the larger share of the traffic, not the searches.
+
 **What that means for you.** LinkedIn may block the IP you run this from, and
 they take a harder line on scraping than most. If that matters to you, delete
-the six `linkedin` entries from `sources/sources.json`, or set
-`sources.use_bundled: false` and list your own. Everything else in the tool
-works without them.
+the single entry with `"platform": "linkedin"` from `sources/sources.json`, or
+set `sources.use_bundled: false` and list your own. `scan --no-enrich` turns
+off the per-role fetch on its own. Everything else in the tool works without
+any of it.
 
 If you are running this at work, on shared infrastructure, or anywhere the
 consequences are not purely yours, read that table before you press go.
