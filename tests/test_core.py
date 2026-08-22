@@ -1992,6 +1992,97 @@ def test_open_only_serves_documents_this_tool_made():
         "the path has to be one this tool recorded"
 
 
+def test_ranking_writes_scores_for_the_reply_the_prompt_asks_for():
+    """The whole path, because testing the pieces separately is what let this
+    ship: the prompt was changed to ask for "role" so a posting could not name
+    another role's id, and the parser was left filtering on "id", so every
+    answer of every batch was discarded one function later. Both halves passed
+    their own tests. Reported by a stranger reading the source on GitHub,
+    which is the part that stings.
+
+    So this asserts against the literal shape the prompt asks for, and it
+    fails if the prompt and the parser ever disagree again.
+    """
+    import json, re, tempfile
+    from unittest import mock
+    from jobradar import rank, store
+    from jobradar.config import Config
+
+    # The shape is taken from the prompt itself rather than written out here,
+    # so changing the prompt without changing the parser breaks this test.
+    example = re.search(r"\[\{\{(.+?)\}\}\]", rank.PROMPT, re.S).group(1)
+    key = re.match(r'\s*"(\w+)"', example).group(1)
+    assert key in ("role", "id"), f"prompt asks for an unexpected key: {key}"
+
+    con = store.connect(":memory:")
+    for i in (1, 2):
+        con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                    "description,first_seen,last_seen,score) VALUES "
+                    "(?,?,'EM',?,'London','greenhouse',?,'2026-08-22',"
+                    "'2026-08-22',70)",
+                    (f"uid{i}" + "0" * 12, f"Co{i}", f"https://x/{i}", "x" * 900))
+
+    d = Path(tempfile.mkdtemp())
+    (d / "cv.txt").write_text("Callum. Engineering manager, 8 years." * 20,
+                              encoding="utf-8")
+    cfg = Config(titles_include=["engineering manager"], cv_path=str(d / "cv.txt"))
+
+    rows = rank.candidates(con)
+    assert len(rows) == 2
+
+    reply = json.dumps([{key: 1, "fit": 82, "why": "strong match"},
+                        {key: 2, "fit": 31, "why": "wrong domain"}])
+
+    class Fake:
+        returncode = 0
+        stdout = reply
+        stderr = ""
+
+    with mock.patch.object(rank.subprocess, "run", lambda *a, **k: Fake()), \
+         mock.patch("jobradar.runner.claude_bin", lambda: "/bin/true"):
+        scored = rank.rank(con, cfg, rows)
+
+    assert scored == 2, f"the parser discarded the reply the prompt asked for ({scored}/2)"
+    got = {r["company"]: (r["fit"], r["fit_why"])
+           for r in con.execute("SELECT company,fit,fit_why FROM roles")}
+    assert got["Co1"] == (82, "strong match"), got
+    assert got["Co2"] == (31, "wrong domain"), got
+
+
+def test_a_batch_answered_but_unusable_is_an_error_not_a_zero():
+    """When the parser was silently dropping everything, the run finished,
+    reported nothing scored, and gave no reason. A model that answers in a
+    shape nothing can use is a defect worth surfacing."""
+    import json, tempfile
+    from unittest import mock
+    from jobradar import rank, store
+    from jobradar.config import Config
+
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "description,first_seen,last_seen,score) VALUES "
+                "('u'+'0'*15,'Co','EM','https://x','London','greenhouse',?,"
+                "'2026-08-22','2026-08-22',70)", ("x" * 900,))
+
+    d = Path(tempfile.mkdtemp())
+    (d / "cv.txt").write_text("Callum. Engineering manager." * 30, encoding="utf-8")
+    cfg = Config(titles_include=["engineering manager"], cv_path=str(d / "cv.txt"))
+
+    class Fake:
+        returncode = 0
+        stdout = json.dumps([{"slot": 1, "fit": 80, "why": "nope"}])
+        stderr = ""
+
+    with mock.patch.object(rank.subprocess, "run", lambda *a, **k: Fake()), \
+         mock.patch("jobradar.runner.claude_bin", lambda: "/bin/true"):
+        try:
+            rank.rank(con, cfg, rank.candidates(con))
+        except rank.CallFailed as e:
+            assert "none could be matched" in str(e) and "slot" in str(e)
+            return
+    raise AssertionError("an unusable answer must not pass as zero scored")
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

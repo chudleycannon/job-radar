@@ -188,6 +188,18 @@ class CallFailed(RuntimeError):
 
 
 def _parse(stdout: str) -> list[dict]:
+    """Pull the array out of the reply. Shape checking belongs to the caller.
+
+    This used to drop anything without an "id" key, left over from when the
+    prompt asked for one. The prompt was changed to ask for "role" so a
+    posting could not name another role's id, and this filter was not, so it
+    silently discarded every answer of every batch: a correct reply from the
+    model, thrown away by a stale filter one function later.
+
+    So it no longer second-guesses the shape. `rank` holds the mapping from
+    position to role and is the only thing that can say whether an answer is
+    usable, which is where that decision now lives.
+    """
     text = (stdout or "").strip()
     a, b = text.find("["), text.rfind("]")
     if a < 0 or b < a:
@@ -196,7 +208,7 @@ def _parse(stdout: str) -> list[dict]:
         rows = json.loads(text[a:b + 1])
     except json.JSONDecodeError:
         return []
-    return [d for d in rows if isinstance(d, dict) and d.get("id")]
+    return [d for d in rows if isinstance(d, dict)]
 
 
 def candidates(con, refresh: bool = False) -> list:
@@ -242,9 +254,14 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
             # and the roles not reached keep fit -1, so re-running later picks
             # up exactly where this left off rather than starting again.
             raise
+        applied = 0
         for d in out:
+            # "role" is what the prompt asks for. "id" is accepted because a
+            # model handed the older wording still answers that way, and
+            # dropping those silently is exactly the fault this replaced.
+            raw = d.get("role", d.get("id"))
             try:
-                pos = int(d.get("role", d.get("id", 0)))
+                pos = int(raw)
             except (TypeError, ValueError):
                 continue
             uid = by_pos.get(pos)
@@ -254,6 +271,7 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
             if not uid or pos in seen_pos:
                 continue
             seen_pos.add(pos)
+            applied += 1
             try:
                 fit = max(0, min(100, int(float(d.get("fit", 0)))))
             except (TypeError, ValueError):
@@ -261,6 +279,13 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
             con.execute("UPDATE roles SET fit=?, fit_why=? WHERE uid=?",
                         (fit, str(d.get("why", ""))[:400], uid))
             done += 1
+        if out and not applied:
+            raise CallFailed(
+                f"the model answered {len(out)} role(s) and none could be "
+                f"matched to this batch. Keys seen: "
+                f"{sorted({k for d in out for k in d})}. Expected 'role' with "
+                f"a position between 1 and {len(chunk)}.")
+
         if on_batch:
             # `done`, not the batch index. Reporting the index meant a run
             # where every call failed still counted up to "5/5 scored".
