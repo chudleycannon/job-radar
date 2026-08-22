@@ -123,12 +123,33 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 con.close()
         if path.startswith("/open"):
+            # Checked like a POST. It is a GET, but it runs `open -R` on a
+            # path from the query string, so any page in the browser could
+            # have pointed it at anything on the disk.
+            if not self._same_origin():
+                return self._json(
+                    {"ok": False, "error": "cross-origin request refused"}, 403)
             # Reveal a generated document in Finder rather than serving it.
             import subprocess
             from urllib.parse import parse_qs, unquote
             q = parse_qs(urlparse(self.path).query)
             target = (q.get("path") or [""])[0]
             p = Path(unquote(target)) if target else None
+            # Only documents this tool made. An allowlist by construction:
+            # the path has to be one already recorded in `artifacts`, so no
+            # amount of traversal in the query string reaches anything else.
+            if p is not None:
+                con = store.connect(self.db_path)
+                try:
+                    known = con.execute(
+                        "SELECT 1 FROM artifacts WHERE path=? LIMIT 1",
+                        (str(p),)).fetchone()
+                finally:
+                    con.close()
+                if not known:
+                    return self._json(
+                        {"ok": False,
+                         "error": "that is not a document this tool made"}, 403)
             if p and not p.exists():
                 # The file moved or was deleted. The text is in the database,
                 # so show that rather than telling someone a document they
@@ -167,18 +188,33 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "not found"}, 404)
         self.send_error(404)
 
+    def _expected_hosts(self) -> set[str]:
+        """The names this server is allowed to be reached by."""
+        port = self.server.server_address[1]
+        return {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+
     def _same_origin(self) -> bool:
-        """Reject cross-site posts.
+        """Reject cross-site posts, and reject rebinding.
 
         This server spends money. Without a check, any page open in the same
         browser could POST to /api/generate, and a text/plain body is a simple
         request so there is no preflight to stop it.
+
+        Comparing Origin to Host was not enough. Both headers are attacker
+        controlled together: a page on evil.example that has rebound its own
+        DNS to 127.0.0.1 sends Origin: http://evil.example and Host:
+        evil.example, they match, and the request went through to
+        /api/generate. So Host is checked against what this server actually
+        bound to, and Origin against the same set.
         """
+        host = self.headers.get("Host", "")
+        allowed = self._expected_hosts()
+        if host not in allowed:
+            return False
         origin = self.headers.get("Origin")
         if origin is None:
             return True                      # curl and same-origin form posts
-        host = self.headers.get("Host", "")
-        return origin.split("//")[-1] == host
+        return origin.split("//")[-1] in allowed
 
     def do_POST(self):
         if not self._same_origin():

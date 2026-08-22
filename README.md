@@ -394,6 +394,43 @@ git pull https://github.com/maccydee/job-radar main   # a fork
 `sources/sources.json` carries the date it was last checked in its `meta`
 block if you want to see for yourself.
 
+## What a job posting can and cannot do to you
+
+Descriptions come from 296 third-party servers, and anyone can post a job to a
+job board. That text ends up in two places that matter: a prompt, and the
+working directory of a subprocess that can write files. So it is treated as
+hostile input rather than as content.
+
+- **It is fenced and labelled.** The description sits between explicit markers
+  in `job-description.md`, the markers are stripped out of the text first so a
+  posting cannot close the fence, and every prompt says that anything inside
+  is a claim about a job and never an instruction.
+- **The subprocess cannot reach your skills.** It used to be handed
+  `--add-dir ~/.claude/skills` alongside `--permission-mode acceptEdits`,
+  which meant write access to every skill you have. The skills a job needs are
+  copied into that job's own folder instead, so a compromise can only damage a
+  directory that exists for one role.
+- **Bash is narrowed to one script**, the writing linter, rather than any
+  Python at all.
+- **Ranking numbers roles by position**, not by an id the model could be
+  talked into forging, and each position may be answered once. A posting that
+  tries to score a different role gets ignored and named in the output.
+- **Links are scheme-checked.** The apply URL comes from third-party JSON and
+  on several platforms is employer-supplied, so `javascript:` and `data:` are
+  dropped rather than rendered.
+
+What that does not do is make an agent immune to persuasion. Prompt injection
+has no complete fix, and a determined posting may still get a model to say
+something odd in a draft you are going to read anyway. The point of the
+measures above is that the blast radius is one job folder and one document,
+not your skills, your other roles, or your machine.
+
+**The dashboard binds to 127.0.0.1 and checks that.** It validates the Host
+header against the address it actually bound to rather than against the
+Origin, because both headers are attacker-controlled together under DNS
+rebinding and used to agree with each other. `/open` will only reveal files
+this tool recorded making.
+
 ## What this does not cover
 
 Worth saying plainly, because a tool that quietly fails at something looks
