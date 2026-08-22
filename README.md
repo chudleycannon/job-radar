@@ -69,7 +69,7 @@ The trade is coverage. This only sees employers on the list, which is why
 
 ## What it does
 
-**Reads 296 employer boards** across Greenhouse, Ashby, Lever, Workday,
+**Reads 501 employer boards** across Greenhouse, Ashby, Lever, Workday,
 Workable, SmartRecruiters and LinkedIn's public endpoint. Mostly technology
 companies, plus a first pass at UK finance, industry, professional services,
 education, media and the public sector: Barclays, Lloyds, Santander, BP,
@@ -396,7 +396,7 @@ block if you want to see for yourself.
 
 ## What a job posting can and cannot do to you
 
-Descriptions come from 296 third-party servers, and anyone can post a job to a
+Descriptions come from 501 third-party servers, and anyone can post a job to a
 job board. That text ends up in two places that matter: a prompt, and the
 working directory of a subprocess that can write files. So it is treated as
 hostile input rather than as content.
@@ -440,12 +440,12 @@ broken rather than out of scope.
 white-collar hiring. Trades, care work and retail floor jobs largely do not
 work this way and are better served elsewhere.
 
-**Fields nobody has harvested employers for.** This is the real limit, and it
-is bigger than the one above. The bundled list is 211 technology companies out
-of 296. Hospitality is the clearest case: there are zero hospitality employers
-on the list, so a restaurant manager gets NHS service managers and technology
-roles that happen to be titled "General Manager". It is not that the sector is
-unreachable — Nando's is on Workday and Hilton is on Oracle, both of which
+**Fields with thin coverage.** The bundled list was 211 technology companies
+out of 296 and is now 245 out of 501, so more than half of it is something
+other than technology. Hospitality went from zero employers to twelve, legal
+from zero to ten, charity from one to six. That is better and it is still
+uneven: if you work in one of the smaller categories you will find it thin.
+It is not that those sectors are unreachable — Nando's is on Workday and Hilton is on Oracle, both of which
 this reads. Nobody has added them. `job-radar discover <employer> --add`
 takes about a minute per employer and does more for you than any setting in
 the config. Public policy is the same story: one UK government-sector board is

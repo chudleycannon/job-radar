@@ -66,19 +66,21 @@ actually exist in the bundled list:
 
 | sector | sources |
 |---|---|
-| `technology` | 211 |
-| `finance` | 38 |
-| `professional-services` | 12 |
-| `industry` | 10 |
-| `healthcare` | 4 |
-| `travel` | 4 |
-| `retail` | 3 |
-| `education` | 3 |
-| `telecoms` | 3 |
-| `media` | 3 |
-| `public-sector` | 3 |
+| `technology` | 245 |
+| `finance` | 55 |
+| `professional-services` | 27 |
+| `media` | 27 |
+| `healthcare` | 24 |
+| `retail` | 22 |
+| `industry` | 20 |
+| `public-sector` | 14 |
+| `telecoms` | 14 |
+| `travel` | 13 |
+| `education` | 13 |
+| `hospitality` | 12 |
+| `legal` | 10 |
+| `charity` | 6 |
 | `untagged` | 1 |
-| `charity` | 1 |
 
 A sector that is not in this table matches nothing, so you are left with only
 the untagged sources. Check with `job-radar coverage`.
