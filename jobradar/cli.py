@@ -88,7 +88,11 @@ def cmd_scan(args) -> int:
     # The database is the source of truth for what you already did about a
     # role. It beats whatever the scanner thinks of it today.
     from . import store
-    con = store.connect(args.db)
+    # A dry run touches no file it was not pointed at. It used to create the
+    # database anyway, empty, purely because connecting creates it, which made
+    # "this writes nothing" untrue in the one mode people use to check exactly
+    # that before trusting the tool.
+    con = store.connect(":memory:" if args.dry_run else args.db)
     mig = {"roles": 0, "statuses": 0} if args.dry_run else store.migrate(con)
     if mig["roles"] or mig["statuses"]:
         _say(f"  migrated {mig['roles']} roles and {mig['statuses']} statuses "

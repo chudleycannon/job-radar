@@ -66,20 +66,20 @@ actually exist in the bundled list:
 
 | sector | sources |
 |---|---|
-| `technology` | 245 |
-| `finance` | 55 |
-| `professional-services` | 27 |
-| `media` | 27 |
-| `healthcare` | 24 |
-| `retail` | 22 |
-| `industry` | 20 |
-| `public-sector` | 14 |
-| `telecoms` | 14 |
-| `travel` | 13 |
-| `education` | 13 |
-| `hospitality` | 12 |
-| `legal` | 10 |
-| `charity` | 6 |
+| `technology` | 261 |
+| `finance` | 75 |
+| `healthcare` | 45 |
+| `industry` | 43 |
+| `professional-services` | 35 |
+| `media` | 31 |
+| `telecoms` | 26 |
+| `public-sector` | 25 |
+| `retail` | 24 |
+| `education` | 24 |
+| `legal` | 17 |
+| `travel` | 16 |
+| `hospitality` | 15 |
+| `charity` | 15 |
 | `untagged` | 1 |
 
 A sector that is not in this table matches nothing, so you are left with only

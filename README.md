@@ -69,7 +69,7 @@ The trade is coverage. This only sees employers on the list, which is why
 
 ## What it does
 
-**Reads 501 employer boards** across Greenhouse, Ashby, Lever, Workday,
+**Reads 651 employer boards** across Greenhouse, Ashby, Lever, Workday,
 Workable, SmartRecruiters and LinkedIn's public endpoint. Mostly technology
 companies, plus a first pass at UK finance, industry, professional services,
 education, media and the public sector: Barclays, Lloyds, Santander, BP,
@@ -396,7 +396,7 @@ block if you want to see for yourself.
 
 ## What a job posting can and cannot do to you
 
-Descriptions come from 501 third-party servers, and anyone can post a job to a
+Descriptions come from 651 third-party servers, and anyone can post a job to a
 job board. That text ends up in two places that matter: a prompt, and the
 working directory of a subprocess that can write files. So it is treated as
 hostile input rather than as content.
@@ -441,7 +441,7 @@ white-collar hiring. Trades, care work and retail floor jobs largely do not
 work this way and are better served elsewhere.
 
 **Fields with thin coverage.** The bundled list was 211 technology companies
-out of 296 and is now 245 out of 501, so more than half of it is something
+out of 296 and is now 261 out of 651, so more than half of it is something
 other than technology. Hospitality went from zero employers to twelve, legal
 from zero to ten, charity from one to six. That is better and it is still
 uneven: if you work in one of the smaller categories you will find it thin.
