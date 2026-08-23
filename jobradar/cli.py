@@ -543,22 +543,30 @@ def cmd_validate(args) -> int:
         srcs = srcs[: args.limit]
     _say(f"Validating {len(srcs)} sources...")
 
-    rows, dead, mismatch = [], [], []
+    rows, dead, mismatch, unread = [], [], [], []
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=min(6, cfg.concurrency)) as ex:
         for i, row in enumerate(ex.map(validate_source, srcs), 1):
             rows.append(row)
             if row["verdict"] == "dead":
                 dead.append(row)
+            elif row["verdict"] == "unreachable":
+                unread.append(row)
             elif row["verdict"] == "mismatch":
                 mismatch.append(row)
             if i % 25 == 0:
                 _say(f"  {i}/{len(srcs)}")
 
-    _say(f"\n  live: {len(rows) - len(dead)}   dead: {len(dead)}   "
+    _say(f"\n  live: {len(rows) - len(dead) - len(unread)}   "
+         f"dead: {len(dead)}   unreachable: {len(unread)}   "
          f"identity mismatch: {len(mismatch)}")
     for r in dead[:40]:
         _say(f"  DEAD      {r['company']} <- {r['url']}")
+    for r in unread[:20]:
+        _say(f"  UNREAD    {r['company']}: {r['note']}")
+    if unread:
+        _say(f"  {len(unread)} could not be read and are left alone. They are "
+             f"not dead; try again later.")
     for r in mismatch[:40]:
         _say(f"  MISMATCH  {r['company']}: {r['note']}")
 
@@ -575,17 +583,18 @@ def cmd_validate(args) -> int:
              "no file to rewrite without one.")
     if args.prune and args.file:
         # A prune has to be able to tell "these boards are gone" from "this
-        # machine has no network". Every failed fetch counts as zero postings
-        # and therefore as dead, so behind a broken proxy the whole list is
-        # dead and the file is emptied -- then stamped with today's date, so
-        # the staleness warning goes quiet about it too. This runs unattended
-        # every Sunday in Actions, on runners the README itself says get
-        # throttled sooner than a laptop.
+        # machine has no network". A failed fetch is now its own verdict and
+        # is never pruned, which is the real fix. This threshold stays as the
+        # second line: if a platform starts answering 200 with an empty array
+        # instead of an error, its whole tenancy looks dead at once and no
+        # per-request check would catch it. This runs unattended every Sunday
+        # in Actions, on runners the README itself says get throttled sooner
+        # than a laptop.
         share = len(dead) / max(1, len(rows))
         if share > 0.25 and len(dead) > 5:
             _say(f"\n  REFUSING TO PRUNE: {len(dead)} of {len(rows)} sources "
                  f"({share:.0%}) came back empty.")
-            _say("  That is a network or rate-limit problem, not that many "
+            _say("  That is a platform or rate-limit problem, not that many "
                  "boards dying at once. Nothing was changed.")
             _say("  Re-run when the connection is good, or use --force-prune "
                  "if the list really has collapsed.")

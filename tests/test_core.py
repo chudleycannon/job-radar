@@ -1126,7 +1126,7 @@ def test_keyword_sources_are_probed_not_declared_dead():
 
     def fake(s):
         calls.append(s.url)
-        return (7, [{"title": "t"}])
+        return (7, [{"title": "t"}], None)
     old, disc.count_jobs = disc.count_jobs, fake
     try:
         row = disc.validate_source(src)
@@ -2153,3 +2153,36 @@ def test_the_gate_leaves_alone_anywhere_you_can_already_work():
               description="No visa sponsorship is available.")
     assert sponsorship_gate(us, _cfg(need_sponsorship=[]))[0] is True
     assert us.flags == []
+
+
+
+def test_a_board_we_could_not_read_is_not_called_dead():
+    """A 429 used to come back as zero postings, which `validate` read as a
+    dead board and `--prune` then deleted. Workable answers 429 readily, so
+    this was quietly removing real employers one at a time."""
+    from jobradar.models import Source
+    import jobradar.discover as disc
+
+    src = Source(company="Contentful", platform="workable",
+                 url="https://apply.workable.com/api/v1/widget/accounts/x")
+
+    def throttled(s, timeout=25):
+        return (0, [], "rate limited (HTTP 429)")
+
+    old, disc.count_jobs = disc.count_jobs, throttled
+    try:
+        row = disc.validate_source(src)
+    finally:
+        disc.count_jobs = old
+    assert row["verdict"] == "unreachable"
+    assert "429" in row["note"]
+
+    def genuinely_empty(s, timeout=25):
+        return (0, [], None)
+
+    old, disc.count_jobs = disc.count_jobs, genuinely_empty
+    try:
+        row = disc.validate_source(src)
+    finally:
+        disc.count_jobs = old
+    assert row["verdict"] == "dead"

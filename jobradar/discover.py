@@ -231,17 +231,26 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list]:
+def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
     """Fetch and parse. Job count is the only reliable liveness signal:
     several of these platforms answer 200 with an empty array for tokens that
     do not exist, so status codes prove nothing.
+
+    The third value separates "this board has no postings" from "we could not
+    read it". They used to be the same answer, and the difference matters
+    every time: a 429 from a busy platform was being reported as a dead board,
+    and `validate --prune` would then delete a real employer. Callers that
+    only want the count can ignore it, but nothing may treat it as zero.
     """
     from .fetch import fetch_one
     res = fetch_one(src, timeout=timeout, retries=1, user_agent=UA)
     if not res.ok:
-        return 0, []
+        why = res.error or (f"HTTP {res.status}" if res.status else "no answer")
+        if res.status in (429, 503) or res.throttled:
+            why = f"rate limited ({why})"
+        return 0, [], why
     jobs = adapters.parse(res.payload, src)
-    return len(jobs), jobs
+    return len(jobs), jobs, None
 
 
 def _norm(s: str) -> str:
@@ -381,9 +390,11 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
         seen_api.add(api)
         f = Found(company=name, url=api, platform=platform, token=token, domain=domain)
         if validate:
-            n, jobs = count_jobs(f.to_source())
+            n, jobs, err = count_jobs(f.to_source())
             f.live_jobs = n
-            if n == 0:
+            if err:
+                f.note = f"could not be read: {err}"
+            elif n == 0:
                 f.note = "responded but published no postings"
             else:
                 f.identity, f.note = verify_identity(jobs, domain, name, f.platform)
@@ -438,20 +449,28 @@ def validate_source(src: Source) -> dict:
         from urllib.parse import quote_plus
         probe = replace(src, url=src.url.format(keyword=quote_plus(PROBE_KEYWORD)),
                         keyword_template=False)
-        n, _ = count_jobs(probe)
+        n, _, err = count_jobs(probe)
         return {
             "company": src.company,
             "url": src.url,
             "platform": src.platform,
             "live_jobs": n,
-            "verdict": "dead" if n == 0 else "live",
-            "note": "keyword search, probed with "
-                    f"'{PROBE_KEYWORD}'; identity not checked",
+            "verdict": "unreachable" if err else ("dead" if n == 0 else "live"),
+            "note": f"could not be read: {err}" if err else
+                    ("keyword search, probed with "
+                     f"'{PROBE_KEYWORD}'; identity not checked"),
         }
 
-    n, jobs = count_jobs(src)
-    verdict, note = ("dead", "no postings returned") if n == 0 else \
-        verify_identity(jobs, src.domain, src.company, src.platform)
+    n, jobs, err = count_jobs(src)
+    if err:
+        # Not a verdict on the board. Something between here and it failed,
+        # and calling that dead is how a live employer gets pruned.
+        verdict, note = "unreachable", f"could not be read: {err}"
+    elif n == 0:
+        verdict, note = "dead", "no postings returned"
+    else:
+        verdict, note = verify_identity(jobs, src.domain, src.company,
+                                        src.platform)
     return {
         "company": src.company,
         "url": src.url,
