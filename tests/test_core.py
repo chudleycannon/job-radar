@@ -1719,6 +1719,9 @@ def test_the_installer_needs_nothing_installed():
     cannot import the package it is about to install or any dependency of it.
     A single stray import turns "one command" back into a traceback."""
     import ast
+    import pytest
+    if not hasattr(sys, "stdlib_module_names"):
+        pytest.skip("needs 3.10, which the package requires anyway")
     src = Path(__file__).resolve().parent.parent / "install.py"
     tree = ast.parse(src.read_text(encoding="utf-8"))
     std = set(sys.stdlib_module_names)
@@ -2098,3 +2101,55 @@ if __name__ == "__main__":
             traceback.print_exc()
     print(f"\n{len(fns) - bad}/{len(fns)} passed")
     sys.exit(1 if bad else 0)
+
+
+# -------------------------------------------------------------- sponsorship
+def test_a_stated_refusal_to_sponsor_hides_a_role_you_cannot_take():
+    """The one case where silence and a "no" have to be told apart. A US role
+    that says it will not sponsor is unavailable to someone who needs a visa,
+    so it goes; one that says nothing is still worth a question."""
+    from jobradar.screen import sponsorship_gate
+
+    cfg = _cfg(relocate_to=["US"], need_sponsorship=["US"])
+
+    refuses = _job(location="New York, NY", country="US",
+                   description="Applicants must be authorized to work in the "
+                               "United States. We do not provide visa "
+                               "sponsorship for this position.")
+    assert sponsorship_gate(refuses, cfg)[0] is False
+    assert "rules out sponsorship" in sponsorship_gate(refuses, cfg)[1]
+
+    silent = _job(location="Austin, TX", country="US",
+                  description="We are hiring an engineering manager.")
+    keep, _ = sponsorship_gate(silent, cfg)
+    assert keep is True
+    assert any("not stated" in f for f in silent.flags)
+
+
+def test_an_offer_to_sponsor_is_kept_and_flagged_once():
+    from jobradar.screen import sponsorship_gate
+
+    cfg = _cfg(relocate_to=["US"], need_sponsorship=["US"])
+    j = _job(location="San Francisco, CA", country="US",
+             description="We are happy to sponsor visas for the right "
+                         "candidate, including H-1B transfers.")
+    assert sponsorship_gate(j, cfg)[0] is True
+    assert j.flags.count("sponsorship offered") == 1
+    sponsorship_gate(j, cfg)                       # a second pass must not double up
+    assert j.flags.count("sponsorship offered") == 1
+
+
+def test_the_gate_leaves_alone_anywhere_you_can_already_work():
+    """A London role is not affected by needing a US visa, and neither is
+    anything at all when the list is empty."""
+    from jobradar.screen import sponsorship_gate
+
+    home = _job(location="London, UK", country="GB",
+                description="No visa sponsorship is available.")
+    assert sponsorship_gate(home, _cfg(need_sponsorship=["US"]))[0] is True
+    assert home.flags == []
+
+    us = _job(location="New York, NY", country="US",
+              description="No visa sponsorship is available.")
+    assert sponsorship_gate(us, _cfg(need_sponsorship=[]))[0] is True
+    assert us.flags == []

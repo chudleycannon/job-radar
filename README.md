@@ -252,6 +252,7 @@ locations:
   countries: [UK]
   remote_ok: true
   relocate_to: [US, CA]
+  need_sponsorship: [US, CA]
   exclude: [Paris, Dublin]
 
 salary:

@@ -381,6 +381,43 @@ def work_rights(job: Job) -> str:
     return ""
 
 
+def sponsorship_gate(job: Job, cfg: Config) -> tuple[bool, str]:
+    """The same shape as the salary rule, for the same reason.
+
+    A role in a country you would need a visa for, whose posting says outright
+    it will not sponsor, is one you cannot take however well it fits. So a
+    stated refusal hides it.
+
+    Silence does not. Most postings say nothing about sponsorship, and
+    filtering on absence would throw away most of the market abroad, which is
+    exactly the mistake the salary floor exists to avoid. Those are kept and
+    marked, so the answer is a question worth asking rather than a role
+    quietly removed.
+    """
+    if not cfg.need_sponsorship:
+        return True, ""
+    where = _countries_in(job.location) or ({job.country} if job.country else set())
+    need = where & set(cfg.need_sponsorship)
+    if not need:
+        return True, ""
+
+    rights = work_rights(job)
+    if rights == "no sponsorship":
+        return False, "needs a visa and the posting rules out sponsorship"
+    if rights == "export control or clearance":
+        # Not a refusal to sponsor, but it stacks on one and a visa does not
+        # clear it. Kept, because many are open to anyone who can be cleared.
+        job.flags.append("export control or clearance, on top of needing a visa")
+    elif rights == "sponsorship offered":
+        # enrich() already flags this for every role. Only add it if it is not
+        # there, or a US role carried it twice.
+        if "sponsorship offered" not in job.flags:
+            job.flags.append("sponsorship offered")
+    else:
+        job.flags.append("sponsorship not stated, ask before you invest time")
+    return True, ""
+
+
 def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
     """Dealbreaker scan over the description. Returns (keep, hits)."""
     # Warn on a posting too thin to have been screened properly, but still run
@@ -489,6 +526,14 @@ def score(job: Job, cfg: Config) -> float:
     elif found & set(cfg.relocate_to):
         s += 8
         why.append("in " + ", ".join(sorted(found & set(cfg.relocate_to))) + ", relocation")
+
+    # Where you would need a visa, a posting that says it will sponsor is
+    # worth more than one that says nothing: the difference decides whether
+    # you can take the job at all.
+    if cfg.need_sponsorship and (found & set(cfg.need_sponsorship)) \
+            and "sponsorship offered" in job.flags:
+        s += 12
+        why.append("says it will sponsor")
 
     if job.salary.confirmed:
         # Publishing a figure is worth points, but only fully when the figure
@@ -629,6 +674,10 @@ def run(jobs: list[Job], cfg: Config) -> tuple[list[Job], dict[str, int]]:
         ok, hits = screen(j, cfg)
         if not ok:
             drop(f"dealbreaker: {', '.join(hits)}")
+            continue
+        ok, why = sponsorship_gate(j, cfg)
+        if not ok:
+            drop(why)
             continue
         score(j, cfg)
         kept.append(j)

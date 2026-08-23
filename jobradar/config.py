@@ -47,6 +47,9 @@ class Config:
     countries: list[str] = field(default_factory=list)
     remote_ok: bool = True
     relocate_to: list[str] = field(default_factory=list)
+    # Countries where you would need a visa. A role there that says outright
+    # it will not sponsor is one you cannot take, however good the fit.
+    need_sponsorship: list[str] = field(default_factory=list)
     exclude_locations: list[str] = field(default_factory=list)
 
     salary_floor: float | None = None
@@ -202,7 +205,8 @@ VALID_FORMATS = {"html", "json", "markdown", "md"}
 
 KNOWN_KEYS = {
     "titles": {"include", "exclude"},
-    "locations": {"countries", "remote_ok", "relocate_to", "exclude"},
+    "locations": {"countries", "remote_ok", "relocate_to", "exclude",
+                  "need_sponsorship"},
     "salary": {"floor", "currency"},
     "cv": {"path"},
     "sources": {"use_bundled", "countries", "extra"},
@@ -393,6 +397,8 @@ def load(path: str | os.PathLike | None = None) -> Config:
         countries=_countries(_as_list(loc.get("countries")), "locations.countries"),
         remote_ok=_bool(loc.get("remote_ok", True), "locations.remote_ok"),
         relocate_to=_countries(_as_list(loc.get("relocate_to")), "locations.relocate_to"),
+        need_sponsorship=_countries(_as_list(loc.get("need_sponsorship")),
+                                    "locations.need_sponsorship"),
         exclude_locations=_as_list(loc.get("exclude")),
         salary_floor=_num(sal.get("floor"), "salary.floor"),
         salary_currency=_currency(sal.get("currency"), "salary.currency"),

@@ -24,6 +24,12 @@ locations:
   remote_ok: true
   # Somewhere you would move to. Shown, but scored below home.
   relocate_to: []
+  # Countries where you would need a visa. A role in one of these that says
+  # outright it will not sponsor is dropped: you cannot take it however good
+  # the fit. A role that says it will sponsor is scored up. Silence is kept,
+  # flagged, and left for you to ask about. Leave empty if you can work
+  # anywhere you have listed above.
+  need_sponsorship: []
   # Never show roles here.
   exclude: []
 
