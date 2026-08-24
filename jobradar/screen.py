@@ -37,13 +37,13 @@ _COUNTRY_MARKERS = {
           r"northern ireland|\bbritain\b",
     "US": r"united states|\bu\.?s\.?a\.?\b|\bus\b|\bamericas?\b",
     "IE": r"\bireland\b(?!,? *north)",
-    "DE": r"\bgermany\b", "FR": r"\bfrance\b", "ES": r"\bspain\b",
+    "DE": r"\bgermany\b|\bdeutschland\b", "FR": r"\bfrance\b", "ES": r"\bspain\b",
     "NL": r"netherlands", "CA": r"\bcanada\b", "AU": r"\baustralia\b",
     "NZ": r"new zealand", "AE": r"\buae\b|united arab emirates",
     "SG": r"\bsingapore\b", "HK": r"hong kong", "IN": r"\bindia\b",
     "JP": r"\bjapan\b", "CN": r"\bchina\b", "PL": r"\bpoland\b",
     "PT": r"\bportugal\b", "SE": r"\bsweden\b", "CH": r"switzerland",
-    "IL": r"\bisrael\b", "BR": r"\bbrazil\b", "MX": r"\bmexico\b",
+    "IL": r"\bisrael\b", "BR": r"\bbrazil\b|\bbrasil\b", "MX": r"\bmexico\b",
     "ZA": r"south africa", "ID": r"\bindonesia\b", "TH": r"\bthailand\b",
     "MY": r"\bmalaysia\b", "PH": r"philippines", "IT": r"\bitaly\b",
     "BE": r"\bbelgium\b", "AT": r"\baustria\b", "DK": r"\bdenmark\b",
@@ -58,6 +58,13 @@ _US_STATE = re.compile(
     r",\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|"
     r"MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|"
     r"WA|WV|WI|WY|DC)\b"
+)
+
+# The twenty state codes that are also ISO 3166-1 country codes. Matching one
+# of these proves nothing on its own, so the city decides first.
+_AMBIGUOUS_STATE = re.compile(
+    r",\s*(AL|AR|CA|CO|DE|GA|ID|IL|IN|KY|LA|MD|ME|MO|MS|MT|NC|NE|PA|SC|SD|"
+    r"TN|VA)\b"
 )
 
 # Spelled out, too. "Birmingham, Alabama" and "Cambridge, Massachusetts" were
@@ -97,7 +104,7 @@ _CITY_HINTS = {
     "AE": r"\bdubai\b|abu dhabi", "IN": r"bangalore|bengaluru|hyderabad|mumbai|pune|gurgaon|noida",
     "JP": r"\btokyo\b", "CN": r"beijing|shanghai|shenzhen", "PL": r"warsaw|warszawa|krakow|krak\u00f3w|wroclaw|wroc\u0142aw|gdansk|gda\u0144sk|poznan|\bl\u00f3dz\b",
     "PT": r"\blisbon\b|lisboa|\bporto\b|\boporto\b|coimbra|\bbraga\b|\bfaro\b|aveiro|funchal", "SE": r"stockholm|gothenburg|g\u00f6teborg|malm\u00f6|\bmalmo\b", "CH": r"zurich|z\u00fcrich|geneva|gen\u00e8ve|basel|lausanne|zug\b",
-    "IL": r"tel aviv", "BR": r"sao paulo", "ZA": r"cape town|johannesburg",
+    "IL": r"tel aviv", "BR": r"s(?:a|\u00e3)o paulo|rio de janeiro", "ZA": r"cape town|johannesburg",
     "ID": r"jakarta", "TH": r"bangkok", "MY": r"kuala lumpur", "PH": r"manila",
     "IT": r"\bmilan\b|milano|\brome\b|\broma\b|turin|torino|bologna|florence|firenze|naples", "BE": r"brussels|bruxelles|antwerp|\bghent\b|leuven", "AT": r"\bvienna\b|\bwien\b|\bgraz\b|salzburg",
     "DK": r"copenhagen|k\u00f8benhavn|aarhus|\bodense\b", "NO": r"\boslo\b|bergen|trondheim", "FI": r"helsinki|espoo|tampere", "CZ": r"prague|praha|\bbrno\b",
@@ -135,6 +142,22 @@ def _country_of(location: str) -> str | None:
 
     for code, pat in _COUNTRY_MARKERS.items():
         if re.search(pat, low):
+            return code
+    # Twenty state codes are also country codes. "Berlin, DE" read as Delaware
+    # and "Toronto, CA" as California, so a German role and a Canadian one
+    # both arrived filed as US, a country the user may need a visa for.
+    #
+    # Simply letting the city win instead is worse: "Birmingham, AL" and
+    # "Reading, PA" would go to the UK city list, which is the bug that once
+    # marked 59 of 296 American roles as British. So the code counts as a
+    # country only when the city independently names that same country.
+    # Berlin corroborates DE, Toronto corroborates CA, Birmingham does not
+    # corroborate Albania.
+    amb = _AMBIGUOUS_STATE.search(raw)
+    if amb:
+        code = amb.group(1).upper()
+        pat = _CITY_HINTS.get(code)
+        if pat and re.search(pat, low):
             return code
     if _US_STATE.search(raw) or _US_STATE_NAME.search(low):
         return "US"

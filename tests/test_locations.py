@@ -1,0 +1,66 @@
+"""Where a posting is, which decides whether the user can take the job at all.
+
+Kept separate from test_core.py so a country rule can be added without
+touching the file every adapter's tests live in.
+"""
+
+from jobradar.screen import _countries_in, _country_of
+
+
+def test_a_state_code_that_is_also_a_country_lets_the_city_decide():
+    """Twenty US state codes are also ISO country codes, and the state check
+    ran first, so it answered before the city was ever consulted.
+
+    "Berlin, DE" came back as Delaware and "Toronto, CA" as California. Both
+    were then filed as US roles: a country the user may need a visa for, and
+    one they may have excluded outright."""
+    assert _countries_in("Berlin, DE") == {"DE"}
+    assert _countries_in("Toronto, CA") == {"CA"}
+    assert _countries_in("Munich, DE") == {"DE"}
+    assert _countries_in("Vancouver, CA") == {"CA"}
+
+
+def test_the_same_codes_still_read_as_states_when_the_city_is_american():
+    """The fix must not overshoot. San Francisco, CA is not Canada."""
+    for loc in ("San Francisco, CA", "Sacramento, CA", "Atlanta, GA",
+                "Chicago, IL", "Indianapolis, IN", "Los Angeles, CA"):
+        assert _countries_in(loc) == {"US"}, loc
+
+
+def test_an_ambiguous_code_needs_the_city_to_corroborate_it():
+    """Letting the city win outright was the wrong fix, and would have
+    reintroduced the bug it replaced.
+
+    "Birmingham, AL" and "Reading, PA" both hit the UK city list, so deferring
+    to the city would file two American roles as British, which is exactly
+    what once mislabelled 59 of 296 US roles. The code only counts as a
+    country when the city names that same country: Berlin corroborates DE,
+    Birmingham does not corroborate Albania."""
+    for loc in ("Birmingham, AL", "Reading, PA", "Bath, ME", "Manchester, NH"):
+        assert _country_of(loc) == "US", loc
+
+    # And with nothing on the city list either way, it stays a state.
+    assert _country_of("Wilmington, DE") == "US"
+    assert _country_of("Dover, DE") == "US"
+
+
+def test_unambiguous_state_codes_are_unaffected():
+    for loc in ("Austin, TX", "Seattle, WA", "Portland, OR", "Boston, MA"):
+        assert _countries_in(loc) == {"US"}, loc
+
+
+def test_countries_are_recognised_under_the_names_employers_write():
+    """A German employer posting in German writes Deutschland, and the
+    accented spelling of Sao Paulo is the usual one."""
+    assert _countries_in("Deutschland") == {"DE"}
+    assert _countries_in("São Paulo, BR") == {"BR"}
+    assert _countries_in("Sao Paulo") == {"BR"}
+    assert _countries_in("Rio de Janeiro") == {"BR"}
+
+
+def test_a_location_naming_nothing_stays_unknown():
+    """Unknown has to stay distinguishable from a country. "Remote" and
+    "EMEA" name no country, and guessing one would put a role in front of
+    someone who cannot take it."""
+    for loc in ("Remote", "EMEA", "Worldwide", "Anywhere", ""):
+        assert _countries_in(loc) == set(), loc
