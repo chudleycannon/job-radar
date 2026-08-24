@@ -3638,7 +3638,7 @@
    "platform": "ashby"
   },
   {
-   "company": "ERP\u2022AI",
+   "company": "ERP•AI",
    "url": "https://api.ashbyhq.com/posting-api/job-board/erp.ai?includeCompensation=true",
    "platform": "ashby"
   },
@@ -13238,6 +13238,20 @@
    "domain": "metrobankonline.co.uk"
   },
   {
+   "company": "Tesco",
+   "url": "https://careers.tesco.com/en_GB/careersmarketplace/SearchJobs/?jobRecordsPerPage=50",
+   "platform": "avature",
+   "sector": "retail",
+   "country": "UK"
+  },
+  {
+   "company": "Tesco Bank",
+   "url": "https://tescoinsuranceandmoneyservices.avature.net/careers/SearchJobs/?jobRecordsPerPage=50",
+   "platform": "avature",
+   "sector": "finance",
+   "country": "UK"
+  },
+  {
    "company": "Atlassian",
    "url": "https://www.atlassian.com/endpoint/careers/listings",
    "platform": "custom",
@@ -13380,7 +13394,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "84.51\u00b0",
+   "company": "84.51°",
    "url": "https://boards-api.greenhouse.io/v1/boards/8451/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -14658,7 +14672,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Arco Educa\u00e7\u00e3o",
+   "company": "Arco Educação",
    "url": "https://boards-api.greenhouse.io/v1/boards/arcoeducacao/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -16804,7 +16818,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Carri\u00e8res Broadsign",
+   "company": "Carrières Broadsign",
    "url": "https://boards-api.greenhouse.io/v1/boards/broadsignfr/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -17168,7 +17182,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Children\u2019s Treehouse",
+   "company": "Children’s Treehouse",
    "url": "https://boards-api.greenhouse.io/v1/boards/childrenstreehouse/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -17465,7 +17479,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Cl\u0113nera, LLC",
+   "company": "Clēnera, LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/clenera/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -17693,7 +17707,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "ComparaJ\u00e1",
+   "company": "ComparaJá",
    "url": "https://boards-api.greenhouse.io/v1/boards/comparaja/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -18037,7 +18051,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Co\u2013Star",
+   "company": "Co–Star",
    "url": "https://boards-api.greenhouse.io/v1/boards/costar/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -18132,7 +18146,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Cro\u00ed Health",
+   "company": "Croí Health",
    "url": "https://boards-api.greenhouse.io/v1/boards/croihealth/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -18520,7 +18534,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "DEPT\u00ae",
+   "company": "DEPT®",
    "url": "https://boards-api.greenhouse.io/v1/boards/dept/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -19125,7 +19139,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Ek\u014d",
+   "company": "Ekō",
    "url": "https://boards-api.greenhouse.io/v1/boards/sumofus/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -19701,7 +19715,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "EVERY\u2122",
+   "company": "EVERY™",
    "url": "https://boards-api.greenhouse.io/v1/boards/theeverycompany/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -19840,7 +19854,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "E\u014dS Fitness",
+   "company": "EōS Fitness",
    "url": "https://boards-api.greenhouse.io/v1/boards/eosfitness/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -19986,7 +20000,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "FERM\u00c0T",
+   "company": "FERMÀT",
    "url": "https://boards-api.greenhouse.io/v1/boards/fermat/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -20135,7 +20149,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "FIS\u00ae Amount\u2122",
+   "company": "FIS® Amount™",
    "url": "https://boards-api.greenhouse.io/v1/boards/amount/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -20597,7 +20611,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Fussball Club Cincinnati LLC (\u201cFC Cincinnati\u201d)",
+   "company": "Fussball Club Cincinnati LLC (“FC Cincinnati”)",
    "url": "https://boards-api.greenhouse.io/v1/boards/fccincinnati/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -21430,7 +21444,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Gr\u00fcns",
+   "company": "Grüns",
    "url": "https://boards-api.greenhouse.io/v1/boards/gruns/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -22256,7 +22270,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "iFood Indica\u00e7\u00f5es",
+   "company": "iFood Indicações",
    "url": "https://boards-api.greenhouse.io/v1/boards/indicacoesifoodinterno/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -23403,7 +23417,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "KRAFTON Montr\u00e9al Studio",
+   "company": "KRAFTON Montréal Studio",
    "url": "https://boards-api.greenhouse.io/v1/boards/studiokraftonboard/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -25395,7 +25409,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Na Pr\u00e1tica",
+   "company": "Na Prática",
    "url": "https://boards-api.greenhouse.io/v1/boards/napratica/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -25913,7 +25927,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Nuit\u00e9e",
+   "company": "Nuitée",
    "url": "https://boards-api.greenhouse.io/v1/boards/nuitee/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -27274,7 +27288,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Play\ufb02y Sports",
+   "company": "Playﬂy Sports",
    "url": "https://boards-api.greenhouse.io/v1/boards/playsports/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -29097,7 +29111,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Schr\u00f6dinger",
+   "company": "Schrödinger",
    "url": "https://boards-api.greenhouse.io/v1/boards/schrdinger/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -29851,7 +29865,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Sol de Janeiro Future SolStars \u2013 Early Careers Program",
+   "company": "Sol de Janeiro Future SolStars – Early Careers Program",
    "url": "https://boards-api.greenhouse.io/v1/boards/soldejaneirointernship/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -31349,7 +31363,7 @@
    "platform": "greenhouse"
   },
   {
-   "company": "The Pok\u00e9mon Company International",
+   "company": "The Pokémon Company International",
    "url": "https://boards-api.greenhouse.io/v1/boards/pokemoncareers/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -31628,7 +31642,7 @@
    "sector": "technology"
   },
   {
-   "company": "TooJay\u2019s Deli \u2022 Bakery \u2022 Restaurant",
+   "company": "TooJay’s Deli • Bakery • Restaurant",
    "url": "https://boards-api.greenhouse.io/v1/boards/toojaysdeli/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -33744,22 +33758,22 @@
    "platform": "greenhouse"
   },
   {
-   "company": "Z\u00f3calo Health",
+   "company": "Zócalo Health",
    "url": "https://boards-api.greenhouse.io/v1/boards/zocalohealth/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
   {
-   "company": "\u00edlia",
+   "company": "ília",
    "url": "https://boards-api.greenhouse.io/v1/boards/ilia/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
   {
-   "company": "\u014cura",
+   "company": "Ōura",
    "url": "https://boards-api.greenhouse.io/v1/boards/oura/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
   {
-   "company": "\u200eConnectWise",
+   "company": "‎ConnectWise",
    "url": "https://boards-api.greenhouse.io/v1/boards/connectwise/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -34074,7 +34088,7 @@
    "platform": "icims"
   },
   {
-   "company": "Aktuelle jobmuligheder p\u00e5 {virksomhed}",
+   "company": "Aktuelle jobmuligheder på {virksomhed}",
    "url": "https://careers-dn-merlinentertainments.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -35407,7 +35421,7 @@
    "platform": "icims"
   },
   {
-   "company": "CECO Environmental \u7684\u804c\u4f4d\u5217\u8868",
+   "company": "CECO Environmental 的职位列表",
    "url": "https://careers-chn-cecoenviro.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -36300,7 +36314,7 @@
    "platform": "icims"
   },
   {
-   "company": "Elizabeth Seton Children\u2019s",
+   "company": "Elizabeth Seton Children’s",
    "url": "https://careers-setonchildrens.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -37498,7 +37512,7 @@
    "platform": "icims"
   },
   {
-   "company": "Horizons Window Fashions \u2022 B&amp;W Window Fashions \u2022 Careers \u2022 Job Listings at Springs Window Fashions",
+   "company": "Horizons Window Fashions • B&amp;W Window Fashions • Careers • Job Listings at Springs Window Fashions",
    "url": "https://careers-horizon.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -38332,12 +38346,12 @@
    "platform": "icims"
   },
   {
-   "company": "Live! Casino\u00b7Hotel (Mdcareers Livech)",
+   "company": "Live! Casino·Hotel (Mdcareers Livech)",
    "url": "https://mdcareers-livech.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
   {
-   "company": "Live! Casino\u00b7Hotel (Phlcareers Livech)",
+   "company": "Live! Casino·Hotel (Phlcareers Livech)",
    "url": "https://phlcareers-livech.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -38597,7 +38611,7 @@
    "platform": "icims"
   },
   {
-   "company": "McCarthy T\u00e9trault LLP",
+   "company": "McCarthy Tétrault LLP",
    "url": "https://careers-mccarthyca.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -39276,7 +39290,7 @@
    "platform": "icims"
   },
   {
-   "company": "Offres d'emploi chez McCarthy T\u00e9trault LLP",
+   "company": "Offres d'emploi chez McCarthy Tétrault LLP",
    "url": "https://frenchexternal-mccarthyca.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -39286,12 +39300,12 @@
    "platform": "icims"
   },
   {
-   "company": "Offres d\u2019emploi chez {Expleo} (Expleo Jobs Fr Fr)",
+   "company": "Offres d’emploi chez {Expleo} (Expleo Jobs Fr Fr)",
    "url": "https://expleo-jobs-fr-fr.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
   {
-   "company": "Offres d\u2019emploi chez {Expleo} (Expleo Jobs Ma Fr)",
+   "company": "Offres d’emploi chez {Expleo} (Expleo Jobs Ma Fr)",
    "url": "https://expleo-jobs-ma-fr.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -40333,7 +40347,7 @@
    "platform": "icims"
   },
   {
-   "company": "Sant\u00e9 \u00e0 domicile Ontario",
+   "company": "Santé à domicile Ontario",
    "url": "https://healthcareathomejobs-fr.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -41656,7 +41670,7 @@
    "platform": "icims"
   },
   {
-   "company": "Trinseo LLC \u804c\u4f4d\u5217\u8868",
+   "company": "Trinseo LLC 职位列表",
    "url": "https://cn-apaccareers-trinseo.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -42019,7 +42033,7 @@
    "platform": "icims"
   },
   {
-   "company": "VIER PFOTEN International- Gemeinn\u00fctzige Privatstiftung",
+   "company": "VIER PFOTEN International- Gemeinnützige Privatstiftung",
    "url": "https://careers-four-paws.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -43488,7 +43502,7 @@
    "platform": "oracle"
   },
   {
-   "company": "D\u00fcrr Group",
+   "company": "Dürr Group",
    "url": "https://fa-eurk-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44204,7 +44218,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Kl\u00e9pierre",
+   "company": "Klépierre",
    "url": "https://fa-ewfm-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44341,6 +44355,14 @@
    "domain": "mariecurie.org.uk"
   },
   {
+   "company": "Marks & Spencer",
+   "url": "https://fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
+   "platform": "oracle",
+   "sector": "retail",
+   "country": "UK",
+   "domain": "marksandspencer.com"
+  },
+  {
    "company": "Marta",
    "url": "https://fa-evii-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
@@ -44419,14 +44441,6 @@
    "company": "Mr Price Group",
    "url": "https://fa-etyi-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
-  },
-  {
-   "company": "Marks & Spencer",
-   "url": "https://fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
-   "platform": "oracle",
-   "sector": "retail",
-   "country": "UK",
-   "domain": "marksandspencer.com"
   },
   {
    "company": "MTC",
@@ -44848,7 +44862,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Site carri\u00e8re externe sodiaal",
+   "company": "Site carrière externe sodiaal",
    "url": "https://fa-epmr-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44946,7 +44960,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Startek\u00ae",
+   "company": "Startek®",
    "url": "https://fa-evuf-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -45039,7 +45053,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Te Herenga Waka\u2014Victoria University of Wellington",
+   "company": "Te Herenga Waka—Victoria University of Wellington",
    "url": "https://ejye.fa.ap1.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -45157,13 +45171,13 @@
    "domain": "ukri.org"
   },
   {
-   "company": "UL Solutions (Fa Eups Dev1 Saasfaprod1)",
-   "url": "https://fa-eups-dev1-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
+   "company": "UL Solutions",
+   "url": "https://fa-eups-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
   {
-   "company": "UL Solutions",
-   "url": "https://fa-eups-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
+   "company": "UL Solutions (Fa Eups Dev1 Saasfaprod1)",
+   "url": "https://fa-eups-dev1-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
   {
@@ -46929,7 +46943,7 @@
    "platform": "personio"
   },
   {
-   "company": "G\u00d6RG",
+   "company": "GÖRG",
    "url": "https://goerg-partnerschaft-von-rechtsanwaelten.jobs.personio.de/xml",
    "platform": "personio"
   },
@@ -50848,7 +50862,7 @@
    "platform": "recruitee"
   },
   {
-   "company": "ENERVIE \u2013 S\u00fcdwestfalen Energie und Wasser AG",
+   "company": "ENERVIE – Südwestfalen Energie und Wasser AG",
    "url": "https://enerviesudwestfalenenergieundwasserag.recruitee.com/api/offers/",
    "platform": "recruitee"
   },
@@ -54052,7 +54066,7 @@
    "platform": "recruitee"
   },
   {
-   "company": "VRT Partnerschaft mbB Wirtschaftspr\u00fcfer Steuerberater Rechtsanw\u00e4lte",
+   "company": "VRT Partnerschaft mbB Wirtschaftsprüfer Steuerberater Rechtsanwälte",
    "url": "https://vrtlinzbachloecherbachundpartner.recruitee.com/api/offers/",
    "platform": "recruitee"
   },
@@ -55008,7 +55022,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Barri\u00e8re",
+   "company": "Barrière",
    "url": "https://api.smartrecruiters.com/v1/companies/barriere/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -55089,7 +55103,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "BEW Berliner Energie und W\u00e4rme GmbH",
+   "company": "BEW Berliner Energie und Wärme GmbH",
    "url": "https://api.smartrecruiters.com/v1/companies/bew/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -55274,7 +55288,7 @@
    "domain": "caci.co.uk"
   },
   {
-   "company": "Caff\u00e8 Nero",
+   "company": "Caffè Nero",
    "url": "https://api.smartrecruiters.com/v1/companies/caffenero/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "hospitality",
@@ -55379,7 +55393,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Cerfrance Broc\u00e9liande",
+   "company": "Cerfrance Brocéliande",
    "url": "https://api.smartrecruiters.com/v1/companies/cerfrancebroceliande/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -55394,7 +55408,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "CF Montr\u00e9al",
+   "company": "CF Montréal",
    "url": "https://api.smartrecruiters.com/v1/companies/cfmontreal/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -55427,7 +55441,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Chiquita Brands International S\u00e0rl",
+   "company": "Chiquita Brands International Sàrl",
    "url": "https://api.smartrecruiters.com/v1/companies/chiquitabrandsinternationalsrl/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -55968,7 +55982,7 @@
    "domain": "estio.co.uk"
   },
   {
-   "company": "Etablissements publics pour l\u2019int\u00e9gration",
+   "company": "Etablissements publics pour l’intégration",
    "url": "https://api.smartrecruiters.com/v1/companies/etablissementspublicspourlintegration/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -56215,7 +56229,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Gesellschaft f\u00fcr Gesundheit und P\u00e4dagogik mbH",
+   "company": "Gesellschaft für Gesundheit und Pädagogik mbH",
    "url": "https://api.smartrecruiters.com/v1/companies/gesellschaftfrgesundheitundpdagogikmbh/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -56471,7 +56485,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "H\u00f4pitaux Universitaires de Gen\u00e8ve",
+   "company": "Hôpitaux Universitaires de Genève",
    "url": "https://api.smartrecruiters.com/v1/companies/hug/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -56592,7 +56606,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Ing\u00e9rop",
+   "company": "Ingérop",
    "url": "https://api.smartrecruiters.com/v1/companies/ingrop/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -56797,7 +56811,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Kinougarde-Compl\u00e9tude",
+   "company": "Kinougarde-Complétude",
    "url": "https://api.smartrecruiters.com/v1/companies/epiktet/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -56936,7 +56950,7 @@
    "domain": "lgcgroup.com"
   },
   {
-   "company": "LGI Healthcare Solutions Sant\u00e9 Inc.",
+   "company": "LGI Healthcare Solutions Santé Inc.",
    "url": "https://api.smartrecruiters.com/v1/companies/lgihealthcaresolutionssanteinc/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -56951,7 +56965,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Lifted, an Upwork Company\u2122",
+   "company": "Lifted, an Upwork Company™",
    "url": "https://api.smartrecruiters.com/v1/companies/liftedanupworkcompany/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -57057,7 +57071,7 @@
    "domain": "macdonaldhotels.co.uk"
   },
   {
-   "company": "Macher Servi\u00e7os em Tecnologia EIRELI",
+   "company": "Macher Serviços em Tecnologia EIRELI",
    "url": "https://api.smartrecruiters.com/v1/companies/macherserviosemtecnologiaeireli/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -57290,7 +57304,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "natur\u00e9O",
+   "company": "naturéO",
    "url": "https://api.smartrecruiters.com/v1/companies/natureo/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -57413,7 +57427,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "N\u2019AGE",
+   "company": "N’AGE",
    "url": "https://api.smartrecruiters.com/v1/companies/nage1/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -57824,12 +57838,12 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Reitmans (Canada) Lt\u00e9e/Ltd",
+   "company": "Reitmans (Canada) Ltée/Ltd",
    "url": "https://api.smartrecruiters.com/v1/companies/reitmanscanadalteltd/postings?limit=100",
    "platform": "smartrecruiters"
   },
   {
-   "company": "Relais & Ch\u00e2teaux",
+   "company": "Relais & Châteaux",
    "url": "https://api.smartrecruiters.com/v1/companies/relaischateaux/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -58047,7 +58061,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Schr\u00e9der",
+   "company": "Schréder",
    "url": "https://api.smartrecruiters.com/v1/companies/schrder/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -58428,12 +58442,12 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Str\u00f6er SE & Co. KGaA (Str\u00f6er Gruppe)",
+   "company": "Ströer SE & Co. KGaA (Ströer Gruppe)",
    "url": "https://api.smartrecruiters.com/v1/companies/strersecokgaastrergruppe/postings?limit=100",
    "platform": "smartrecruiters"
   },
   {
-   "company": "St\u00e4ubli",
+   "company": "Stäubli",
    "url": "https://api.smartrecruiters.com/v1/companies/staubligroup/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -58571,7 +58585,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Thalia B\u00fccher GmbH",
+   "company": "Thalia Bücher GmbH",
    "url": "https://api.smartrecruiters.com/v1/companies/thaliabchergmbh1/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -58973,7 +58987,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Voyage Priv\u00e9",
+   "company": "Voyage Privé",
    "url": "https://api.smartrecruiters.com/v1/companies/voyagepriv/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -59188,7 +59202,7 @@
    "domain": "wtwco.com"
   },
   {
-   "company": "W\u00fcest Partner",
+   "company": "Wüest Partner",
    "url": "https://api.smartrecruiters.com/v1/companies/wuestpartner/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -67993,7 +68007,7 @@
    "platform": "workday"
   },
   {
-   "company": "Cond\u00e9 Nast",
+   "company": "Condé Nast",
    "url": "https://condenast.wd115.myworkdayjobs.com/wday/cxs/condenast/CondeCareers/jobs",
    "platform": "workday",
    "sector": "media",
@@ -71939,7 +71953,7 @@
    "platform": "workday"
   },
   {
-   "company": "\u00d6ssur UK",
+   "company": "Össur UK",
    "url": "https://ossur.wd3.myworkdayjobs.com/wday/cxs/ossur/OssurCareersGlobal/jobs",
    "platform": "workday",
    "sector": "healthcare",
