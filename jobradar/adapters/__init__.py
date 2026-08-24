@@ -325,6 +325,21 @@ REGISTRY: list[Platform] = [
              "rows, and the location cell says 'Hybrid Remote' for hybrid roles",
     ),
     Platform(
+        "jazzhr",
+        r"\.applytojob\.com/apply",
+        platforms.parse_jazzhr,
+        build=lambda t: f"https://{t}.applytojob.com/apply",
+        verified=True,
+        note="865 employer hosts in one Common Crawl index, the largest "
+             "platform this tool could not read. The RSS feed at "
+             "/apply/jobs.rss answers 410 Gone, so the server-rendered HTML "
+             "list is the only route. The whole board arrives on one page: no "
+             "page parameter, no offset, no total, which is the one case where "
+             "a single response is not a truncation bug. It states the "
+             "employer's own name in a schema.org Organization block, so "
+             "identity here is evidence rather than an echo of our label",
+    ),
+    Platform(
         "bamboohr",
         r"\.bamboohr\.com/careers/list",
         platforms.parse_bamboohr,

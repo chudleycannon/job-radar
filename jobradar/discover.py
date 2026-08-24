@@ -62,6 +62,7 @@ SIGNATURES: list[tuple[str, str]] = [
     # to be added by hand; this finds the subdomain-hosted ones.
     ("pinpoint", r"([a-z0-9-]+)\.pinpointhq\.com"),
     ("bamboohr", r"([a-z0-9-]+)\.bamboohr\.com"),
+    ("jazzhr", r"([a-z0-9-]+)\.applytojob\.com"),
     # Jobvite is the odd one out: the token is a path segment, not a
     # subdomain, because every customer sits on the one jobs.jobvite.com host.
     ("jobvite", r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)"),

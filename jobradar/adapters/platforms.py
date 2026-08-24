@@ -582,6 +582,86 @@ def parse_jobvite(payload: Any, src: Source) -> Iterator[Job]:
 
 
 # --------------------------------------------------------------------------
+# JazzHR
+# --------------------------------------------------------------------------
+# 865 distinct employer hosts on applytojob.com in one Common Crawl index,
+# more than any other platform this tool could not read. The board is
+# `https://<company>.applytojob.com/apply`, server-rendered, so no browser is
+# needed.
+#
+# Two things worth knowing before touching this.
+#
+# The RSS feed at `/apply/jobs.rss` answers 410 Gone, so the HTML list is the
+# only route. And the whole board arrives on one page: there is no page
+# parameter, no offset and no total anywhere in the markup, which is the one
+# case where reading a single response is not a truncation bug.
+#
+# Unusually for this codebase, the page states the employer's own name, in a
+# schema.org Organization block. Almost every other adapter fills `company`
+# from the Source it was handed, which makes `discover`'s identity check
+# circular. Here it can actually be checked.
+_JZ_ROW = re.compile(
+    r"<li class=[\"']list-group-item[\"']>(.*?)</ul>", re.S | re.I)
+_JZ_LINK = re.compile(
+    r"<h3[^>]*list-group-item-heading[^>]*>\s*<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
+    re.S | re.I)
+_JZ_PLACE = re.compile(r"fa-map-marker[^>]*></i>\s*([^<]{1,80})", re.I)
+_JZ_DEPT = re.compile(r"fa-sitemap[^>]*></i>\s*([^<]{1,60})", re.I)
+_JZ_ORG = re.compile(
+    r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", re.S | re.I)
+
+
+def _jazzhr_org(text: str) -> str:
+    """The employer's own name, from the Organization block on the page."""
+    for m in _JZ_ORG.finditer(text or ""):
+        try:
+            d = json.loads(m.group(1))
+        except ValueError:
+            continue
+        for node in (d if isinstance(d, list) else [d]):
+            if isinstance(node, dict) and node.get("@type") == "Organization":
+                return _text(node.get("name") or "")
+    return ""
+
+
+def parse_jazzhr(payload: Any, src: Source) -> Iterator[Job]:
+    """JazzHR, from the server-rendered board at `/apply`."""
+    text = payload if isinstance(payload, str) else ""
+    org = _jazzhr_org(text)
+
+    for m in _JZ_ROW.finditer(text):
+        blk = m.group(1)
+        link = _JZ_LINK.search(blk)
+        if not link:
+            continue
+        title = _text(link.group(2))
+        if not title:
+            continue
+        place = _text((_JZ_PLACE.search(blk) or [None, ""])[1]
+                      if _JZ_PLACE.search(blk) else "")
+        dept = _text((_JZ_DEPT.search(blk).group(1)
+                      if _JZ_DEPT.search(blk) else ""))
+        remote = _remote(place, title)
+        yield Job(
+            # The board names itself, so this is the one platform here where
+            # the company field is evidence rather than an echo of our label.
+            company=org or src.company,
+            title=title,
+            url=urljoin(src.url, _text(link.group(1))),
+            platform="jazzhr",
+            location=place or ("Remote" if remote else ""),
+            remote=remote,
+            department=dept or None,
+            # No date, advert text or pay in the list. `enrich` reads the
+            # posting page, which carries a JobPosting JSON-LD block.
+            posted_at=None,
+            description="",
+            salary=Salary(),
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
 # BambooHR
 # --------------------------------------------------------------------------
 # `/careers/list` is a summary index, not a board. It carries no description,

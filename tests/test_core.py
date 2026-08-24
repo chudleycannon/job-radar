@@ -4232,3 +4232,68 @@ def test_a_phenom_board_is_narrowed_by_title_and_stops_on_its_own_total():
     assert [b["keywords"] for b in bodies] == ["engineering manager"] * 2
     assert [b["from"] for b in bodies] == [0, 50]
     assert len(res.payload["refineSearch"]["data"]["jobs"]) == 60
+
+
+def test_jazzhr_reads_the_board_the_rss_feed_no_longer_serves():
+    """865 employer hosts sit on applytojob.com, more than any other platform
+    this tool could not read. `/apply/jobs.rss` answers 410 Gone, so the
+    server-rendered list is the only route in."""
+    from jobradar.adapters import platforms
+    from jobradar.models import Source
+
+    page = """
+    <script type="application/ld+json">
+      {"@type":"Organization","name":"Acme Widgets Ltd","url":"http://acme.test"}
+    </script>
+    <li class="list-group-item">
+      <h3 class='list-group-item-heading'>
+        <a href="https://acme.applytojob.com/apply/hU6r3M/Engineering-Manager">
+          Engineering Manager </a></h3>
+      <ul class='list-inline list-group-item-text'>
+        <li><i class='fa fa-map-marker'></i>London, United Kingdom</li>
+        <li><i class='fa fa-sitemap'></i>Engineering</li>
+      </ul>
+    <li class="list-group-item">
+      <h3 class='list-group-item-heading'>
+        <a href="https://acme.applytojob.com/apply/aB2c/Remote-SRE"> Remote SRE </a></h3>
+      <ul class='list-inline list-group-item-text'>
+        <li><i class='fa fa-map-marker'></i>Remote</li>
+      </ul>
+    """
+    src = Source(company="whatever-we-called-it", platform="jazzhr",
+                 url="https://acme.applytojob.com/apply")
+    jobs = list(platforms.parse_jazzhr(page, src))
+
+    assert len(jobs) == 2
+    # The board states its own name, so this is the one adapter here where the
+    # company field is evidence rather than an echo of the label we passed in.
+    assert jobs[0].company == "Acme Widgets Ltd"
+    assert jobs[0].title == "Engineering Manager"
+    assert jobs[0].location == "London, United Kingdom"
+    assert jobs[0].department == "Engineering"
+    assert jobs[1].remote is True
+
+
+def test_a_jazzhr_board_with_no_rows_is_not_a_board():
+    """JazzHR answers 200 for a subdomain that does not exist, so the status
+    code proves nothing and liveness has to be the parsed job count."""
+    from jobradar.adapters import platforms
+    from jobradar.models import Source
+
+    src = Source(company="nope", platform="jazzhr",
+                 url="https://nope.applytojob.com/apply")
+    assert list(platforms.parse_jazzhr("<html><body>nothing</body></html>", src)) == []
+
+
+def test_jazzhr_is_wired_into_discovery_and_enrichment():
+    """The list carries no advert text, so a JazzHR role without an enricher
+    is a bare title that no dealbreaker and no salary floor can act on."""
+    from jobradar import adapters
+    from jobradar.discover import SIGNATURES
+    from jobradar.enrich import FETCHERS
+
+    assert adapters.by_name("jazzhr") is not None
+    assert "jazzhr" in FETCHERS
+    assert any(p == "jazzhr" for p, _ in SIGNATURES)
+    assert (adapters.by_name("jazzhr").build("acme")
+            == "https://acme.applytojob.com/apply")

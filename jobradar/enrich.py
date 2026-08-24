@@ -189,6 +189,25 @@ def _from_json_ld(url: str, session=None, timeout: int = 20) -> str:
 
 _from_breezy = _from_json_ld
 _from_jobvite = _from_json_ld
+# JazzHR publishes an Organization block on the posting page but no
+# JobPosting one, so the shared JSON-LD reader comes back empty. The advert
+# itself sits in a div with a stable id, which is what this reads instead.
+_JZ_DESC = re.compile(
+    r'<div[^>]+id="job-description"[^>]*>(.*?)</div>\s*(?:<div|<section|<footer)',
+    re.S | re.I)
+
+
+def _from_jazzhr(url: str, session=None, timeout: int = 20) -> str:
+    get = (session or requests).get
+    try:
+        r = get((url or "").split("?")[0], headers={"User-Agent": UA},
+                timeout=timeout)
+    except requests.RequestException:
+        return ""
+    if r.status_code != 200:
+        return ""
+    m = _JZ_DESC.search(r.text)
+    return _strip(m.group(1)) if m else ""
 
 
 # BambooHR's `/careers/list` is a summary index: no advert text, no salary, no
@@ -225,6 +244,7 @@ FETCHERS = {
     "breezy": _from_breezy,
     "bamboohr": _from_bamboohr,
     "jobvite": _from_jobvite,
+    "jazzhr": _from_jazzhr,
 }
 
 
