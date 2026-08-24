@@ -119,6 +119,17 @@ REGISTRY: list[Platform] = [
         build=lambda t: f"https://{t}.recruitee.com/api/offers/",
     ),
     Platform(
+        "breezy",
+        r"\.breezy\.hr/json",
+        platforms.parse_breezy,
+        build=lambda t: f"https://{t}.breezy.hr/json",
+        verified=True,
+        note="bare top-level list at /json, like Lever; 200 + empty list for an "
+             "unknown token, like Ashby; countries are ISO alpha-2 so the UK "
+             "arrives as GB; the list has no description, `enrich` reads the "
+             "posting page's schema.org JSON-LD for that",
+    ),
+    Platform(
         "personio",
         r"jobs\.personio\.(?:de|com)/xml",
         platforms.parse_personio,

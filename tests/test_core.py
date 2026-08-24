@@ -2186,3 +2186,228 @@ def test_a_board_we_could_not_read_is_not_called_dead():
     finally:
         disc.count_jobs = old
     assert row["verdict"] == "dead"
+
+
+# ------------------------------------------------------------------ breezy
+# Payloads below are trimmed from real responses to
+# https://<company>.breezy.hr/json, recorded 2026-08-24.
+BREEZY_UK = [{
+    "id": "7a5244bd4195",
+    "friendly_id": "7a5244bd419501-appointed-representative-ar-headhunter",
+    "name": "Appointed Representative (AR) Recruitment Manager",
+    "url": "https://onedome.breezy.hr/p/7a5244bd419501-appointed-representative",
+    "published_date": "2026-07-28T10:58:38.513Z",
+    "type": {"id": "fullTime", "name": "Full-Time"},
+    "location": {
+        "country": {"name": "United Kingdom", "id": "GB"},
+        "city": "Bournemouth",
+        "primary": True,
+        "is_remote": True,
+        "remote_details": {"value": "hybrid",
+                           "label": "Hybrid (Some remote, some in person)"},
+        "name": "Bournemouth, GB",
+    },
+    "department": "Sales / Network Growth",
+    "salary": "£35,000 – £40,000 / year",
+    "company": {"name": "OneDome", "friendly_id": "onedome"},
+    "locations": [{
+        "country": {"name": "United Kingdom", "id": "GB"},
+        "city": "Bournemouth",
+        "is_remote": True,
+        "name": "Bournemouth, GB",
+    }],
+}]
+
+
+def _breezy_src(token="onedome", company="OneDome"):
+    from jobradar.models import Source
+    return Source(company=company, platform="breezy",
+                  url=f"https://{token}.breezy.hr/json")
+
+
+def test_a_breezy_uk_role_lands_in_the_country_the_filters_ask_for():
+    """Breezy states countries as ISO alpha-2, so the United Kingdom arrives
+    as "GB". Everything downstream speaks screen.py's vocabulary, where the
+    same country is "UK", so passing the code through unchanged filed every
+    British posting under a code no country filter, dashboard facet or
+    `--country` flag ever asks for. A UK-only search lost the whole board and
+    said nothing about it."""
+    from jobradar.adapters.platforms import parse_breezy
+    from jobradar.config import Config
+    from jobradar.screen import enrich, match
+
+    job = enrich(next(iter(parse_breezy(BREEZY_UK, _breezy_src()))))
+    assert job.country == "UK", job.country
+    assert "United Kingdom" in job.location, job.location
+    assert "GB" not in job.location, "the raw alpha-2 code should not reach the reader"
+
+    keep, why = match(job, Config(titles_include=["recruitment manager"],
+                                  countries=["UK"]))
+    assert keep is True, why
+
+
+def test_a_breezy_hybrid_role_is_not_reported_as_remote():
+    """Breezy sets `is_remote` true for hybrid postings as well as fully
+    remote ones. Taking it at face value marked a Bournemouth role that wants
+    you in the office part of the week as remote, which is the one thing a
+    remote filter must never do. `remote_details.value` is what separates
+    them, and its label is what makes the work mode come out as hybrid."""
+    from jobradar.adapters.platforms import parse_breezy
+    from jobradar.screen import enrich
+
+    job = enrich(next(iter(parse_breezy(BREEZY_UK, _breezy_src()))))
+    assert job.remote is False, "hybrid is not remote"
+    assert job.work_mode == "hybrid", job.work_mode
+    assert job.city == "Bournemouth"
+
+
+def test_a_breezy_posting_carries_its_stated_pay():
+    """Breezy hands over a formatted salary string on the board itself, which
+    most platforms do not. Losing it would push a role that publishes its
+    range into the "unconfirmed salary" bucket, where the floor cannot act on
+    it either way."""
+    from jobradar.adapters.platforms import parse_breezy
+
+    job = next(iter(parse_breezy(BREEZY_UK, _breezy_src())))
+    assert job.salary.confirmed is True
+    assert (job.salary.min, job.salary.max) == (35000.0, 40000.0)
+    assert job.salary.currency == "GBP"
+    assert job.salary.period == "year"
+    assert job.salary.label() == "£35k - £40k"
+
+
+def test_a_breezy_posting_in_two_places_stays_separable():
+    """screen.py splits a multi-location string on the slash but treats a
+    comma as binding a place to its qualifier, so joining two locations with
+    a comma fuses "Philadelphia, PA" and "Salt Lake City, UT" into one string
+    that resolves to neither. Breezy also repeats the identical entry when an
+    employer ticks the same remote location twice, which produced
+    "Remote / Remote" on a real Dozuki posting."""
+    from jobradar.adapters.platforms import parse_breezy
+    from jobradar.screen import enrich
+
+    payload = [{
+        "name": "Applied AI Product Engineer",
+        "url": "https://vetsez.breezy.hr/p/e785-applied-ai-product-engineer",
+        "published_date": "2026-08-06T17:45:58.527Z",
+        "type": {"id": "fullTime", "name": "Full-Time"},
+        "location": {"country": {"name": "United States", "id": "US"},
+                     "state": {"id": "PA", "name": "Pennsylvania"},
+                     "city": "Philadelphia", "is_remote": True},
+        "department": None,
+        "salary": "",
+        "company": {"name": "VetsEZ", "friendly_id": "vetsez"},
+        "locations": [
+            {"country": {"name": "United States", "id": "US"},
+             "state": {"id": "PA", "name": "Pennsylvania"},
+             "city": "Philadelphia", "is_remote": True},
+            {"country": {"name": "United States", "id": "US"},
+             "state": {"id": "UT", "name": "Utah"},
+             "city": "Salt Lake City", "is_remote": True},
+            {"country": {"name": "United States", "id": "US"},
+             "state": {"id": "PA", "name": "Pennsylvania"},
+             "city": "Philadelphia", "is_remote": True},
+        ],
+    }]
+
+    job = enrich(next(iter(parse_breezy(payload, _breezy_src("vetsez", "VetsEZ")))))
+    assert job.location == ("Philadelphia, PA, United States / "
+                            "Salt Lake City, UT, United States"), job.location
+    assert job.location.count("Philadelphia") == 1, "the repeat is dropped"
+    assert job.country == "US", "one country named twice is still one country"
+    assert job.department is None, "a null department is not the string 'None'"
+
+
+def test_an_empty_breezy_board_is_not_a_parse_failure():
+    """Breezy answers HTTP 200 with `[]` both for a board with nothing open
+    and for a token that does not exist, exactly as Ashby does. Liveness has
+    to be a job count; a status code proves nothing either way. And the
+    payload is a bare top-level list, like Lever, not an object with a `jobs`
+    key, so anything reaching for `.get("jobs")` would return nothing for
+    every board and never raise."""
+    from jobradar import adapters
+
+    src = _breezy_src("reincubate", "Reincubate")
+    assert adapters.detect(src.url).name == "breezy"
+    assert adapters.by_name("breezy").build("onedome") == \
+        "https://onedome.breezy.hr/json"
+    assert adapters.parse([], src) == []
+    assert len(adapters.parse(BREEZY_UK, _breezy_src())) == 1
+
+
+def test_a_breezy_board_names_its_own_employer():
+    """`discover` verifies a board really belongs to the company asked for by
+    reading the name the board publishes. Falling back to the name we already
+    believed would make every Breezy board agree with itself, and the check
+    that catches a wrong token would pass on nothing."""
+    from jobradar.adapters.platforms import parse_breezy
+    from jobradar.discover import verify_identity
+
+    jobs = list(parse_breezy(BREEZY_UK, _breezy_src("onedome", "Something Else")))
+    assert jobs[0].company == "OneDome"
+    verdict, note = verify_identity(jobs, None, "OneDome", "breezy")
+    assert verdict == "ok", note
+
+
+def test_a_breezy_advert_is_read_from_the_posting_page():
+    """The `/json` board carries no description at all, so every Breezy role
+    would reach the dealbreaker scan with nothing to scan. The posting page
+    embeds the whole advert as schema.org JSON-LD for Google Jobs. Two blocks
+    sit on that page and the first is a WebSite, so taking the first match
+    returned an empty description every time."""
+    from jobradar.enrich import _from_breezy
+
+    page = (
+        '<html><head>'
+        '<script type="application/ld+json">'
+        '{"@context":"https://schema.org/","@type":"WebSite",'
+        '"name":"Dozuki","url":"https://dozuki.breezy.hr"}'
+        '</script>'
+        '<script type="application/ld+json">'
+        '{"@context":"https://schema.org/","@type":"JobPosting",'
+        '"title":"Software Engineer II",'
+        '"description":"<p><strong>About Us:</strong></p>'
+        '<p>We empower companies to connect their processes.</p>'
+        '<ul><li>Take-home exercise required.</li></ul>"}'
+        '</script></head><body></body></html>')
+
+    asked = []
+
+    class _Resp:
+        status_code = 200
+        text = page
+
+    class _Session:
+        def get(self, url, **kw):
+            asked.append(url)
+            return _Resp()
+
+    text = _from_breezy(
+        "https://dozuki.breezy.hr/p/dabf-software-engineer-ii?source=GoogleJobs",
+        _Session())
+    assert text.startswith("About Us:"), text[:60]
+    assert "Take-home exercise required." in text
+    assert "<p>" not in text, "markup is stripped, not handed to the scorer"
+    assert asked == ["https://dozuki.breezy.hr/p/dabf-software-engineer-ii"], \
+        "the query string is dropped so the fetch matches the stored URL"
+
+
+def test_every_platform_with_a_fetcher_is_actually_enriched():
+    """The candidate query held a second, hand-written copy of the FETCHERS
+    keys. Adding a platform to one and not the other writes a fetcher that is
+    never called, and the symptom is silence rather than an error: the roles
+    simply stay described-by-nothing and pass every dealbreaker."""
+    from jobradar import enrich as enrich_mod, store
+
+    con = store.connect(":memory:")
+    for i, platform in enumerate(enrich_mod.FETCHERS):
+        con.execute(
+            "INSERT INTO roles (uid,company,title,url,location,platform,"
+            "description,first_seen,last_seen) VALUES (?,?,?,?,?,?,?,?,?)",
+            (f"u{i}", "C", "T", f"https://example.test/{i}", "London",
+             platform, "", "2026-08-24", "2026-08-24"))
+    con.commit()
+
+    got = {r["platform"] for r in enrich_mod.candidates(con)}
+    assert got == set(enrich_mod.FETCHERS), \
+        f"platforms with a fetcher but no candidate query: {set(enrich_mod.FETCHERS) - got}"

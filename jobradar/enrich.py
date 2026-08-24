@@ -24,6 +24,7 @@ deliberate choice a user should know they are making.
 from __future__ import annotations
 
 import html as _h
+import json
 import re
 import time
 
@@ -149,12 +150,44 @@ def _strip(markup: str) -> str:
     return "\n".join(x for x in lines if x).strip()
 
 
+# Breezy publishes schema.org JSON-LD on every posting page so that Google
+# Jobs can index it. That block carries the whole advert, which the `/json`
+# board endpoint does not carry at all, so this is reading a documented
+# structure rather than scraping their markup.
+_LD_BLOCK = re.compile(
+    r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>', re.S | re.I)
+
+
+def _from_breezy(url: str, session=None, timeout: int = 20) -> str:
+    get = (session or requests).get
+    try:
+        # The board links carry `?source=...` on some postings; the page is the
+        # same without it and the shorter URL is what the seen-set is keyed on.
+        r = get((url or "").split("?")[0], headers={"User-Agent": UA}, timeout=timeout)
+    except requests.RequestException:
+        return ""
+    if r.status_code != 200:
+        return ""
+    for m in _LD_BLOCK.finditer(r.text):
+        try:
+            node = json.loads(m.group(1))
+        except ValueError:
+            continue
+        # There are two blocks on the page and the first one is a WebSite, so
+        # taking the first match returned an empty description every time.
+        for d in (node if isinstance(node, list) else [node]):
+            if isinstance(d, dict) and d.get("@type") == "JobPosting":
+                return _strip(d.get("description") or "")
+    return ""
+
+
 # Which fetcher handles which platform. A platform absent from here is one
 # whose list endpoint already carries the description.
 FETCHERS = {
     "linkedin": lambda u, s: fetch(u, session=s),
     "workday": _from_workday,
     "smartrecruiters": _from_smartrecruiters,
+    "breezy": _from_breezy,
 }
 
 
@@ -166,9 +199,12 @@ def candidates(con, limit: int = 0) -> list:
          "WHERE COALESCE(s.status,'new') NOT IN "
          "('rejected','withdrawn','skipped','closed') "
          f"AND {store.LIVE_SQL} "
-         "AND r.platform IN ('linkedin','workday','smartrecruiters') "
+         # Was a second, hand-maintained copy of FETCHERS' keys. Adding Breezy
+         # to one and not the other writes a fetcher that never runs, and the
+         # symptom is silence rather than an error.
+         f"AND r.platform IN ({','.join('?' for _ in FETCHERS)}) "
          "AND LENGTH(TRIM(COALESCE(r.description,''))) < 200")
-    rows = con.execute(q).fetchall()
+    rows = con.execute(q, tuple(FETCHERS)).fetchall()
     return rows[:limit] if limit else rows
 
 

@@ -44,6 +44,7 @@ SIGNATURES: list[tuple[str, str]] = [
     ("workable", r"apply\.workable\.com/([a-z0-9_.-]+)"),
     ("smartrecruiters", r"(?:jobs|careers)\.smartrecruiters\.com/([a-zA-Z0-9_.-]+)"),
     ("recruitee", r"([a-z0-9-]+)\.recruitee\.com"),
+    ("breezy", r"([a-z0-9-]+)\.breezy\.hr"),
     ("personio", r"([a-z0-9-]+)\.jobs\.personio\.(?:de|com)"),
     # Oracle needs the whole host, not a short token, and the host bears no
     # relation to the company name.
@@ -61,7 +62,11 @@ WORKDAY_RE = re.compile(
     re.I,
 )
 
-_JUNK_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api", "www", "search"}
+# "app", "help" and "support" are here for Breezy: a careers page that embeds a
+# Breezy board also links app.breezy.hr and help.breezy.hr, and each of those
+# would otherwise be offered as a separate employer board to go and validate.
+_JUNK_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api", "www",
+                "search", "app", "help", "support", "blog"}
 
 # Platforms we can recognise but cannot read yet. Naming them turns fifteen
 # identical shrugs into a diagnosis, and tells the maintainer which adapter to

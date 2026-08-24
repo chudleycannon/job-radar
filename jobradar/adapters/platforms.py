@@ -348,6 +348,139 @@ def parse_recruitee(payload: Any, src: Source) -> Iterator[Job]:
 
 
 # --------------------------------------------------------------------------
+# Breezy HR
+# --------------------------------------------------------------------------
+# Breezy writes countries as ISO 3166 alpha-2, so the United Kingdom arrives
+# as "GB". Everything downstream of the adapters speaks screen.py's
+# vocabulary, in which that country is "UK". Handing "GB" straight through
+# filed every British posting under a code no country filter, dashboard facet
+# or `--country` flag ever asks for, which loses a whole board from a UK-only
+# search without reporting anything.
+_BZ_COUNTRY = {"GB": "UK"}
+
+
+def _breezy_place(loc: Any) -> str:
+    """One Breezy location, written the way the rest of the tool reads them.
+
+    Deliberately rebuilt from the parts rather than taken from Breezy's own
+    `location.name`, which renders as "Lambeth, GB". The bare alpha-2 code
+    reads badly on screen, and the country's full name is the stronger signal
+    for the location filter, which looks for "United Kingdom" before it falls
+    back to two-letter forms.
+    """
+    if not isinstance(loc, dict):
+        return _text(loc)
+    state = loc.get("state") or {}
+    country = loc.get("country") or {}
+    parts: list[str] = []
+    seen: set[str] = set()
+    for p in (_text(loc.get("city")),
+              _text(state.get("id") or state.get("name")),
+              _text(country.get("name"))):
+        if p and p.lower() not in seen:
+            seen.add(p.lower())
+            parts.append(p)
+    return ", ".join(parts) or _text(loc.get("name"))
+
+
+def parse_breezy(payload: Any, src: Source) -> Iterator[Job]:
+    """Breezy HR. The board is `https://<company>.breezy.hr/json`.
+
+    Like Lever it answers with a bare top-level list, not an object with a
+    `jobs` key. Like Ashby it answers 200 with an empty list for a token that
+    does not exist, so liveness is a job count and never a status code.
+
+    The list carries no description whatsoever, only metadata, which is why
+    `enrich` grew a Breezy fetcher: the posting page embeds the full advert as
+    schema.org JSON-LD. What the list does carry is a ready-formatted salary
+    string ("£35,000 – £40,000 / year"), so a fair share of these state pay.
+    """
+    items = payload if isinstance(payload, list) else (payload or {}).get("positions") or []
+    for j in items or []:
+        if not isinstance(j, dict):
+            continue
+        primary = j.get("location") if isinstance(j.get("location"), dict) else {}
+        places = [p for p in (j.get("locations") or []) if isinstance(p, dict)] \
+            or ([primary] if primary else [])
+
+        names: list[str] = []
+        seen: set[str] = set()
+        for p in places:
+            txt = _breezy_place(p)
+            # Breezy repeats the same place in `locations` when an employer
+            # ticks two identical remote entries, which produced
+            # "Remote / Remote" on a real Dozuki posting.
+            if txt and txt.lower() not in seen:
+                seen.add(txt.lower())
+                names.append(txt)
+        # Joined with " / " and not ", ": screen.py splits a multi-location
+        # string on the slash but treats a comma as binding a place to its
+        # qualifier, so a comma here fuses "Philadelphia, PA" and "Salt Lake
+        # City, UT" into one string that resolves to neither.
+        location = " / ".join(names)
+
+        # Only set the country when the posting names exactly one. Where it
+        # names several, leaving it unset lets screen.py mark it "multiple"
+        # from the location string rather than picking a winner here.
+        codes = {str((p.get("country") or {}).get("id") or "").upper() for p in places}
+        codes.discard("")
+        country = None
+        if len(codes) == 1:
+            code = codes.pop()
+            country = _BZ_COUNTRY.get(code, code)
+
+        remote_details = primary.get("remote_details") or {}
+        detail = _text(remote_details.get("value")).lower()
+        label = _text(remote_details.get("label"))
+        if detail == "hybrid":
+            # `is_remote` is true for hybrid postings as well as remote ones.
+            # Taking it at face value marked a Bournemouth role that wants you
+            # in the office part of the week as remote, which is the single
+            # thing a remote filter must never do.
+            remote: bool | None = False
+        elif detail == "remote" or primary.get("is_remote") is True:
+            remote = True
+        else:
+            remote = _remote(location, j.get("name"))
+
+        pay = _text(j.get("salary"))
+        sal = parse_text(pay)
+        if sal.confirmed:
+            sal.raw = pay[:120]
+
+        url = _text(j.get("url"))
+        if not url and j.get("friendly_id"):
+            host = urlparse(src.url).netloc or \
+                f"{_text((j.get('company') or {}).get('friendly_id'))}.breezy.hr"
+            url = f"https://{host}/p/{j['friendly_id']}"
+
+        # There is no advert text here, so the only thing worth screening is
+        # the metadata. The remote label earns its place: "Hybrid (Some
+        # remote, some in person)" is what makes screen.py file the role as
+        # hybrid rather than reading the word "remote" off the location.
+        meta = [x for x in (_text((j.get("type") or {}).get("name")),
+                            _text(j.get("department")), label, pay) if x]
+
+        yield Job(
+            # The board publishes the employer's own name, and `discover`
+            # checks a board's identity against it. Falling back to src.company
+            # would make every board agree with whatever we already believed.
+            company=_text((j.get("company") or {}).get("name")) or src.company,
+            title=_text(j.get("name")),
+            url=url,
+            platform="breezy",
+            location=location,
+            remote=remote,
+            department=_text(j.get("department")) or None,
+            posted_at=_iso(j.get("published_date")),
+            description=". ".join(meta),
+            salary=sal,
+            country=country,
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
 # Personio (XML)
 # --------------------------------------------------------------------------
 def parse_personio(payload: Any, src: Source) -> Iterator[Job]:
