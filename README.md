@@ -121,6 +121,81 @@ equal of an employer's own board:
   role. Reed also lets an employer hide the salary, in which case nothing
   comes back at all, which is the same as any other board.
 
+### The other one: Adzuna, and the countries you would move to
+
+Adzuna is in for the same reason Reed is, plus one Reed cannot offer. It
+publishes a [documented REST API](https://developer.adzuna.com/overview) with a
+free self-serve key, and it runs **nineteen national indexes**. The country is
+two letters in the URL path, so watching the places you would relocate to is a
+copy of one line with `gb` swapped for `us`, `ca` or `au`.
+
+The nineteen are `gb us at au be br ca ch de es fr in it mx nl nz pl sg za`.
+There is no United Arab Emirates index, so Adzuna does nothing for a Dubai
+search.
+
+**Getting the credentials.** Register at
+<https://developer.adzuna.com/signup>; the dashboard then shows an `app_id` and
+an `app_key`. Free, no card. Both go in the config:
+
+```yaml
+sources:
+  adzuna_app_id: ""      # config.local.yaml, which is gitignored
+  adzuna_app_key: ""
+  extra:
+    - company: Adzuna
+      url: "https://api.adzuna.com/v1/api/jobs/gb/search/1?title_only={keyword}&results_per_page=50"
+      platform: adzuna
+      country: UK
+      keyword_template: true
+```
+
+or export `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`, which is what GitHub Actions
+wants. With no credentials the source is skipped and the scan says so by name.
+
+**Watch the call budget.** Adzuna's published free limits are **25 hits a
+minute, 250 a day, 1,000 a week and 2,500 a month**. One scan is one call per
+job title per page: six titles at up to three pages is **18 calls**, so the
+monthly cap is the binding one and it works out at roughly **four scans a day**
+sustained, or about thirteen in a single day against the daily cap. Add a second
+country and double it.
+
+**What to expect from it.**
+
+- **The salary may be a guess.** Adzuna attaches a figure to most adverts, but
+  `salary_is_predicted` is `"1"` when it came from their own Jobsworth model
+  rather than from the employer. Those are never treated as confirmed, so they
+  can never disqualify a role, and the row says the number is an estimate. A
+  figure the advertiser actually stated is used normally.
+- **No direct-employer filter.** Reed has `postedByDirectEmployer`; Adzuna has
+  nothing equivalent, so agency listings arrive mixed in and
+  `company.display_name` is whoever placed the advert.
+- **Descriptions are truncated to 500 characters** by Adzuna's own
+  documentation, so what you get is a preview, not the advert. `enrich` cannot
+  expand it either: `redirect_url` is a redirector, not a posting page.
+- **Duplicates.** Adzuna aggregates from employer career sites and other
+  boards, so a good share of what it returns is a role this tool can already
+  read from the employer's own applicant tracking system. Those collapse into
+  the employer's row rather than showing twice: Adzuna is scored as an
+  aggregator by `screen.directness`, so the direct board always wins the row
+  and the Adzuna copy becomes an "also listed on adzuna" note.
+- **Contract roles.** Adzuna annualises a day rate before publishing it, which
+  is how a six month contract clears a permanent salary floor. Anything marked
+  `contract_type: contract` is flagged as contract rather than permanent.
+- **Credentials travel in the query string.** Adzuna offers no header
+  authentication, so there is no alternative. They are added per request and
+  are never written onto the stored source, into the state file, or into an
+  error message.
+
+**Their terms, and what they ask of you.** Adzuna's API terms list the
+permitted uses as "Publishing Adzuna ad listings", "Publishing Jobsworth salary
+estimates" and "Personal research", and for that third one the obligation is
+attribution: an API user "shall acknowledge Adzuna as the source of all salary
+and vacancies data wherever it is published". Running it over your own job
+search publishes nothing. If you do publish anything you pulled through it,
+credit Adzuna. Anything beyond personal use, by "a commercial, government or
+academic organisation", is limited by their terms to a 14 day trial without a
+licence agreement.
+
 ### Indeed is not in, and will not be
 
 Indeed retired its public Publisher API and did not replace it with anything
@@ -138,6 +213,42 @@ browser, or paying a proxy service to launder the requests, which is a
 different activity from reading a published feed and is not something this
 repo is going to do. Indeed is actively refusing automated access, and the
 answer to that is to take no for an answer.
+
+### The rest of the aggregators, and why they are not here
+
+Indeed is not a special case. Every well-known job board was checked the same
+way, on 2026-08-24, with one honest identified GET each. Two got in. Here is
+what happened to the others, so nobody has to check them again.
+
+| Source | What happened |
+|---|---|
+| **Find a job** (DWP, `findajob.dwp.gov.uk`) | **Gone.** Every path answers **HTTP 503** with a GOV.UK page reading "This site is now closed". There is nothing left to read. |
+| **Civil Service Jobs** | Blocked by a human check. The front page is HTTP 200 and its content is "Quick check needed. We just need to confirm you're a real person. Please check the box below and then click Continue." Getting past that is the thing this repo does not do. Note the status code: 200 proves nothing. |
+| **Totaljobs / CWJobs** (StepStone) | No public API. A plain GET to a search page does not answer at all: the connection is accepted and then hangs until the 30 second timeout. |
+| **CV-Library** | `robots.txt` for `User-agent: *` has `Disallow: /api/` and `Disallow: /*?`, and their search is a query string. The partner feed needs a commercial agreement. |
+| **Guardian Jobs**, **Monster**, **Workinstartups** | **403 on `robots.txt` itself.** Monster's is a DataDome interstitial ("Please enable JS and disable any ad blocker"); the other two are a CloudFront "Request blocked". A site that will not serve you its own robots.txt has answered the question. |
+| **Technojobs** | The domain does not resolve. |
+| **Wellfound** (AngelList Talent) | No public API, and `robots.txt` has `Disallow: /search`. |
+| **Otta / Welcome to the Jungle** | `robots.txt` has `Disallow: /*?`, which is every search. The API behind the site is partner-gated. |
+| **Escape the City** | `robots.txt` allows everything, but the search runs on Algolia with keys embedded in the page. Lifting keys out of a page is not using a published API. |
+| **Talent.com** | `robots.txt` names their own search API and disallows it: `Disallow: /services/api-new/search`. |
+| **Dice** | `Disallow: /jobs?q*`, `/rss/` and `/feed/`. US-centric anyway. |
+| **Jooble** | The API needs a key granted on request, and the page documenting it is behind a Cloudflare "Just a moment..." challenge. |
+| **Careerjet** | A real documented API, and it is **HTTPS-refused**: port 443 is closed and it answers only over plaintext HTTP. It also requires a `Referer` naming the page calling it, which a command line tool does not have. A credential over cleartext plus a header we would have to invent is not a route in. |
+| **ZipRecruiter**, **Glassdoor** | Partner APIs behind an approval process. No self-serve tier. |
+| **Hacker News "Who is hiring"** (via the free Algolia HN API) | Reachable and genuinely open, and not worth an adapter. The August 2026 thread held 242 comments; 19 mentioned a leadership title anywhere in the text, 20 mentioned the UK or London, and **2 did both**. The format is prose with a "company | role | location" convention that is a habit rather than a schema, and pay is rarely stated. |
+| **Arbeitnow** | Free, no key, `robots.txt` allows it, and it carries a lot of UK. It is still out, for a reason worth knowing: **it has no search**. `?search=engineering%20manager` returns byte-identical results to no parameter at all, so an invalid query looks exactly like a successful one. Reading four pages of it, 550 postings covering two days, found 116 UK locations, 3 engineering-leadership titles, and **0 that were both**. Its `remote` boolean is also true for roles whose location is a London office. |
+| **Himalayas** | 104,915 jobs and no way to narrow them. `country=`, `search=` and `seniority=` are all accepted and all ignored, returning the same unfiltered newest-first page, and `limit=100` returns 20. Reading the whole thing is 5,000 requests, which is a crawl, not a handful. |
+| **We Work Remotely** | Free RSS, allowed by `robots.txt`, and too thin to justify a parser: the all-jobs feed held 88 items with **one** engineering-leadership title, and 87 of the 88 give their region as "Anywhere in the World" while the advert underneath says things like "open to candidates located in British Columbia or Ontario". The one structured field it has is wrong on almost every row. |
+| **RemoteOK** | The whole API is the latest 100 postings, there is no search, the first element of the array is a legal notice rather than a job, and its terms require a followed backlink from a website in exchange for access. There is no website here to put one on. |
+| **Remotive** | `robots.txt` for `User-agent: *` contains `Disallow: /api/*`, which is the documented public API. |
+| **Working Nomads** | Free and open. 42 items, none of them leadership. |
+
+The pattern in the remote-first boards is worth saying plainly: they are real,
+they are open, and for a senior engineering leader they are close to empty.
+Between Arbeitnow, Himalayas, We Work Remotely, RemoteOK and Working Nomads,
+one live snapshot held **five** engineering-leadership titles across roughly
+800 postings, and none of them was UK-eligible.
 
 ---
 
@@ -440,6 +551,7 @@ the adapters are shaped the way they are.
 | **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. |
 | **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
 | **Reed** | The one source that needs a credential: a free API key, sent as the **HTTP Basic username with an empty password**, which is Reed's own documented scheme. Unkeyed requests are **401**, which is the good news, because a 401 cannot be mistaken for "no jobs today". A search that matched nothing is **200 with an empty `results` list**, and so is a nonsense keyword, so liveness is the result count. Pages are capped at **100** and walked with `resultsToSkip`. The catch is salary: the **search endpoint returns `minimumSalary` / `maximumSalary` with no period at all** (only the per-job details endpoint carries `salaryType`), so a bare `650` could be a year or a day. Anything under 2,000 is read as an unlabelled rate and left **unconfirmed** rather than annualised wrongly, and the advert text gets a second go at it. `locationName` is free text, so most of it is towns and counties the location matcher has never heard of ("Stoke-on-Trent", "Cambridgeshire"), and the country has to be added by the adapter or a UK-filtered search drops the lot. There is **no remote field**, and `employerName` is whoever posted the job, which on an agency listing is the agency. |
+| **Adzuna** | Needs a free `app_id` and `app_key`, and both go in the **query string**: there is no header auth, so the fetcher adds them per request and never writes them onto the stored source or into the state file. Unkeyed requests answer **400 with an HTML error page**, not a 401 and not JSON. **The country is in the URL path** (`/v1/api/jobs/gb/search/1`) and appears nowhere in the payload, so the adapter reads it from there and names it in the location, or a UK filter drops every listing whose town is not in the city list. Same for the **currency**, which follows the index. The trap is **`salary_is_predicted`**: `"1"` means the figure came from Adzuna's Jobsworth model rather than the employer, and treating a model output as a stated salary drops real roles against the floor and promotes ones that pay nothing like it, so those stay unconfirmed. **Descriptions are truncated to 500 characters** by documentation. **The page number is in the path, not a parameter**, and `results_per_page` is a request rather than a promise, so paging stops on an empty page and never on a short one. No remote field, and no direct-employer filter of any kind. |
 
 **Tokens rarely match company names.** `mymoose` is Rapid7. `evergreenix` is
 Garrison. `knowbe4` is Egress. `primer.io` is Primer. This is why `discover`
@@ -604,6 +716,7 @@ generic agent:
 | NHS Jobs, Serco and Thales (Phenom), Transport for London (SuccessFactors), Metro Bank (Avature), OSB Group (iCIMS) | allowed |
 | **LinkedIn** (`jobs-guest` endpoint) | **`Disallow: /`** |
 | **Reed** (`/api/1.0/search`) | allowed. `User-agent: *` has no `/api/` rule; only `PerplexityBot` is disallowed from it. |
+| **Adzuna** (`api.adzuna.com/v1/api/jobs/...`) | **`Disallow: /`**. The API host's `robots.txt` is two lines long and blanket-disallows every agent. See below. |
 
 So the bundled LinkedIn source fetches a path LinkedIn's robots.txt tells
 crawlers not to. It is one entry that gets expanded into one search per job
@@ -636,6 +749,28 @@ may copy material on the Website for your own private or domestic purposes,
 but no copying for any commercial or business use is permitted"). A personal
 job search, keyed, at a handful of requests per run, is inside both.
 Publishing the listings you pull would not be.
+
+**Adzuna is the awkward one, and it is worth being exact about it.**
+`https://api.adzuna.com/robots.txt` is, in full:
+
+```
+User-agent: *
+Disallow: /
+```
+
+That is a blanket disallow on the API host, checked on 2026-08-24. It is not
+qualified by agent and there is no exception for `/v1/api/`. Set against that:
+the same company runs a developer portal that documents this exact endpoint,
+hands out the credentials it requires through a signup form, publishes an
+OpenAPI description of it, and lists "Personal research" as a permitted use in
+its API terms. A `robots.txt` addresses crawlers following links; a client the
+operator issued credentials to is a different thing, and the terms are the
+document that speaks to it.
+
+You may still not think those reconcile, and the honest position is that they
+do not obviously do so. So it is stated here rather than smoothed over, and
+Adzuna, like Reed, is **off by default**: it does nothing until you register,
+put credentials in your config, and add the source yourself.
 
 If you are running this at work, on shared infrastructure, or anywhere the
 consequences are not purely yours, read that table before you press go.

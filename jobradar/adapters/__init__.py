@@ -37,6 +37,98 @@ def _wd_body() -> dict:
     return {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""}
 
 
+# --------------------------------------------------------------------------
+# Composite tokens
+#
+# Most platforms address a board with one word, so `build` takes one word.
+# Four do not: a Workday board is a tenant AND a datacentre number AND a site
+# name, an Avature board is a host AND a path prefix. Those four had no
+# `build` at all, which meant no way to turn a discovered address into a
+# source, which meant every board on them had to be typed in by hand. In a
+# list of 14,000 that left 3 Avature rows, 4 Phenom and 1 SuccessFactors, and
+# Tesco was structurally unreachable until somebody added it manually.
+#
+# So the token carries the parts, separated by "|", exactly as
+# `enumerate_boards.board_url` already spelled Workday. Anything that can
+# print a token can now print a board.
+# --------------------------------------------------------------------------
+
+def _parts(token: str, n: int, *defaults: str) -> list[str]:
+    """Split a composite token into exactly n pieces, padding from defaults.
+
+    Padding rather than raising, because a token is often typed by hand and a
+    missing trailing piece is nearly always the ordinary case: an Avature
+    token with no site means the vendor's usual `careers`, a Workday token
+    with no site means the tenant's `careers`. A short token that produced an
+    exception instead would take the whole scan down over one row.
+    """
+    got = [p.strip() for p in token.split("|")]
+    got += list(defaults)[len(got):]
+    return (got + [""] * n)[:n]
+
+
+def _host(tenant: str, vendor: str) -> str:
+    """A tenant that already contains a dot is a hostname, not a subdomain.
+
+    This is the whole reason Avature needed a host in the token. Tesco Bank
+    are at tescoinsuranceandmoneyservices.avature.net, but Tesco themselves
+    are at careers.tesco.com, which is Avature serving from the employer's own
+    domain. A builder that only ever appended `.avature.net` could not express
+    the second one, and Tesco was therefore unreachable.
+    """
+    return tenant if "." in tenant else f"{tenant}.{vendor}"
+
+
+def build_workday(token: str) -> str:
+    """`tenant|wdN|site` -> the cxs JSON endpoint.
+
+    Lived in `enumerate_boards.board_url` as a special case. Moved here so the
+    enumerator has no per-platform knowledge left and so `discover` and the
+    harvester build the same URL from the same string.
+    """
+    tenant, ver, site = _parts(token, 3, "", "wd1", "careers")
+    return (f"https://{tenant}.{ver}.myworkdayjobs.com"
+            f"/wday/cxs/{tenant}/{site}/jobs")
+
+
+def build_avature(token: str) -> str:
+    """`host|path-prefix` -> the search page.
+
+    The prefix may hold more than one segment: Tesco's is
+    `en_GB/careersmarketplace`. It is never lowercased, because Avature paths
+    are case-sensitive and `en_GB` is not `en_gb`.
+    """
+    tenant, site = _parts(token, 2, "", "careers")
+    return (f"https://{_host(tenant, 'avature.net')}/{site.strip('/')}"
+            f"/SearchJobs/?jobRecordsPerPage=50")
+
+
+def build_rmk(token: str) -> str:
+    """`tenant|prefix` -> the SuccessFactors search page.
+
+    The prefix is optional: some tenants serve the board at `/search/` and
+    some, Transport for London among them, at `/tfl/search/`. An empty prefix
+    has to collapse rather than leave `//search/`, which 404s.
+    """
+    tenant, prefix = _parts(token, 2, "", "")
+    path = f"/{prefix.strip('/')}" if prefix.strip("/") else ""
+    return (f"https://{_host(tenant, 'jobs2web.com')}{path}"
+            f"/search/?q=&sortColumn=referencedate&sortDirection=desc")
+
+
+def build_phenom(token: str) -> str:
+    """`host|locale` -> the search-results page.
+
+    Phenom exposes no tenant id anywhere: the employer's own careers host IS
+    the address, which is why `discover` already treats the host as the token.
+    The locale is a path segment pair and it varies (`gb/en` for Serco,
+    `global/en` for Thales), so it travels in the token rather than being
+    guessed at fetch time.
+    """
+    host, locale = _parts(token, 2, "", "gb/en")
+    return f"https://{host}/{locale.strip('/')}/search-results?s=1"
+
+
 REGISTRY: list[Platform] = [
     Platform(
         "greenhouse",
@@ -96,9 +188,12 @@ REGISTRY: list[Platform] = [
         "workday",
         r"myworkdayjobs\.com/wday/cxs",
         platforms.parse_workday,
+        build=build_workday,
         method="POST",
         verified=True,
-        note="POST only; 406 (not 404) for unknown tenants due to wildcard DNS",
+        note="POST only; 406 (not 404) for unknown tenants due to wildcard DNS. "
+             "The token is `tenant|wdN|site`: none of the three follow from "
+             "the company name, so all three have to be carried",
     ),
     Platform(
         "workable",
@@ -164,6 +259,42 @@ REGISTRY: list[Platform] = [
              "`salaryType`, so an unlabelled figure below 2,000 is a rate and "
              "is left unconfirmed rather than read as an annual salary. "
              "UNVERIFIED against a live call: no key was obtainable here",
+    ),
+    # The second keyword-driven aggregator, and the only source here that can
+    # watch more than one country from the same config: Adzuna runs nineteen
+    # national indexes and the country is two letters in the path, so the
+    # relocation countries are a copy of this line with `gb` swapped out.
+    #
+    # `title_only` rather than `what` on purpose. `what` searches the advert
+    # body, which for "engineering manager" returns every engineer whose
+    # advert mentions their manager, and the title filter downstream then
+    # discards nearly all of it after we have spent the request. The free tier
+    # is 250 calls a day, so a wasted page is not free.
+    #
+    # Nothing else is added to the query. Adzuna answers an unrecognised
+    # parameter with a 400 and no results, which would take the whole source
+    # down, so every parameter here is one that appears in Adzuna's own
+    # OpenAPI description of the endpoint.
+    Platform(
+        "adzuna",
+        r"api\.adzuna\.com/v1/api/jobs/",
+        platforms.parse_adzuna,
+        build=lambda kw: (
+            "https://api.adzuna.com/v1/api/jobs/gb/search/1"
+            f"?title_only={kw.replace(' ', '%20')}"
+            "&results_per_page=50"
+        ),
+        verified=False,
+        note="needs a free app_id and app_key, both in the query string: "
+             "Adzuna offers no header auth, so the fetcher adds them per "
+             "request and never writes them onto the stored source. Without "
+             "them the answer is 400 with an HTML error page, not JSON. "
+             "`salary_is_predicted` is '1' when the figure is Adzuna's own "
+             "Jobsworth model rather than the employer, and those are left "
+             "unconfirmed. The country is in the URL path and nowhere in the "
+             "payload; descriptions are truncated to 500 characters by "
+             "Adzuna; there is no remote field and no direct-employer filter. "
+             "UNVERIFIED against a live call: no key was created here",
     ),
     Platform(
         "recruitee",
@@ -261,22 +392,42 @@ REGISTRY: list[Platform] = [
         "phenom",
         r"/search-results|phenompeople",
         platforms.parse_phenom,
+        build=build_phenom,
         verified=True,
-        note="renders in the browser but embeds the full result set as JSON in phApp.ddo",
+        note="renders in the browser but embeds the first ten results as JSON "
+             "in phApp.ddo; `fetch_phenom` uses the /widgets POST endpoint, "
+             "which returns fifty at a time and a true total. The token is "
+             "`host|locale`, because Phenom has no tenant id at all",
     ),
     Platform(
         "rmk",
         r"jobs2web\.com/.*/search|/search/\?q=",
         platforms.parse_rmk,
+        build=build_rmk,
         verified=True,
-        note="SuccessFactors Recruiting Marketing; hrefs carry a tenant prefix",
+        note="SuccessFactors Recruiting Marketing; hrefs carry a tenant prefix. "
+             "Token is `tenant|prefix`, prefix optional. Paginates on "
+             "`startrow` in twenty-fives, and states no total anywhere",
     ),
+    # The pattern is the PATH, not the host, and that is the whole point.
+    # Avature runs boards on its own `<tenant>.avature.net` and equally often
+    # on the employer's domain, and the second kind is invisible to a
+    # host-based signature: Tesco's board is careers.tesco.com, which has
+    # nothing in it to match on. `/SearchJobs/?jobRecordsPerPage=` is Avature's
+    # own query shape and no other platform here emits it, so it is specific
+    # enough to be safe: a bare `/SearchJobs/` on an unrelated site does not
+    # match, which matters because plenty of sites have a page by that name.
     Platform(
         "avature",
-        r"avature\.net/.*SearchJobs",
+        r"avature\.net/.*SearchJobs|/SearchJobs/?\?[^ ]*jobRecordsPerPage=",
         platforms.parse_avature,
+        build=build_avature,
         verified=True,
-        note="absolute hrefs to /JobDetail/; location lives in the slug",
+        note="absolute hrefs to /JobDetail/; location lives in the slug. Token "
+             "is `host|path-prefix`. Paginates on `jobOffset` and the page "
+             "size is the tenant's, not ours: Tesco answers ten however many "
+             "we ask for. `semanticSearch=` is a real server-side keyword "
+             "filter, which is what keeps a 999+ board to a few requests",
     ),
     Platform(
         "icims",

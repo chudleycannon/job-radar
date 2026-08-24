@@ -339,3 +339,60 @@ def clears_floor(sal: Salary, floor: float | None, currency: str | None = None) 
         shown = sal.raw or f"{top:,.0f}"
         return False, f"stated pay {shown} below floor"
     return True, ""
+
+
+# Adzuna publishes a figure for almost every advert, but only some of them come
+# from the employer. `salary_is_predicted` is "1" when the number is Adzuna's
+# own Jobsworth estimate, produced by a model from the title and location, and
+# "0" when the advertiser stated it. Treating an estimate as a stated figure is
+# the worst available outcome in both directions: a low estimate silently DROPS
+# a real role against the floor, and a high one promotes a role that pays
+# nothing like it. Only `confirmed=True` may disqualify a posting, so an
+# estimate has to come back unconfirmed.
+#
+# The currency is not in the payload at all. It follows from which country
+# endpoint was called, because Adzuna runs one index per country and states
+# pay "in the local currency", so `parse_adzuna` passes it in from the URL.
+_ADZUNA_MIN_ANNUAL = 2000.0
+
+
+def from_adzuna(job: dict | None, currency: str | None = None) -> Salary:
+    """Adzuna's pay fields, with the predicted ones refused.
+
+    Three ways this comes back unconfirmed, and all three are correct:
+
+      * `salary_is_predicted == "1"`. A Jobsworth estimate is a model output,
+        not something the employer wrote down.
+      * Neither figure is present. The advertiser published no pay.
+      * The figure is too small to be an annual salary. Adzuna's own filters
+        are annual and it normalises rates upward, but a feed that arrives
+        unnormalised would put a bare `650` day rate in the same field, and
+        reading that as a year's pay bins the role against any floor at all.
+        Same threshold and same reasoning as `from_reed`.
+
+    The numbers are kept on the unconfirmed Salary rather than thrown away, so
+    the reader still sees what Adzuna thought.
+    """
+    if not isinstance(job, dict):
+        return Salary()
+
+    def _amt(key):
+        v = job.get(key)
+        try:
+            return float(v) if v is not None and float(v) > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    lo, hi = _amt("salary_min"), _amt("salary_max")
+    if lo is None and hi is None:
+        return Salary(currency=currency)
+
+    top = hi if hi is not None else lo
+    predicted = str(job.get("salary_is_predicted") or "").strip() == "1"
+    plausible = top is not None and top >= _ADZUNA_MIN_ANNUAL
+    return Salary(
+        min=lo, max=hi if hi is not None else lo, currency=currency,
+        period="year",
+        raw=("estimated by Adzuna" if predicted else None),
+        confirmed=not predicted and plausible,
+    )

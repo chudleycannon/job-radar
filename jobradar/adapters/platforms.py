@@ -18,8 +18,8 @@ from typing import Any, Iterator
 from urllib.parse import unquote, urljoin, urlparse
 
 from ..models import Job, Salary, Source
-from ..salary import (from_ashby, from_greenhouse, from_pinpoint, from_reed,
-                       parse_text)
+from ..salary import (from_adzuna, from_ashby, from_greenhouse, from_pinpoint,
+                       from_reed, parse_text)
 
 _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
@@ -1276,7 +1276,15 @@ def parse_rmk(payload: Any, src: Source) -> Iterator[Job]:
 # Avature
 # --------------------------------------------------------------------------
 # Avature serves absolute hrefs, not paths.
-_AV_LINK = re.compile(r'href="(https?://[^"]*?/JobDetail/[^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S)
+#
+# `[^"?]` and not `[^"]` before /JobDetail/: every card also carries Twitter
+# and Facebook share links whose QUERY STRING contains the job's own URL
+# (`?text=<title> https://.../JobDetail/...`). Metro Bank's six roles come with
+# twelve such links. They only fail to parse today because the anchor wraps an
+# icon rather than text and the empty title is dropped, which is luck rather
+# than a rule: the moment one carries a label the board reports three rows per
+# job.
+_AV_LINK = re.compile(r'href="(https?://[^"?]*?/JobDetail/[^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S)
 
 
 def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
@@ -1511,4 +1519,159 @@ def parse_reed(payload: Any, src: Source) -> Iterator[Job]:
         exp = _text(j.get("expirationDate"))
         if exp:
             job.flags.append(f"closes {exp}")
+        yield job
+
+
+# --------------------------------------------------------------------------
+# Adzuna
+# --------------------------------------------------------------------------
+# Adzuna runs one index per country and the country is in the URL path, not in
+# the payload: /v1/api/jobs/gb/search/1 is the British index and every figure
+# in it is in pounds. Nothing in a result names the country, so an adapter that
+# reads only the payload produces "Reading, Berkshire" with no country, and
+# `match` drops a posting it cannot place the moment `locations.countries` is
+# set. That is the same failure Reed had, arriving by a different route.
+_ADZUNA_COUNTRIES = {
+    "gb": ("United Kingdom", "GBP"), "us": ("United States", "USD"),
+    "at": ("Austria", "EUR"), "au": ("Australia", "AUD"),
+    "be": ("Belgium", "EUR"), "br": ("Brazil", "BRL"),
+    "ca": ("Canada", "CAD"), "ch": ("Switzerland", "CHF"),
+    "de": ("Germany", "EUR"), "es": ("Spain", "EUR"),
+    "fr": ("France", "EUR"), "in": ("India", "INR"),
+    "it": ("Italy", "EUR"), "mx": ("Mexico", "MXN"),
+    "nl": ("Netherlands", "EUR"), "nz": ("New Zealand", "NZD"),
+    "pl": ("Poland", "PLN"), "sg": ("Singapore", "SGD"),
+    "za": ("South Africa", "ZAR"),
+}
+
+_ADZUNA_PATH = re.compile(r"/v1/api/jobs/([a-z]{2})/search/", re.I)
+
+
+def adzuna_country(url: str) -> tuple[str, str]:
+    """The country name and currency behind an Adzuna search URL.
+
+    Falls back to the British index because that is what the shipped builder
+    produces, but the code is read from the URL first so pointing the source at
+    /jobs/ca/ or /jobs/au/ works without touching this file. An unknown code
+    yields no country name at all rather than a wrong one: naming the wrong
+    country is worse than naming none, because a wrong name passes the filter.
+    """
+    m = _ADZUNA_PATH.search(url or "")
+    code = (m.group(1) if m else "gb").lower()
+    return _ADZUNA_COUNTRIES.get(code, ("", ""))
+
+
+def _adzuna_location(display: str, country: str) -> str:
+    """Adzuna's `display_name` is a town and a county, never a country.
+
+    Same treatment as `_reed_location`, and for the same reason: screen.py
+    resolves a country from a city list that cannot hold every town in
+    Britain, and an unplaceable location is a dropped posting. The country is
+    only added where the string does not already name one, so a listing on the
+    British index that says "Dublin, Ireland" is not relabelled as British.
+    """
+    display = (display or "").strip()
+    if not country:
+        return display
+    if not display:
+        return country
+    if _screen()._countries_in(display):
+        return display
+    return f"{display}, {country}"
+
+
+def parse_adzuna(payload: Any, src: Source) -> Iterator[Job]:
+    """Adzuna's search API: https://api.adzuna.com/v1/api/jobs/{country}/search/{page}
+
+    A keyword-driven aggregator like Reed, and it earns its place for the same
+    reason: it reaches employers nobody has added to the source list. It is
+    broader than Reed in one way that matters here, which is that it runs
+    nineteen national indexes, so the same config that watches the UK can watch
+    the United States, Canada and Australia by changing two letters in a URL.
+
+    Four things about the payload that cost a role each if missed:
+
+      * **The salary may be a guess.** `salary_is_predicted` is "1" when the
+        number came from Adzuna's Jobsworth model rather than the advertiser.
+        `from_adzuna` refuses to confirm those, because only a confirmed figure
+        can disqualify a posting and a modelled one would do it silently.
+      * **The country is in the URL, not the payload.** See `adzuna_country`.
+      * **There is no remote field**, so the arrangement comes from the words,
+        via `screen.work_mode`, which tests hybrid before remote.
+      * **The description is truncated to 500 characters** by Adzuna's own
+        documentation, so it is a preview and not the advert. `enrich` cannot
+        expand it either: `redirect_url` is a redirector rather than a page.
+
+    Adzuna has no direct-employer filter of any kind, unlike Reed's
+    `postedByDirectEmployer`, so agency listings arrive mixed in with employer
+    ones and `company.display_name` is whoever placed the advert.
+    """
+    items = payload.get("results") if isinstance(payload, dict) else payload
+    country, currency = adzuna_country(src.url)
+
+    for j in items or []:
+        if not isinstance(j, dict):
+            continue
+
+        title = _text(j.get("title"))
+        # `redirect_url` is the link Adzuna's terms require you to send people
+        # to, and it is also the only one that reaches the advertiser.
+        url = _text(j.get("redirect_url"))
+        if not (title and url):
+            continue
+
+        desc = _text(j.get("description"))
+        loc = j.get("location")
+        display = _text(loc.get("display_name")) if isinstance(loc, dict) else _text(loc)
+        location = _adzuna_location(display, country)
+
+        sal = from_adzuna(j, currency)
+        if not sal.confirmed:
+            # The truncated advert gets a go at it, exactly as with Reed. An
+            # employer who wrote "£150,000 - £170,000" into the first line of
+            # the advert beats both silence and a Jobsworth estimate.
+            from_advert = parse_text(desc, default_currency=currency)
+            if from_advert.confirmed:
+                sal = from_advert
+
+        probe = Job(company="", title=title, url=url, platform="adzuna",
+                    location=location, description=desc)
+        mode = _screen().work_mode(probe)
+        if mode == "remote":
+            remote: bool | None = True
+        elif mode in ("hybrid", "office"):
+            remote = False
+        else:
+            remote = _remote(location, title)
+
+        company = j.get("company")
+        category = j.get("category")
+        job = Job(
+            company=(_text(company.get("display_name")) if isinstance(company, dict)
+                     else _text(company)) or "Unknown employer",
+            title=title,
+            url=url,
+            platform="adzuna",
+            location=location,
+            remote=remote,
+            department=(_text(category.get("label"))
+                        if isinstance(category, dict) else "") or None,
+            posted_at=_iso(j.get("created")),
+            description=desc,
+            salary=sal,
+            source_id=src.key,
+        )
+        job.flags.append("listed on Adzuna; the apply link redirects to the "
+                         "advertiser")
+        # A contract advertised at a day rate is annualised by Adzuna before we
+        # ever see it, which is how a six month contract clears a permanent
+        # salary floor. Say which kind of job it is on the row rather than
+        # trying to undo the arithmetic.
+        if str(j.get("contract_type") or "").lower() == "contract":
+            job.flags.append("contract, not permanent")
+        if str(j.get("contract_time") or "").lower() == "part_time":
+            job.flags.append("part time")
+        if not sal.confirmed and str(j.get("salary_is_predicted") or "") == "1":
+            job.flags.append("pay figure is an Adzuna estimate, not the "
+                             "employer's")
         yield job

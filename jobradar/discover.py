@@ -69,10 +69,22 @@ SIGNATURES: list[tuple[str, str]] = [
     # Oracle needs the whole host, not a short token, and the host bears no
     # relation to the company name.
     ("oracle", r"([a-z0-9-]+\.fa\.[a-z0-9]+\.oraclecloud\.com)"),
-    # These three are whole-host platforms too: the careers hostname is the
-    # identifier and nothing shorter works.
-    ("avature", r"([a-z0-9-]+\.avature\.net/[a-z0-9-]+)"),
-    ("rmk", r"([a-z0-9-]+\.jobs2web\.com/[a-z0-9-]+)"),
+    # Avature and RMK are whole-host platforms with a path prefix on top, so
+    # their token is composite: `host|prefix`, the same string
+    # `adapters.build_avature` takes. They used to capture `host/prefix` in one
+    # group, which nothing could build a URL from, so `_scan` dropped every hit
+    # (it skips platforms with no `build`) and neither platform was ever found
+    # by `discover` at all.
+    ("avature", r"([a-z0-9-]+\.avature\.net)/([a-zA-Z0-9_-]+)"),
+    # The customer-hosted form, which is the one that matters. Avature serves
+    # as often from the employer's own domain as from its own, and Tesco is on
+    # careers.tesco.com: a host signature cannot see it, so the signature has
+    # to be the path. Tesco's prefix is two segments (`en_GB/careersmarketplace`),
+    # hence the optional second one.
+    ("avature",
+     r"(?:https?://)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)"
+     r"/([a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)?)/SearchJobs"),
+    ("rmk", r"([a-z0-9-]+\.jobs2web\.com)/([a-zA-Z0-9_-]+)"),
     ("icims", r"([a-z0-9-]+)\.icims\.com"),
 ]
 
@@ -244,16 +256,27 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
         hits.append(("workday", f"{tenant}/{site}", api))
 
     # Phenom does not expose a token at all; the careers host itself is the
-    # source, and it is recognisable from the assets it loads.
+    # source, and it is recognisable from the assets it loads. The URL is built
+    # by the adapter rather than spelled out here, because it was spelled out
+    # in three places and `enumerate_boards` had a fourth copy of the same idea
+    # for Workday that had already drifted.
     if re.search(r"phenompeople|phApp\.ddo", blob, re.I):
         host = urlparse(final_url).netloc
         if host:
-            hits.append(("phenom", host, f"https://{host}/gb/en/search-results?s=1"))
+            ph = adapters.by_name("phenom")
+            hits.append(("phenom", host, ph.build(host)))
 
     for platform, pat in SIGNATURES:
         for m in re.finditer(pat, blob, re.I):
-            tok = m.group(1)
-            if not tok or tok.lower() in _JUNK_TOKENS or len(tok) < 2:
+            # A signature with more than one group is a composite token, joined
+            # with "|" exactly as `adapters.build_avature` and the harvester's
+            # columnar extractor spell it. The junk test stays on the FIRST
+            # group only: the rest are path segments in the vendor's namespace,
+            # and `_JUNK_TOKENS` contains "careers", which is what Tesco Bank's
+            # Avature site is actually called.
+            tok = "|".join(g or "" for g in m.groups())
+            head = m.group(1) or ""
+            if not head or head.lower() in _JUNK_TOKENS or len(head) < 2:
                 continue
             p = adapters.by_name(platform)
             if not p or not p.build:
@@ -267,6 +290,12 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
         seen.add(h[2])
         out.append(h)
     return out
+
+
+# Platforms that cannot answer at all without a credential. `validate` carries
+# none, so a failure from one of these is a fact about `validate`, not about
+# the source, and `validate --prune` deletes what looks dead.
+KEYED_PLATFORMS = {"reed", "adzuna"}
 
 
 def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
@@ -286,13 +315,16 @@ def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
         why = res.error or (f"HTTP {res.status}" if res.status else "no answer")
         if res.status in (429, 503) or res.throttled:
             why = f"rate limited ({why})"
-        elif res.status in (401, 403) and src.platform == "reed":
+        elif res.status in (400, 401, 403) and src.platform in KEYED_PLATFORMS:
             # `validate` does not carry credentials, so it cannot speak to
-            # Reed at all. Reporting a bare "HTTP 401" here reads as a broken
+            # these at all. Reporting a bare "HTTP 401" here reads as a broken
             # source and would have anyone with a perfectly good key in their
-            # config hunting a fault that is not there.
-            why = ("needs an API key, which `validate` does not send; "
-                   "this says nothing about whether Reed is working")
+            # config hunting a fault that is not there. Adzuna is the reason
+            # 400 is in that list as well as 401: an unkeyed Adzuna request is
+            # a 400 with an HTML error page, not a 401.
+            why = (f"needs an API key, which `validate` does not send; "
+                   f"this says nothing about whether {src.platform.title()} "
+                   f"is working")
         return 0, [], why
     jobs = adapters.parse(res.payload, src)
     return len(jobs), jobs, None

@@ -89,6 +89,27 @@ sources:
   # this blank and export REED_API_KEY instead.
   reed_api_key: ""
 
+  # Adzuna (adzuna.com) is the second keyed aggregator, and the only source
+  # here that can watch more than one country from the same config: it runs
+  # nineteen national indexes and the country is two letters in the URL path,
+  # so `gb` becomes `us`, `ca` or `au` for the places you would move to. There
+  # is no United Arab Emirates index.
+  #
+  # Free, self-serve, no card: register at https://developer.adzuna.com/signup
+  # and the dashboard shows both values. Leave them empty and the Adzuna source
+  # below is skipped with a message; nothing else changes.
+  #
+  # The free limits are 25 calls a minute, 250 a day, 1,000 a week and 2,500 a
+  # month. One scan is one call per title per page, so six titles at up to
+  # three pages is 18 calls, and the monthly cap works out at about four scans
+  # a day. Adding a second country doubles it.
+  #
+  # Same warning as Reed: DO NOT put real values here if this file is
+  # `config.yaml`, which is committed. Use `config.local.yaml`, which is
+  # gitignored, or export ADZUNA_APP_ID and ADZUNA_APP_KEY.
+  adzuna_app_id: ""
+  adzuna_app_key: ""
+
   # Boards you added yourself, or that `job-radar discover --add` found.
   extra: []
     # Reed. Uncomment to switch it on. `{keyword}` is expanded into one search
@@ -104,6 +125,20 @@ sources:
     # - company: Reed
     #   url: "https://www.reed.co.uk/api/1.0/search?keywords={keyword}&postedByDirectEmployer=true"
     #   platform: reed
+    #   country: UK
+    #   keyword_template: true
+
+    # Adzuna. Uncomment to switch it on. `{keyword}` expands per title, as
+    # above. `title_only` rather than `what` on purpose: `what` searches the
+    # advert body, so "engineering manager" returns every engineer whose
+    # advert mentions their manager, and you pay a call for each page of it.
+    #
+    # The `gb` in the path is the country. Copy the line with `us`, `ca` or
+    # `au` to watch somewhere you would relocate to; the adapter reads the
+    # country and the currency out of the path, so nothing else changes.
+    # - company: Adzuna
+    #   url: "https://api.adzuna.com/v1/api/jobs/gb/search/1?title_only={keyword}&results_per_page=50"
+    #   platform: adzuna
     #   country: UK
     #   keyword_template: true
 

@@ -3470,3 +3470,765 @@ def test_validate_does_not_call_reed_dead_for_want_of_a_key():
     assert (n, jobs) == (0, [])
     assert "API key" in why and "validate" in why, why
     assert row["verdict"] == "unreachable", row
+
+
+# ------------------------------------------------------------------ adzuna
+# Adzuna's search API, https://api.adzuna.com/v1/api/jobs/{country}/search/{page}
+# Field names, types and the truncation note are taken from Adzuna's own
+# OpenAPI description of the endpoint, served at
+# https://developer.adzuna.com/api_docs/services/236708.json and read on
+# 2026-08-24. NOT recorded from a live call: the API needs an app_id and an
+# app_key, none were created here, so every assertion below is against the
+# documented shape rather than against bytes off the wire.
+ADZUNA_SEARCH = {
+    "count": 1,
+    "mean": 98500.0,
+    "results": [
+        {
+            "id": "5324912345",
+            "title": "Engineering Manager",
+            "description": ("Lead two platform teams for a growing payments "
+                            "business. Hybrid working, three days a week in "
+                            "our Basingstoke office. …"),
+            "created": "2026-08-20T09:14:22Z",
+            "redirect_url": "https://www.adzuna.co.uk/land/ad/5324912345",
+            "adref": "eyJhbGciOiJIUzI1NiJ9",
+            "latitude": 51.4543,
+            "longitude": -0.9781,
+            "location": {
+                "display_name": "Basingstoke, Hampshire",
+                "area": ["UK", "South East England", "Hampshire", "Basingstoke"],
+            },
+            "category": {"tag": "it-jobs", "label": "IT Jobs"},
+            "company": {"display_name": "Bet365"},
+            "salary_min": 90000.0,
+            "salary_max": 110000.0,
+            "salary_is_predicted": "0",
+            "contract_time": "full_time",
+            "contract_type": "permanent",
+        },
+    ],
+}
+
+
+def _adzuna_src(country: str = "gb"):
+    from jobradar.models import Source
+    return Source(
+        company="Adzuna", platform="adzuna", country=country.upper(),
+        keyword_template=False,
+        url=(f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+             "?title_only=engineering%20manager&results_per_page=50"))
+
+
+def test_an_adzuna_town_lands_in_the_country_the_filters_ask_for():
+    """Adzuna runs one index per country and the country code is in the URL
+    path. It appears nowhere in a result: `location.display_name` is "Reading,
+    Berkshire" and nothing else. screen.py resolves a country from a city list
+    that cannot hold every town in Britain, and `match` drops a posting it
+    cannot place whenever `locations.countries` is set, which is every UK user
+    on most of the listings. So the adapter reads the code out of the URL and
+    names the country outright.
+
+    Only where the string does not already name one. Adzuna carries listings
+    that state a country themselves, and stamping a second one onto "Dublin,
+    Ireland" would file an Irish job as British."""
+    from jobradar.adapters.platforms import parse_adzuna
+    from jobradar.screen import _countries_in, enrich, match
+
+    job = enrich(next(iter(parse_adzuna(ADZUNA_SEARCH, _adzuna_src()))))
+    assert "United Kingdom" in job.location
+    assert _countries_in(job.location) == {"UK"}
+    assert job.country == "UK"
+
+    cfg = Config(titles_include=["engineering manager"], countries=["UK"])
+    assert match(job, cfg)[0] is True, (
+        "a Basingstoke role must survive a UK filter")
+
+    already = {"count": 1, "results": [dict(
+        ADZUNA_SEARCH["results"][0], id="8",
+        location={"display_name": "Dublin, Ireland", "area": []})]}
+    other = next(iter(parse_adzuna(already, _adzuna_src())))
+    assert other.location == "Dublin, Ireland"
+    assert _countries_in(other.location) == {"IE"}
+
+
+def test_an_adzuna_search_on_another_index_is_not_read_as_british():
+    """Changing two letters in the path is how this tool watches the countries
+    someone would relocate to, so the country and the currency have to follow
+    the path rather than a default. Baking in the British index would file
+    every Canadian role as UK, and would compare Canadian dollars to a sterling
+    floor as if they were the same number."""
+    from jobradar.adapters.platforms import parse_adzuna
+    from jobradar.salary import clears_floor
+    from jobradar.screen import _countries_in, enrich
+
+    payload = {"count": 1, "results": [dict(
+        ADZUNA_SEARCH["results"][0], id="9",
+        location={"display_name": "Kitchener, Ontario", "area": []},
+        salary_min=150000.0, salary_max=180000.0)]}
+    job = enrich(next(iter(parse_adzuna(payload, _adzuna_src("ca")))))
+
+    assert _countries_in(job.location) == {"CA"}
+    assert job.salary.currency == "CAD"
+    keep, why = clears_floor(job.salary, 140000, "GBP")
+    assert keep is True and "not compared" in why, (
+        "180,000 Canadian dollars is not 180,000 pounds, and guessing an "
+        "exchange rate silently drops or promotes real roles")
+
+
+def test_an_adzuna_predicted_salary_can_never_disqualify_a_role():
+    """Adzuna attaches a figure to most adverts, but `salary_is_predicted` is
+    "1" when it came from their Jobsworth model rather than from the employer.
+    Read as a stated figure it fails in both directions: a modelled 85,000 on a
+    role that actually pays 160,000 is silently dropped by the floor, and a
+    modelled 200,000 promotes a role paying nothing like it. Only a confirmed
+    salary may disqualify a posting, so an estimate must not be confirmed."""
+    from jobradar.adapters.platforms import parse_adzuna
+    from jobradar.salary import clears_floor, from_adzuna
+
+    guessed = from_adzuna({"salary_min": 85000.0, "salary_max": 85000.0,
+                           "salary_is_predicted": "1"}, "GBP")
+    assert guessed.confirmed is False
+    assert clears_floor(guessed, 140000, "GBP")[0] is True
+
+    stated = from_adzuna({"salary_min": 90000.0, "salary_max": 110000.0,
+                          "salary_is_predicted": "0"}, "GBP")
+    assert stated.confirmed is True
+    assert clears_floor(stated, 140000, "GBP")[0] is False
+
+    payload = {"count": 1, "results": [dict(ADZUNA_SEARCH["results"][0],
+                                            id="2", salary_is_predicted="1",
+                                            description="Lead two teams.")]}
+    job = next(iter(parse_adzuna(payload, _adzuna_src())))
+    assert job.salary.confirmed is False
+    assert any("estimate" in f for f in job.flags), (
+        "the reader has to be told the number is not the employer's")
+
+
+def test_an_adzuna_advert_beats_an_adzuna_estimate():
+    """The estimate is refused, but the advert underneath it is still the
+    employer speaking. Stopping at "unconfirmed" would throw away a figure that
+    was written down in the posting, which is the one number worth having."""
+    from jobradar.adapters.platforms import parse_adzuna
+
+    payload = {"count": 1, "results": [dict(
+        ADZUNA_SEARCH["results"][0], id="3", salary_is_predicted="1",
+        salary_min=85000.0, salary_max=85000.0,
+        description="Salary range for this role: £150,000 - £170,000.")]}
+    job = next(iter(parse_adzuna(payload, _adzuna_src())))
+    assert job.salary.confirmed is True
+    assert (job.salary.min, job.salary.max) == (150000.0, 170000.0)
+
+
+def test_an_unlabelled_adzuna_day_rate_is_not_read_as_an_annual_salary():
+    """Adzuna's own filters are annual and it normalises rates upward before
+    publishing, but the field carries no period and a feed that arrived
+    unnormalised would put a bare 650 in it. Read as a year's pay that is
+    binned by any sensible floor, and the role disappears with no message. Too
+    small to be an annual figure means unlabelled, which means unconfirmed,
+    which means shown to the reader. Same threshold as `from_reed`."""
+    from jobradar.salary import clears_floor, from_adzuna
+
+    rate = from_adzuna({"salary_min": 650.0, "salary_max": 700.0,
+                        "salary_is_predicted": "0"}, "GBP")
+    assert rate.confirmed is False
+    assert clears_floor(rate, 140000, "GBP")[0] is True
+    assert rate.max == 700.0, "the number is still shown, just not trusted"
+
+
+def test_an_adzuna_hybrid_role_is_not_reported_as_remote():
+    """Adzuna has no remote field at all, so the arrangement is only ever in
+    the words, and the words for a hybrid job contain "remote" as often as not.
+    `screen.work_mode` tests hybrid before remote for exactly this reason, and
+    the adapter asks it rather than running its own keyword check, which would
+    answer true to "hybrid, three days a week in the office"."""
+    from jobradar.adapters.platforms import parse_adzuna
+    from jobradar.screen import enrich
+
+    job = enrich(next(iter(parse_adzuna(ADZUNA_SEARCH, _adzuna_src()))))
+    assert job.work_mode == "hybrid"
+    assert job.remote is False
+
+
+def test_an_empty_adzuna_search_is_not_a_parse_failure():
+    """A search that matched nothing is 200 with an empty `results` list, and
+    so is a search whose keyword was nonsense, so liveness here is the result
+    count and never the status code. The one loud case is having no
+    credentials, which is a 400 with an HTML error page and cannot be mistaken
+    for a quiet day."""
+    from jobradar import adapters
+
+    src = _adzuna_src()
+    assert adapters.detect(src.url).name == "adzuna"
+    assert adapters.parse({"count": 0, "results": []}, src) == []
+    assert adapters.parse({}, src) == []
+    assert len(adapters.parse(ADZUNA_SEARCH, src)) == 1
+
+
+def test_adzuna_searches_titles_only_and_expands_per_title():
+    """`what` searches the advert body, so "engineering manager" returns every
+    engineer whose advert mentions their manager; the title filter then throws
+    nearly all of it away after the request has been spent, and the free tier
+    is 250 calls a day. And Adzuna is a search, not a board, so shipping it
+    with a fixed keyword would ship whoever wrote it their own job titles,
+    which is the bug NHS Jobs already had."""
+    from jobradar import adapters
+    from jobradar.models import Source
+    from jobradar.sources import expand_templates
+
+    built = adapters.by_name("adzuna").build("engineering manager")
+    assert "title_only=engineering%20manager" in built
+    assert "what=" not in built
+    assert adapters.detect(built).name == "adzuna"
+
+    tmpl = Source(company="Adzuna", platform="adzuna", keyword_template=True,
+                  url="https://api.adzuna.com/v1/api/jobs/gb/search/1?title_only={keyword}")
+    out = expand_templates([tmpl], ["engineering manager", "head of engineering"])
+    assert len(out) == 2
+    assert out[0].url.endswith("title_only=engineering+manager")
+    assert all("{keyword}" not in s.url for s in out)
+
+
+def test_an_adzuna_repost_does_not_beat_the_employers_own_board():
+    """An aggregator reposting a role it scraped from an employer's own board
+    must not take the row: its link is a redirector and the employer's is the
+    real apply form. `directness` has to list every aggregator, not only the
+    talkative ones, because `_fold_aggregators` decides what an aggregator is
+    by asking whether directness is below 2. Left at the default, Adzuna is
+    treated as an employer's own ATS and shows a duplicate row."""
+    from jobradar.screen import dedupe, directness
+
+    assert directness("adzuna") == 1 < directness("greenhouse")
+
+    agg = Job(company="Monzo Bank Ltd", title="Engineering Manager",
+              url="https://www.adzuna.co.uk/land/ad/5324912345",
+              platform="adzuna", location="London, United Kingdom",
+              description="x" * 400)
+    own = Job(company="Monzo", title="Engineering Manager",
+              url="https://boards.greenhouse.io/monzo/jobs/1",
+              platform="greenhouse", location="London")
+
+    out = dedupe([agg, own])
+    assert len(out) == 1, "one role, listed twice"
+    assert out[0].platform == "greenhouse", "the employer's own board wins"
+    assert any("adzuna" in f for f in out[0].flags)
+
+
+def test_adzuna_is_skipped_with_a_message_when_there_are_no_credentials():
+    """Without credentials Adzuna answers 400 with an HTML error page, which
+    through the ordinary fetch path is reported as "could not be read" beside
+    genuinely broken boards and says nothing about the two minute signup that
+    would fix it. So it is never sent, and the error names both settings and
+    where the free credentials come from."""
+    from jobradar.fetch import fetch_adzuna
+
+    res = fetch_adzuna(_adzuna_src(), "", "")
+    assert res.ok is False
+    assert "ADZUNA_APP_ID" in res.error and "developer.adzuna.com" in res.error
+    # One credential without the other is still no credentials.
+    assert fetch_adzuna(_adzuna_src(), "id-only", "").ok is False
+
+
+def test_adzuna_credentials_are_read_from_the_config_file_or_the_environment():
+    """Two credentials, and both need the same two routes Reed's single key
+    has: config.local.yaml locally, which is gitignored, and the environment in
+    GitHub Actions where there is no local file at all. Wiring only one route
+    strands the other kind of user."""
+    import os
+    from jobradar.config import _api_key
+
+    before = {k: os.environ.pop(k, None) for k in ("ADZUNA_APP_ID", "ADZUNA_APP_KEY")}
+    try:
+        assert _api_key(None, "ADZUNA_APP_ID") == ""
+        os.environ["ADZUNA_APP_ID"] = "from-env"
+        assert _api_key(None, "ADZUNA_APP_ID") == "from-env"
+        assert _api_key("from-file", "ADZUNA_APP_ID") == "from-file"
+    finally:
+        for k, v in before.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+
+def test_an_adzuna_key_never_reaches_the_stored_source():
+    """Adzuna offers no header authentication, so unlike Reed the credential
+    has to travel in the query string. What it must not do is outlive the
+    request: `detect_throttling` and the state file key on `source.key`, so a
+    Result carrying the credentialled URL writes an app_key into state.json,
+    and `validate` would write it into the published source list."""
+    from jobradar import fetch as fetch_mod
+
+    seen = []
+
+    class FakeSession:
+        auth = None
+        def get(self, url, headers=None, timeout=None):
+            seen.append(url)
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "application/json"}
+                text = "{}"
+                @staticmethod
+                def json():
+                    return ADZUNA_SEARCH
+            return R()
+
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_adzuna(_adzuna_src(), "my-id", "sekrit")
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert res.ok and len(res.payload["results"]) == 1
+    assert "app_key=sekrit" in seen[0], "it does have to go on the request"
+    assert "sekrit" not in res.source.url and "my-id" not in res.source.url
+    assert res.source.url == _adzuna_src().url
+
+
+def test_adzuna_paging_does_not_stop_on_a_short_page():
+    """`results_per_page` is a request, not a promise. Stopping when a page
+    comes back shorter than we asked for is the obvious rule and it is wrong
+    here: if Adzuna quietly caps a page below 50 then every page is short, and
+    the loop throws away everything past the first one. The page number is also
+    in the PATH rather than a query parameter, so paging means rewriting the
+    URL, and getting that wrong fetches page one three times."""
+    import re
+    from jobradar import fetch as fetch_mod
+
+    seen = []
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            seen.append(url)
+            page = int(re.search(r"/search/(\d+)", url).group(1))
+            rows = [dict(ADZUNA_SEARCH["results"][0], id=f"{page}-{i}")
+                    for i in range(20 if page < 3 else 5)]
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "application/json"}
+                text = "{}"
+                @staticmethod
+                def json():
+                    return {"count": 45, "results": rows}
+            return R()
+
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_adzuna(_adzuna_src(), "id", "key")
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert len(res.payload["results"]) == 45, "20 + 20 + 5, not 20"
+    assert [re.search(r"/search/(\d+)", u).group(1) for u in seen] == ["1", "2", "3"]
+    # And the page size is asked for exactly once. The shipped URL already
+    # carries one, and appending a second left Adzuna to pick between two
+    # values of the same parameter.
+    assert seen[0].count("results_per_page=") == 1, seen[0]
+
+
+def test_validate_does_not_call_adzuna_dead_for_want_of_a_key():
+    """`validate` carries no credentials, so it cannot speak to Adzuna at all
+    and always gets a 400. Reported as a bare "HTTP 400" that reads as a broken
+    source, it would have anyone with perfectly good credentials hunting a
+    fault that is not there. It must also come back `unreachable` and never
+    `dead`, because `validate --prune` deletes what looks dead. 400 is in the
+    list as well as 401 because that is what an unkeyed Adzuna request is."""
+    import jobradar.discover as disc
+    import jobradar.fetch as fetch_mod
+
+    src = _adzuna_src()
+
+    def fake_fetch_one(s, **kw):
+        from jobradar.fetch import Result
+        return Result(s, error="HTTP 400", status=400)
+
+    old, fetch_mod.fetch_one = fetch_mod.fetch_one, fake_fetch_one
+    try:
+        n, jobs, why = disc.count_jobs(src)
+        row = disc.validate_source(src)
+    finally:
+        fetch_mod.fetch_one = old
+
+    assert (n, jobs) == (0, [])
+    assert "API key" in why and "validate" in why, why
+    assert row["verdict"] == "unreachable", row
+
+
+# ---------------------------------------------------------------------------
+# Composite-token platforms: avature, phenom, rmk, workday
+#
+# These four had a working parser and no `build`, so there was no way to turn a
+# discovered address into a source and every board on them had to be typed in
+# by hand. Out of 14,000 rows that left 3 Avature, 4 Phenom and 1
+# SuccessFactors, which is a count of what somebody typed rather than a share
+# of the market. Tesco is on Avature and was unreachable until it was added
+# manually.
+# ---------------------------------------------------------------------------
+
+# The addresses of rows already in sources.json, verified live. A builder that
+# does not reproduce these exactly is building a different board.
+SHIPPED_ADDRESSES = [
+    ("workday", "2020companies|wd1|External_Careers",
+     "https://2020companies.wd1.myworkdayjobs.com"
+     "/wday/cxs/2020companies/External_Careers/jobs"),
+    ("workday", "abbott|wd5|Agency",
+     "https://abbott.wd5.myworkdayjobs.com/wday/cxs/abbott/Agency/jobs"),
+    ("avature", "tescoinsuranceandmoneyservices|careers",
+     "https://tescoinsuranceandmoneyservices.avature.net"
+     "/careers/SearchJobs/?jobRecordsPerPage=50"),
+    ("avature", "metrobank|amazingcareers",
+     "https://metrobank.avature.net/amazingcareers/SearchJobs/"
+     "?jobRecordsPerPage=50"),
+    ("avature", "careers.tesco.com|en_GB/careersmarketplace",
+     "https://careers.tesco.com/en_GB/careersmarketplace/SearchJobs/"
+     "?jobRecordsPerPage=50"),
+    ("rmk", "london-gov.jobs2web.com|tfl",
+     "https://london-gov.jobs2web.com/tfl/search/"
+     "?q=&sortColumn=referencedate&sortDirection=desc"),
+    ("phenom", "careers.serco.com",
+     "https://careers.serco.com/gb/en/search-results?s=1"),
+    ("phenom", "careers.thalesgroup.com|global/en",
+     "https://careers.thalesgroup.com/global/en/search-results?s=1"),
+]
+
+
+def test_every_platform_with_a_parser_can_also_build_an_address():
+    """A platform we can read but cannot address is a platform whose boards can
+    only ever arrive by hand. That is not a theory: avature, phenom, rmk and
+    workday all shipped with a verified parser and no `build`, and the source
+    list held three Avature boards in total."""
+    from jobradar import adapters
+
+    for name in ("avature", "phenom", "rmk", "workday", "lever_eu", "nhs"):
+        p = adapters.by_name(name)
+        assert p is not None, name
+        assert p.build is not None, f"{name} can be read but not addressed"
+
+
+def test_a_composite_token_builds_the_address_the_shipped_rows_use():
+    """The token is the thing discovery hands over, so a builder that produces
+    a URL one character off the one in sources.json produces a second, dead row
+    for a board that is already working. Every case here is a live address off
+    the shipped list."""
+    from jobradar import adapters
+
+    for platform, token, expected in SHIPPED_ADDRESSES:
+        got = adapters.by_name(platform).build(token)
+        assert got == expected, f"{platform} {token}\n  got {got}\n  want {expected}"
+
+
+def test_a_built_address_is_recognised_as_the_platform_that_built_it():
+    """`prepare` and `parse` fall back to `detect` when a source carries no
+    platform, so an address its own registry entry cannot recognise gets read
+    by `parse_generic` and returns nothing. Round-tripping build through detect
+    is the cheapest way to catch that."""
+    from jobradar import adapters
+
+    for platform, token, _ in SHIPPED_ADDRESSES:
+        url = adapters.by_name(platform).build(token)
+        assert adapters.detect(url).name == platform, url
+
+
+def test_tescos_avature_board_on_its_own_domain_is_recognised():
+    """Avature hosts as often on the employer's domain as on its own, and
+    careers.tesco.com has nothing in the hostname to match. The old signature
+    was `avature\\.net/.*SearchJobs`, so Tesco's board was invisible to
+    `detect` and could only ever work by having the platform typed in by hand.
+
+    The other half matters just as much: the signature is the path AND the
+    query, so an unrelated site with a page called SearchJobs is not claimed as
+    an Avature board and handed to a parser that will find nothing on it."""
+    from jobradar import adapters
+
+    assert adapters.detect(
+        "https://careers.tesco.com/en_GB/careersmarketplace/SearchJobs/"
+        "?jobRecordsPerPage=50").name == "avature"
+    assert adapters.detect(
+        "https://metrobank.avature.net/amazingcareers/SearchJobs/"
+        "?jobRecordsPerPage=50").name == "avature"
+    for stray in ("https://example.com/SearchJobs/",
+                  "https://example.com/jobs/SearchJobs/?page=2",
+                  "https://example.com/SearchJobs/?q=engineer"):
+        assert adapters.detect(stray).name != "avature", stray
+
+
+def test_a_short_composite_token_falls_back_instead_of_raising():
+    """Tokens get typed by hand and pasted out of half-remembered notes, and a
+    missing trailing part is the ordinary case rather than the exception. A
+    `token.split("|")` that unpacked into three names raised ValueError on a
+    two-part token, and one bad row in a source list took the whole scan with
+    it."""
+    from jobradar import adapters
+
+    assert adapters.by_name("workday").build("acme") == (
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/careers/jobs")
+    assert adapters.by_name("avature").build("acme") == (
+        "https://acme.avature.net/careers/SearchJobs/?jobRecordsPerPage=50")
+    # An RMK tenant with no path prefix must not produce "//search/", which 404s.
+    assert adapters.by_name("rmk").build("acme") == (
+        "https://acme.jobs2web.com/search/"
+        "?q=&sortColumn=referencedate&sortDirection=desc")
+
+
+def test_discover_finds_an_avature_board_from_a_careers_page():
+    """`_scan` skips any platform with no `build`, so for as long as Avature and
+    RMK had none, every hit on them was found and then dropped on the floor.
+    The captured token also has to be the composite one the builder takes: a
+    single group capturing `host/prefix` builds
+    `https://host/prefix/careers/SearchJobs/`, which is not a board."""
+    from jobradar.discover import _scan
+
+    page = ('<a href="https://careers.tesco.com/en_GB/careersmarketplace'
+            '/SearchJobs/?jobRecordsPerPage=50">Search jobs</a>'
+            '<a href="https://london-gov.jobs2web.com/tfl/search/?q=">TfL</a>')
+    found = {p: url for p, _tok, url in _scan(page, "https://example.com/jobs")}
+    assert found.get("avature") == (
+        "https://careers.tesco.com/en_GB/careersmarketplace/SearchJobs/"
+        "?jobRecordsPerPage=50")
+    assert found.get("rmk") == (
+        "https://london-gov.jobs2web.com/tfl/search/"
+        "?q=&sortColumn=referencedate&sortDirection=desc")
+
+
+def test_discover_reads_a_phenom_board_off_the_host_it_was_found_on():
+    """Phenom exposes no tenant id at all, so the careers host is the address.
+    This URL was spelled out inline in `discover` and again in the harvester,
+    and two copies of one string is how the Workday builder drifted."""
+    from jobradar.discover import _scan
+
+    hits = _scan('<script src="//cdn.phenompeople.com/x.js"></script>',
+                 "https://careers.serco.com/")
+    assert ("phenom", "careers.serco.com",
+            "https://careers.serco.com/gb/en/search-results?s=1") in hits
+
+
+# ---------------------------------------------------------------------------
+# Paging: a source that returns exactly one page reads as healthy
+# ---------------------------------------------------------------------------
+
+def _av_page(ids, nxt=None):
+    """One Avature results page, with the share links a real one carries."""
+    rows = "".join(
+        f'<a href="https://careers.acme.com/en_GB/site/JobDetail/Role-{i}/{i}">'
+        f'Role {i}</a>'
+        f'<a href="http://twitter.com/intent/tweet?text=Role {i} '
+        f'https://careers.acme.com/en_GB/site/JobDetail/Role-{i}/{i}">Tweet</a>'
+        for i in ids)
+    nav = ('<a class="list-controls__pagination__item paginationNextLink"\n'
+           f'   href="{nxt}">Next &gt;&gt;</a>') if nxt else ""
+    return f"<html><body>{rows}{nav}</body></html>"
+
+
+def _avature_src():
+    return Source(company="Acme", platform="avature",
+                  url="https://careers.acme.com/en_GB/site/SearchJobs/"
+                      "?jobRecordsPerPage=50")
+
+
+def test_an_avature_board_is_read_past_its_first_page():
+    """Avature serves the tenant's page size, not the one we ask for: Tesco
+    answers ten rows to `jobRecordsPerPage=50` and advertises `jobOffset=10` in
+    its own Next link. Reading one page reported 10 roles for a board whose own
+    markup says "999+", and `validate` called that live. A source that silently
+    returns ten of three thousand is worse than one that fails, because nobody
+    ever finds out."""
+    from jobradar import adapters
+    from jobradar import fetch as fetch_mod
+
+    pages = {
+        "https://careers.acme.com/en_GB/site/SearchJobs/?jobRecordsPerPage=50":
+            _av_page([1, 2, 3], nxt="https://careers.acme.com/p2"),
+        "https://careers.acme.com/p2": _av_page([4, 5, 6],
+                                                nxt="https://careers.acme.com/p3"),
+        "https://careers.acme.com/p3": _av_page([7, 8]),
+    }
+    asked = []
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            asked.append(url)
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "text/html"}
+                text = pages[url]
+            return R()
+
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_avature(_avature_src(), [])
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert len(asked) == 3, asked
+    jobs = adapters.parse(res.payload, _avature_src())
+    assert len(jobs) == 8, [j.title for j in jobs]
+    # The share links on each card also contain a /JobDetail/ URL, in a query
+    # string. Counting those as rows would keep the pager walking a board that
+    # had already run out.
+    assert all("twitter" not in j.url for j in jobs)
+
+
+def test_an_avature_pager_stops_when_the_next_page_repeats_the_last_one():
+    """There is no total anywhere in Avature's markup: no "N jobs", no
+    `totalResults`, no `data-total`. So the loop cannot stop on a count, and a
+    Next link that points back at rows we already hold is the only signal that
+    it has run out. Without that check a self-referential pager runs until the
+    page cap, or forever if the cap is ever removed."""
+    from jobradar import fetch as fetch_mod
+
+    asked = []
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            asked.append(url)
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "text/html"}
+                text = _av_page([1, 2, 3],
+                                nxt="https://careers.acme.com/round-and-round")
+            return R()
+
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_avature(_avature_src(), [], max_pages=50)
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert len(asked) == 2, asked
+    assert res.ok
+
+
+def test_an_avature_keyword_search_replaces_the_parameter_it_already_carries():
+    """`semanticSearch` is a real server-side filter (47 results against "999+"
+    unfiltered), which is what keeps a supermarket's board to a few requests
+    instead of a hundred. Appending it rather than replacing it leaves two
+    values of the same parameter for Avature to choose between, which is the
+    fault `fetch_adzuna` already learned with `results_per_page`."""
+    from jobradar import fetch as fetch_mod
+
+    asked = []
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            asked.append(url)
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "text/html"}
+                text = _av_page([1])
+            return R()
+
+    src = _avature_src()
+    src.url += "&semanticSearch=stale"
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        fetch_mod.fetch_avature(src, ["engineering manager"])
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert asked[0].count("semanticSearch=") == 1, asked[0]
+    assert "stale" not in asked[0]
+    assert "engineering+manager" in asked[0]
+
+
+def test_an_rmk_board_is_read_past_its_first_twenty_five_rows():
+    """SuccessFactors RMK serves 25 rows and pages on `startrow`, and states no
+    total anywhere: "Showing {0} to {1}" is a client-side template filled in by
+    JavaScript we never run. Reading one page reports the first 25 rows of
+    every tenant as the whole board, and SAP's own careers site is on this
+    platform with thousands of roles."""
+    import re
+    from jobradar import fetch as fetch_mod
+
+    asked = []
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            asked.append(url)
+            start = int(re.search(r"startrow=(\d+)", url).group(1))
+            n = 25 if start < 50 else 0
+            rows = "".join(
+                f'<a href="/tfl/job/Role-{start + i}/{start + i}/">R</a>'
+                for i in range(n))
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "text/html"}
+                text = f"<html>{rows}</html>"
+            return R()
+
+    src = Source(company="TfL", platform="rmk",
+                 url="https://london-gov.jobs2web.com/tfl/search/?q=&sortColumn=x")
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        fetch_mod.fetch_rmk(src, [])
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert [int(re.search(r"startrow=(\d+)", u).group(1)) for u in asked] == [0, 25, 50]
+    # The shipped URL already carries `q=`; asking twice leaves the server to
+    # pick which one it searches on.
+    assert asked[0].count("q=") == 1, asked[0]
+    # And the parameters that were already there survive being paged.
+    assert "sortColumn=x" in asked[0]
+
+
+def test_a_source_that_returns_exactly_one_page_is_called_out():
+    """The failure this catches has no other symptom. A throttled source
+    returns nothing and at least looks wrong; a source whose paging stopped
+    early returns a full page of real jobs and reads as healthy everywhere.
+    Tesco returned exactly 10 of "999+" and was reported live for as long as
+    nobody counted."""
+    from jobradar.fetch import pinned_to_one_page
+
+    tesco = Source(company="Tesco", platform="avature",
+                   url="https://careers.tesco.com/en_GB/x/SearchJobs/"
+                       "?jobRecordsPerPage=50")
+    metro = Source(company="Metro Bank", platform="avature",
+                   url="https://metrobank.avature.net/x/SearchJobs/"
+                       "?jobRecordsPerPage=50")
+    monzo = Source(company="Monzo", platform="greenhouse",
+                   url="https://boards-api.greenhouse.io/v1/boards/monzo/jobs")
+    counts = {tesco.key: 10, metro.key: 6, monzo.key: 10}
+    flagged = pinned_to_one_page(counts, [tesco, metro, monzo])
+
+    assert flagged == ["Tesco"], flagged
+
+
+def test_a_phenom_board_is_narrowed_by_title_and_stops_on_its_own_total():
+    """Phenom's `/widgets` endpoint returns fifty at a time and reports a true
+    total, so unlike Avature and RMK the stop condition can be exact. It was
+    walking the board unfiltered instead, four pages deep, which for Serco's
+    368 roles meant this tool silently decided which 200 of an employer's
+    vacancies it would ever look at. `keywords` is server-side, so narrowing
+    first is both more complete and fewer requests."""
+    from jobradar import fetch as fetch_mod
+
+    bodies = []
+
+    class FakeSession:
+        def post(self, url, json=None, headers=None, timeout=None):
+            bodies.append(json)
+            start = json["from"]
+            rows = [{"jobSeqNo": f"J{start + i}", "title": "Engineering Manager",
+                     "applyUrl": f"https://x/{start + i}"}
+                    for i in range(min(50, max(0, 60 - start)))]
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "application/json"}
+                text = "{}"
+                @staticmethod
+                def json():
+                    return {"refineSearch": {"totalHits": 60,
+                                             "data": {"jobs": rows}}}
+            return R()
+
+    src = Source(company="Serco", platform="phenom",
+                 url="https://careers.serco.com/gb/en/search-results?s=1")
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_phenom(src, ["engineering manager"], max_pages=8)
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert [b["keywords"] for b in bodies] == ["engineering manager"] * 2
+    assert [b["from"] for b in bodies] == [0, 50]
+    assert len(res.payload["refineSearch"]["data"]["jobs"]) == 60

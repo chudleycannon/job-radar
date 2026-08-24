@@ -65,6 +65,11 @@ class Config:
     # Empty means the Reed source is skipped with a message rather than
     # fetched into a 401. See `_api_key` for where it can come from.
     reed_api_key: str = ""
+    # Adzuna needs two, and both travel in the query string because Adzuna
+    # offers no header authentication. Same rule as Reed: empty means the
+    # source is skipped with a message rather than fetched into a 400.
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
 
     cv_path: str = ""
     formats: list[str] = field(default_factory=lambda: ["html", "json"])
@@ -213,7 +218,8 @@ KNOWN_KEYS = {
                   "need_sponsorship"},
     "salary": {"floor", "currency"},
     "cv": {"path"},
-    "sources": {"use_bundled", "countries", "extra", "reed_api_key"},
+    "sources": {"use_bundled", "countries", "extra", "reed_api_key",
+                "adzuna_app_id", "adzuna_app_key"},
     "output": {"formats", "dir"},
     "fetch": {"concurrency", "timeout", "retries", "user_agent"},
 }
@@ -429,6 +435,8 @@ def load(path: str | os.PathLike | None = None) -> Config:
         use_bundled_sources=_bool(src.get("use_bundled", True), "sources.use_bundled"),
         extra_sources=_as_list(src.get("extra")),
         reed_api_key=_api_key(src.get("reed_api_key"), "REED_API_KEY"),
+        adzuna_app_id=_api_key(src.get("adzuna_app_id"), "ADZUNA_APP_ID"),
+        adzuna_app_key=_api_key(src.get("adzuna_app_key"), "ADZUNA_APP_KEY"),
         cv_path=str((raw.get("cv") or {}).get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
         out_dir=Path(out.get("dir") or "out"),

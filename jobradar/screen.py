@@ -637,8 +637,15 @@ def directness(platform: str) -> int:
     it at the default would let a Reed repost beat the employer's own posting
     on description length alone and hand the reader a redirect instead of the
     real apply page.
+
+    Every aggregator has to be listed here, not just the ones that carry a
+    long description. `_fold_aggregators` decides what counts as an aggregator
+    by asking whether this returns less than 2, so a new one left at the
+    default is treated as an employer's own board: it will not fold, and its
+    repost shows as a second row beside the real vacancy.
     """
-    return {"linkedin": 0, "nhs": 1, "reed": 1}.get((platform or "").lower(), 2)
+    return {"linkedin": 0, "nhs": 1, "reed": 1, "adzuna": 1}.get(
+        (platform or "").lower(), 2)
 
 
 # Legal form and holding-company words. An aggregator prints whatever the

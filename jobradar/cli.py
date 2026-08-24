@@ -12,7 +12,7 @@ from pathlib import Path
 from . import adapters, output, sources as src_mod
 from .config import Config, ConfigError, load as load_cfg
 from .discover import discover as run_discover, validate_source
-from .fetch import detect_throttling, fetch_all
+from .fetch import detect_throttling, fetch_all, pinned_to_one_page
 from .models import Source
 from .screen import run as screen_run
 from .state import State
@@ -54,12 +54,23 @@ def cmd_scan(args) -> int:
              "be skipped.")
         _say("    Free key: https://www.reed.co.uk/developers/jobseeker  "
              "Then set sources.reed_api_key or $REED_API_KEY.")
+    # Same for Adzuna, which without credentials can only answer 400 with an
+    # HTML error page. That reads as a broken source, not as a signup.
+    if (not (cfg.adzuna_app_id and cfg.adzuna_app_key)
+            and any(s.platform == "adzuna" for s in srcs)):
+        _say("  ! Adzuna is in your sources but there are no credentials, so "
+             "it will be skipped.")
+        _say("    Free app_id and app_key: https://developer.adzuna.com/signup  "
+             "Then set sources.adzuna_app_id and sources.adzuna_app_key, or "
+             "$ADZUNA_APP_ID and $ADZUNA_APP_KEY.")
 
     results = fetch_all(
         srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
         retries=cfg.retries, user_agent=cfg.user_agent,
         search_terms=cfg.titles_include,
-        api_keys={"reed": cfg.reed_api_key}, on_result=tick,
+        api_keys={"reed": cfg.reed_api_key,
+                  "adzuna_app_id": cfg.adzuna_app_id,
+                  "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick,
     )
 
     all_jobs, counts, ok = [], {}, 0
@@ -93,6 +104,15 @@ def cmd_scan(args) -> int:
     if throttled:
         _say(f"  ! {len(throttled)} sources look throttled (returned nothing "
              f"but have before): {', '.join(throttled[:6])}")
+    # The other silent failure, and the harder one to see. A throttled source
+    # returns nothing and at least looks wrong; a source that returns exactly
+    # one page looks perfectly healthy. Tesco's Avature board returned 10 of
+    # "999+" and `validate` called it live.
+    pinned = pinned_to_one_page(counts, srcs)
+    if pinned:
+        _say(f"  ! {len(pinned)} source(s) returned exactly one page of their "
+             f"platform, which can mean paging stopped early rather than that "
+             f"the board is that size: {', '.join(pinned[:6])}")
 
     kept, dropped = screen_run(all_jobs, cfg)
 
