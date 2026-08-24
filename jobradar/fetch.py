@@ -328,11 +328,17 @@ def fetch_one(
                 # refusal, and retrying it can only fail more slowly. Record it
                 # against the host so the other sources on it are spared the
                 # same wait, and give up on this one now.
-                if r.status_code == 429 and wait is not None and wait > MAX_RETRY_AFTER:
+                # Not gated on 429. A 503 with `Retry-After: 3600` is the
+                # other standard way a host sheds load, and gating this on 429
+                # left it falling through to `_sleep_backoff`, which does
+                # `min(secs, 30)`: the clamp-and-retry that cost 8.7 hours of
+                # sleeping for zero results, still live on the 5xx branch.
+                # `discover` already counts 503 as backpressure everywhere.
+                if wait is not None and wait > MAX_RETRY_AFTER:
                     if lim is not None:
                         lim.block(src.url, wait)
-                    return Result(src, error=f"HTTP 429, retry after "
-                                             f"{int(wait)}s", status=status,
+                    return Result(src, error=f"HTTP {r.status_code}, retry "
+                                             f"after {int(wait)}s", status=status,
                                   elapsed=time.time() - t0, throttled=True)
                 if attempt < retries:
                     _sleep_backoff(attempt, r.headers.get("Retry-After"))
@@ -345,7 +351,11 @@ def fetch_one(
                               elapsed=time.time() - t0)
 
             ctype = (r.headers.get("Content-Type") or "").lower()
-            if "json" in ctype or r.text.lstrip()[:1] in "[{":
+            # A tuple, not the string "[{": `"" in "[{"` is True, so an
+            # empty 200 body took the JSON branch, raised JSONDecodeError and
+            # was retried twice before being reported as a transport error
+            # rather than as the empty page it was.
+            if "json" in ctype or r.text.lstrip()[:1] in ("[", "{"):
                 return Result(src, payload=r.json(), status=status, elapsed=time.time() - t0)
             return Result(src, payload=r.text, status=status, elapsed=time.time() - t0)
 
@@ -382,7 +392,7 @@ def fetch_workday(
     session = _thread_session()
     merged: dict[str, dict] = {}
     total = 0
-    errors = []
+    first_error: Result | None = None
 
     for term in (terms or [""])[:3]:
         for page in range(max_pages):
@@ -396,7 +406,14 @@ def fetch_workday(
             res = fetch_one(probe, timeout=timeout, retries=retries,
                             user_agent=user_agent, session=session)
             if not res.ok or not isinstance(res.payload, dict):
-                errors.append(res.error or "bad payload")
+                # Carry status and throttled, not just the string. Dropping
+                # them made a 429 from a Workday tenant indistinguishable from
+                # a broken board: `detect_throttling` did not count it and
+                # `validate --prune` saw a candidate for deletion.
+                if first_error is None:
+                    first_error = Result(src, error=res.error or "bad payload",
+                                         status=res.status,
+                                         throttled=res.throttled)
                 break
             posts = res.payload.get("jobPostings") or []
             total = max(total, int(res.payload.get("total") or 0))
@@ -407,8 +424,8 @@ def fetch_workday(
             if len(posts) < 20:
                 break
 
-    if not merged and errors:
-        return Result(src, error=errors[0])
+    if not merged and first_error is not None:
+        return first_error
     return Result(src, payload={"jobPostings": list(merged.values()), "total": total})
 
 
@@ -428,6 +445,7 @@ def fetch_nhs(
     """
     session = _thread_session()
     parts: list[str] = []
+    first_error: Result | None = None
     sep = "&" if "?" in src.url else "?"
 
     for page in range(1, max_pages + 1):
@@ -436,6 +454,12 @@ def fetch_nhs(
         res = fetch_one(probe, timeout=timeout, retries=retries,
                         user_agent=user_agent, session=session)
         if not res.ok or not isinstance(res.payload, str):
+            # Same rule as every other paged fetcher here. NHS Jobs was the
+            # one that dropped status and throttled, so a rate-limited NHS
+            # came back as "no pages returned" and `discover` was once
+            # scheduled to prune it as dead.
+            first_error = Result(src, error=res.error or "bad payload",
+                                 status=res.status, throttled=res.throttled)
             break
         if "search-result" not in res.payload:
             break
@@ -445,7 +469,7 @@ def fetch_nhs(
             break
 
     if not parts:
-        return Result(src, error="no pages returned")
+        return first_error or Result(src, error="no pages returned")
     return Result(src, payload="".join(parts))
 
 
@@ -486,36 +510,49 @@ def fetch_reed(
     session = _thread_session()
     # (key, "") is Basic auth with an empty password, which is what Reed asks
     # for. requests base64-encodes it into the Authorization header.
+    #
+    # Restored in the `finally` because this session is the WORKER THREAD'S,
+    # shared by every source that thread goes on to handle. `session.auth` is
+    # a session-wide default that requests merges into every later request, so
+    # setting it and walking away sent `Authorization: Basic <reed key>` to
+    # every Greenhouse, Ashby and one-off employer domain that worker touched
+    # for the rest of the scan. The key is the user's private credential and
+    # those are thousands of third parties' access logs.
+    previous_auth = session.auth
     session.auth = (api_key, "")
-    sep = "&" if "?" in src.url else "?"
+    try:
+        sep = "&" if "?" in src.url else "?"
 
-    merged: dict[Any, dict] = {}
-    total = 0
-    first_error: Result | None = None
+        merged: dict[Any, dict] = {}
+        total = 0
+        first_error: Result | None = None
 
-    for page in range(max_pages):
-        probe = Source(
-            company=src.company,
-            url=f"{src.url}{sep}resultsToTake={REED_PAGE}"
-                f"&resultsToSkip={page * REED_PAGE}",
-            platform="reed", sector=src.sector, country=src.country,
-        )
-        res = fetch_one(probe, timeout=timeout, retries=retries,
-                        user_agent=user_agent, session=session)
-        if not res.ok or not isinstance(res.payload, dict):
-            # Carry the failure on the ORIGINAL source, not the paged probe:
-            # `detect_throttling` and the state file key on `source.key`, and
-            # a URL with resultsToSkip in it is a different key every page.
-            first_error = Result(src, error=res.error or "bad payload",
-                                 status=res.status, throttled=res.throttled)
-            break
-        rows = res.payload.get("results") or []
-        total = max(total, int(res.payload.get("totalResults") or 0))
-        for r in rows:
-            if isinstance(r, dict) and r.get("jobId") is not None:
-                merged.setdefault(r["jobId"], r)
-        if len(rows) < REED_PAGE:
-            break
+        for page in range(max_pages):
+            probe = Source(
+                company=src.company,
+                url=f"{src.url}{sep}resultsToTake={REED_PAGE}"
+                    f"&resultsToSkip={page * REED_PAGE}",
+                platform="reed", sector=src.sector, country=src.country,
+            )
+            res = fetch_one(probe, timeout=timeout, retries=retries,
+                            user_agent=user_agent, session=session)
+            if not res.ok or not isinstance(res.payload, dict):
+                # Carry the failure on the ORIGINAL source, not the paged
+                # probe: `detect_throttling` and the state file key on
+                # `source.key`, and a URL with resultsToSkip in it is a
+                # different key every page.
+                first_error = Result(src, error=res.error or "bad payload",
+                                     status=res.status, throttled=res.throttled)
+                break
+            rows = res.payload.get("results") or []
+            total = max(total, int(res.payload.get("totalResults") or 0))
+            for r in rows:
+                if isinstance(r, dict) and r.get("jobId") is not None:
+                    merged.setdefault(r["jobId"], r)
+            if len(rows) < REED_PAGE:
+                break
+    finally:
+        session.auth = previous_auth
 
     if not merged and first_error is not None:
         return first_error

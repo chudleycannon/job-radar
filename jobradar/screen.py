@@ -55,7 +55,13 @@ _COUNTRY_MARKERS = {
     "SG": r"\bsingapore\b", "HK": r"hong kong", "IN": r"\bindia\b",
     "JP": r"\bjapan\b", "CN": r"\bchina\b", "PL": r"\bpoland\b",
     "PT": r"\bportugal\b", "SE": r"\bsweden\b", "CH": r"switzerland",
-    "IL": r"\bisrael\b", "BR": r"\bbrazil\b|\bbrasil\b", "MX": r"\bmexico\b",
+    "IL": r"\bisrael\b", "BR": r"\bbrazil\b|\bbrasil\b",
+    # Guarded against New Mexico, which is a US state and not a country.
+    # This tier runs before the US state tier, so the unguarded form won
+    # outright: "Albuquerque, New Mexico" and "New Mexico - Remote" both
+    # resolved to MX, and the only ones that escaped were the few that also
+    # spelled out "United States". Same shape as the Nederland/Paris guards.
+    "MX": r"(?<!new )\bmexico\b",
     "ZA": r"south africa", "ID": r"\bindonesia\b", "TH": r"\bthailand\b",
     "MY": r"\bmalaysia\b", "PH": r"philippines", "IT": r"\bitaly\b",
     "BE": r"\bbelgium\b", "AT": r"\baustria\b", "DK": r"\bdenmark\b",

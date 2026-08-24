@@ -338,7 +338,14 @@ def _apply(con, chunk, out) -> int:
         seen_pos.add(pos)
         applied += 1
         try:
-            fit = max(0, min(100, int(float(d.get("fit", 0)))))
+            # No default. A missing "fit" used to become a genuine score of
+            # zero, and zero is terminal: `candidates` re-offers only
+            # `COALESCE(fit,-1) < 0`, so the role could never be re-ranked and
+            # sorted to the bottom of the board for good. An answer of
+            # {"role": 1, "why": "strong match"} with the key spelled wrong
+            # therefore buried the best role on the board. Letting float(None)
+            # raise leaves it at -1, which the next run retries.
+            fit = max(0, min(100, int(float(d.get("fit")))))
         except (TypeError, ValueError):
             continue
         con.execute("UPDATE roles SET fit=?, fit_why=? WHERE uid=?",
@@ -442,7 +449,13 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
                     first_failure = first_failure or e
                     continue
                 done += scored
-                ok += 1
+                # Scored something, not merely "did not raise". `_apply`
+                # returns 0 without raising when the model answered with an
+                # empty array, so one unparseable reply among fifty failures
+                # set ok=1 and suppressed the re-raise below: the run paid for
+                # every batch, wrote nothing, printed "Scored 0" and exited 0,
+                # and the dashboard's Rank button went green.
+                ok += bool(scored)
                 if on_batch:
                     # `done`, not the batch index. Reporting the index meant a
                     # run where every call failed still counted up to

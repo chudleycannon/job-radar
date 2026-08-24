@@ -1,15 +1,10 @@
 {
  "meta": {
-  "note": "employer boards discovered and verified; keyword-driven platforms are templates expanded from your own titles",
-  "version": 5,
-  "validated": "2026-08-18",
-  "harvest": {
-   "attempted": 196,
-   "resolved": 34
-  },
-  "pruned": 1,
-  "checked": "2026-08-20",
-  "grown": 3
+  "note": "employer boards discovered from Common Crawl's columnar index and verified live; keyword-driven platforms are templates expanded from your own titles",
+  "version": 6,
+  "validated": "2026-08-25",
+  "checked": "2026-08-25",
+  "boards": 17834
  },
  "sources": [
   {

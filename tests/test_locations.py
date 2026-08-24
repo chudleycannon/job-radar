@@ -544,3 +544,26 @@ def test_the_old_state_and_city_answers_are_all_unchanged():
                       ("Dublin, OH", "US"), ("Paris, TX", "US"),
                       ("London, Ontario", "CA")):
         assert _country_of(loc) == want, loc
+
+
+def test_new_mexico_is_a_us_state_and_not_the_country_of_mexico():
+    """The country-name tier runs before the US state tier, so an unguarded
+    `\\bmexico\\b` answered "New Mexico" before either state rule was reached.
+
+    Every New Mexico posting that did not also spell out "United States"
+    resolved to MX. A user filtering on US would never have been shown a role
+    in Albuquerque, Santa Fe or Los Alamos, and the role would not have been
+    reported as missing: it was filed under a country, just the wrong one.
+    Same guard shape as Nederland, Texas and Paris, Texas."""
+    for loc in ("Albuquerque, New Mexico", "Santa Fe, New Mexico",
+                "Los Alamos, New Mexico", "New Mexico", "New Mexico - Remote",
+                "Rio Rancho, New Mexico, United States"):
+        assert _country_of(loc) == "US", loc
+
+
+def test_mexico_the_country_still_resolves_to_mexico():
+    """The guard must not overshoot: it only refuses the word when "new"
+    comes immediately before it."""
+    for loc in ("Mexico", "Mexico City", "Guadalajara, Mexico",
+                "Remote - Mexico", "Monterrey, MX"):
+        assert _country_of(loc) == "MX", loc

@@ -2462,22 +2462,6 @@ def test_rank_width_one_is_still_available_as_the_old_serial_behaviour():
     assert len(set(calls)) == 1, "width 1 must run the batches one at a time"
 
 
-if __name__ == "__main__":
-    import traceback
-    fns = [(n, f) for n, f in sorted(globals().items())
-           if n.startswith("test_") and callable(f)]
-    bad = 0
-    for name, fn in fns:
-        try:
-            fn()
-            print(f"  pass  {name}")
-        except Exception:
-            bad += 1
-            print(f"  FAIL  {name}")
-            traceback.print_exc()
-    print(f"\n{len(fns) - bad}/{len(fns)} passed")
-    sys.exit(1 if bad else 0)
-
 
 # -------------------------------------------------------------- sponsorship
 def test_a_stated_refusal_to_sponsor_hides_a_role_you_cannot_take():
@@ -6021,3 +6005,222 @@ def test_the_vendor_rule_does_not_swallow_a_real_employer():
                 if _VENDOR_INFRA.fullmatch(
                     urlparse(s["url"]).netloc.split(".")[0])]
     assert not rejected, f"the rule rejects live boards: {rejected[:5]}"
+
+
+def test_a_503_that_says_come_back_tomorrow_is_also_a_refusal():
+    """The eight-hour bug was fixed on the 429 branch only.
+
+    A 503 with a long `Retry-After` is the other standard way a host sheds
+    load, and it fell through to `_sleep_backoff`, which does `min(secs, 30)`:
+    exactly the clamp-and-retry that was removed. Two sleeps of thirty seconds
+    per source, the host never recorded, and every other source on it repeating
+    the same minute."""
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    calls = {"n": 0}
+
+    class Shedding:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            calls["n"] += 1
+
+            class R:
+                status_code = 503
+                headers = {"Retry-After": "57841"}
+                text = ""
+            return R()
+
+    lim = fetch_mod.HostLimiter(rps=0)
+    srcs = [Source(company=f"c{i}", url=f"https://busy.example.com/api/{i}",
+                   platform="greenhouse") for i in range(5)]
+    results = [fetch_mod.fetch_one(x, session=Shedding(), limiter=lim)
+               for x in srcs]
+
+    assert calls["n"] == 1, (
+        f"{calls['n']} requests sent to a host that had already asked for "
+        f"sixteen hours; one is enough to learn that")
+    assert all(r.throttled for r in results), (
+        "a shed load is not an empty board; `validate --prune` deletes the "
+        "second kind")
+    assert all(not r.ok for r in results)
+    assert lim.blocked_for("https://busy.example.com/x") > 0
+
+
+def test_an_empty_200_body_is_an_empty_page_not_a_transport_error():
+    """`"" in "[{"` is True, because every string contains the empty string.
+
+    So a 200 with an empty body and a non-JSON content type took the JSON
+    branch, raised JSONDecodeError, was retried twice, and was finally reported
+    as a transport failure rather than as the empty page it plainly was."""
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    calls = {"n": 0}
+
+    class Empty:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            calls["n"] += 1
+
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "text/html; charset=utf-8"}
+                text = ""
+
+                @staticmethod
+                def json():
+                    raise AssertionError("an empty body is not JSON")
+            return R()
+
+    res = fetch_mod.fetch_one(
+        Source(company="c", url="https://example.com/careers", platform="rmk"),
+        session=Empty(), limiter=fetch_mod.HostLimiter(rps=0))
+
+    assert calls["n"] == 1, f"an empty page was retried {calls['n']} times"
+    assert res.ok and res.payload == "", res
+
+
+def test_a_reed_key_is_never_left_on_the_session_the_next_board_uses():
+    """`_thread_session()` is the WORKER THREAD's session, shared by every
+    source that thread goes on to handle.
+
+    `session.auth` is a session-wide default requests merges into every later
+    request, so setting it and walking away sent the user's private Reed key
+    as an Authorization header to every Greenhouse, Ashby and one-off employer
+    domain that worker touched for the rest of the scan. Nothing in the output
+    would show it; the evidence lands in thousands of third parties' logs."""
+    import requests
+
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    session = fetch_mod._thread_session()
+    before = session.auth
+
+    class Answering:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "application/json"}
+                text = "{}"
+
+                @staticmethod
+                def json():
+                    return {"results": [], "totalResults": 0}
+            return R()
+
+    # Patched onto the real thread session so the auth it sets is the auth a
+    # later board would inherit.
+    original_get = session.get
+    session.get = Answering().get
+    try:
+        fetch_mod.fetch_reed(
+            Source(company="reed",
+                   url="https://www.reed.co.uk/api/1.0/search?keywords=x",
+                   platform="reed"),
+            "SECRET-REED-KEY")
+    finally:
+        session.get = original_get
+
+    assert session.auth == before, (
+        f"the Reed key is still on the shared session as {session.auth!r}; "
+        f"the next board this worker fetches would carry it")
+    probed = session.prepare_request(
+        requests.Request("GET", "https://boards-api.greenhouse.io/v1/boards/x/jobs"))
+    assert "Authorization" not in probed.headers, (
+        f"a Greenhouse request carries {probed.headers.get('Authorization')!r}")
+
+
+def test_a_missing_fit_key_leaves_the_role_unranked_rather_than_scoring_it_zero():
+    """`d.get("fit", 0)` turned a reply that omitted the key into a real score
+    of zero, and zero is terminal.
+
+    `candidates` only re-offers roles with `COALESCE(fit,-1) < 0`, so the role
+    could never be re-ranked, and the board sorts on fit, so it sank to the
+    bottom for good. A model answering {"role": 1, "why": "strong match"} with
+    the score key spelled wrong therefore buried the best role on the board
+    under a reason that said it was the best role on the board. Leaving it at
+    -1 costs one retry; scoring it 0 costs the role."""
+    from unittest import mock
+    from jobradar import rank
+
+    con, cfg, rows = _rank_fixture(2)
+
+    def fake_call(prompt, timeout=None):
+        cos = _companies_in(prompt)
+        return [{"role": 1, "why": "strong match, could do this today"},
+                {"role": 2, "fit": 80, "why": "fine"}][:len(cos)]
+
+    with mock.patch.object(rank, "BATCH", 2), \
+         mock.patch.object(rank, "_call", fake_call):
+        rank.rank(con, cfg, rows, width=1)
+
+    fits = {r["company"]: r["fit"]
+            for r in con.execute("SELECT company,fit FROM roles")}
+    assert fits["Co1"] == -1, (
+        f"a reply with no fit key scored the role {fits['Co1']} instead of "
+        f"leaving it for the next run")
+    assert fits["Co2"] == 80, fits
+    # And -1 is what makes the retry possible at all.
+    assert [r["company"] for r in rank.candidates(con)] == ["Co1"]
+
+
+def test_a_run_whose_only_readable_reply_was_empty_still_raises():
+    """`ok` counted batches that did not raise, not batches that scored.
+
+    `_apply` returns 0 without raising when the model answered with an empty
+    array, so one unparseable reply among a run of failures set ok=1 and
+    suppressed the re-raise. The run paid for every batch, wrote nothing,
+    printed "Scored 0 of N" and exited 0, and the dashboard's Rank button went
+    green. That is the expired-login case reporting itself as success."""
+    from unittest import mock
+    from jobradar import rank
+
+    con, cfg, rows = _rank_fixture(6)
+    seen = {"n": 0}
+
+    def fake_call(prompt, timeout=None):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            return []          # a reply that parsed to nothing
+        raise rank.CallFailed("invalid api key")
+
+    with mock.patch.object(rank, "BATCH", 2), \
+         mock.patch.object(rank, "_call", fake_call):
+        try:
+            rank.rank(con, cfg, rows, width=1)
+        except rank.CallFailed as e:
+            assert "invalid api key" in str(e)
+            return
+    raise AssertionError(
+        "a run that scored nothing must say why, even when one call came back "
+        "empty rather than failing outright")
+
+
+# This block MUST stay at the END of the file. It collects `globals()` at
+# the point it runs, and Python runs it where it sits: parked halfway up,
+# it saw only the 116 tests defined above it, ran those, and called
+# sys.exit before the other 123 were ever defined. CI runs this file
+# standalone, so "116/116 passed" was CI reporting a full pass on less
+# than half the suite, including every test written for the newer
+# adapters and for the sponsorship gate.
+if __name__ == "__main__":
+    import traceback
+    fns = [(n, f) for n, f in sorted(globals().items())
+           if n.startswith("test_") and callable(f)]
+    bad = 0
+    for name, fn in fns:
+        try:
+            fn()
+            print(f"  pass  {name}")
+        except Exception:
+            bad += 1
+            print(f"  FAIL  {name}")
+            traceback.print_exc()
+    print(f"\n{len(fns) - bad}/{len(fns)} passed")
+    sys.exit(1 if bad else 0)
