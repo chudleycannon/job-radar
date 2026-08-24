@@ -1720,9 +1720,13 @@ def test_the_installer_needs_nothing_installed():
     cannot import the package it is about to install or any dependency of it.
     A single stray import turns "one command" back into a traceback."""
     import ast
-    import pytest
+    # Returning rather than calling pytest.skip: this file is run BOTH by
+    # pytest and standalone as `python tests/test_core.py`, and CI runs the
+    # standalone path deliberately so the suite needs no test dependency.
+    # An `import pytest` here failed every CI run for a day while passing
+    # locally, because locally pytest is what runs it.
     if not hasattr(sys, "stdlib_module_names"):
-        pytest.skip("needs 3.10, which the package requires anyway")
+        return          # needs 3.10, which the package requires anyway
     src = Path(__file__).resolve().parent.parent / "install.py"
     tree = ast.parse(src.read_text(encoding="utf-8"))
     std = set(sys.stdlib_module_names)

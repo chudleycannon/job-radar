@@ -427,6 +427,13 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
                     # A timeout, a crashed CLI, a model id that no longer
                     # exists. Losing 48 good batches to one of them is the
                     # expensive failure, so it is recorded and the run goes on.
+                    #
+                    # `Exception`, deliberately not `BaseException`. The one
+                    # thing `_call` raises outside it is the SystemExit for a
+                    # `claude` binary that cannot be found, and that is not a
+                    # bad batch, it is a broken install: retrying the other 48
+                    # would fail identically and tell the person nothing. It
+                    # travels straight out.
                     first_failure = first_failure or e
                     continue
                 try:
