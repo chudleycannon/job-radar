@@ -195,7 +195,7 @@ def test_wizard_config_is_valid_yaml_with_regex_dealbreakers():
     d = Path(tempfile.mkdtemp()) / "config.yaml"
     write_config(d, answers)
 
-    raw = yaml.safe_load(d.read_text())
+    raw = yaml.safe_load(d.read_text(encoding="utf-8"))
     assert len(raw["dealbreakers"]) == len(COMMON_DEALBREAKERS)
     cfg = load_cfg(d)
     # and the patterns must still compile after the round trip
@@ -625,7 +625,7 @@ def test_source_meta_survives_a_prune():
     p.write_text(_j.dumps({"meta": {"note": "keep me", "version": 4},
                            "sources": []}))
     sm.save([], p, meta={"pruned": 3})
-    meta = _j.loads(p.read_text())["meta"]
+    meta = _j.loads(p.read_text(encoding="utf-8"))["meta"]
     assert meta["note"] == "keep me" and meta["version"] == 4
     assert meta["pruned"] == 3
 
@@ -883,9 +883,9 @@ def test_adding_a_source_keeps_the_file_as_written():
 
     d = Path(tempfile.mkdtemp()) / "config.yaml"
     shutil.copy("config.example.yaml", d)
-    before = d.read_text()
+    before = d.read_text(encoding="utf-8")
     _append_sources(d, [Source(company="Beam", url="https://x/board", platform="ashby")])
-    after = d.read_text()
+    after = d.read_text(encoding="utf-8")
 
     assert after.count("#") == before.count("#"), "comments were destroyed"
     assert "https://x/board" in after
@@ -903,7 +903,7 @@ def test_the_wizard_only_offers_sectors_that_exist():
     from jobradar.setup_wizard import SECTORS
     real = {s for s in Counter(
         x.get("sector") for x in _j.loads(
-            Path("sources/sources.json").read_text())["sources"]) if s}
+            Path("sources/sources.json").read_text(encoding="utf-8"))["sources"]) if s}
     assert not (set(SECTORS) - real), f"offered but nonexistent: {set(SECTORS) - real}"
     assert not (real - set(SECTORS)), f"exists but not offered: {real - set(SECTORS)}"
 
@@ -1173,7 +1173,7 @@ def test_the_wizards_config_survives_discover_add():
     write_config(p, a)
     _append_sources(p, [Source(company="Nandos", url="https://x/jobs",
                                platform="workday")])
-    got = yaml.safe_load(p.read_text())
+    got = yaml.safe_load(p.read_text(encoding="utf-8"))
     assert [s["company"] for s in got["sources"]["extra"]] == ["Nandos"]
 
 
@@ -1281,7 +1281,7 @@ def test_adding_the_same_source_twice_is_honest_and_idempotent():
     assert _append_sources(p, [src]) == 0
     assert _append_sources(p, [Source(company="Hilton", url="https://y/jobs",
                                       platform="oracle")]) == 1
-    got = yaml.safe_load(p.read_text())["sources"]["extra"]
+    got = yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]["extra"]
     assert [x["company"] for x in got] == ["Nandos", "Hilton"]
 
 
@@ -1311,7 +1311,7 @@ def test_saving_what_you_loaded_changes_nothing():
     out = Path(tempfile.mkdtemp()) / "s.json"
     save(load_file(BUNDLED), out)
     norm = lambda p: sorted(json.dumps(x, sort_keys=True)
-                            for x in json.loads(Path(p).read_text())["sources"])
+                            for x in json.loads(Path(p).read_text(encoding="utf-8"))["sources"])
     assert norm(BUNDLED) == norm(out)
 
 
