@@ -641,6 +641,26 @@ def directness(platform: str) -> int:
     return {"linkedin": 0, "nhs": 1, "reed": 1}.get((platform or "").lower(), 2)
 
 
+# Legal form and holding-company words. An aggregator prints whatever the
+# employer registered as, so the same role arrives as "Monzo Bank Ltd" from
+# Reed and "Monzo" from the employer's own board. Grouping on the raw name
+# meant they never met, both rows showed, and directness never got to decide.
+#
+# Deliberately not in this list: country and region words. "Ramsay Health Care
+# UK" and "Ramsay Health Care" are separate entities hiring separately.
+_LEGAL_FORM = re.compile(
+    r"\b(?:ltd|limited|plc|inc|incorporated|llc|llp|lp|gmbh|ag|a\.?g|bv|b\.?v|"
+    r"nv|n\.?v|sa|s\.?a|srl|s\.?r\.?l|pty|pte|oy|ab|as|aps|kk|corp|"
+    r"corporation|holdings?|group)\b\.?", re.I)
+
+
+def _same_employer(name: str) -> str:
+    """The grouping key for one employer, however a source spells it."""
+    n = _LEGAL_FORM.sub(" ", (name or "").lower())
+    n = re.sub(r"[^a-z0-9]+", " ", n)
+    return " ".join(n.split()) or (name or "").strip().lower()
+
+
 def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
     """Collapse the same role posted once per location, or once per source.
 
@@ -656,7 +676,8 @@ def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
     """
     groups: dict[tuple[str, str], list[Job]] = {}
     for j in jobs:
-        groups.setdefault((j.company.strip().lower(), j.title.strip().lower()), []).append(j)
+        groups.setdefault((_same_employer(j.company), j.title.strip().lower()),
+                          []).append(j)
 
     out: list[Job] = []
     for members in groups.values():
@@ -686,6 +707,52 @@ def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
         if len({(m.location or "").lower() for m in members}) > 1:
             best.flags.append(f"posted in {len(locs)} locations")
         out.append(best)
+    return _fold_aggregators(out)
+
+
+def _fold_aggregators(jobs: list[Job]) -> list[Job]:
+    """Second pass: an aggregator row folds into the employer's own posting.
+
+    Stripping legal forms is not enough on its own. Reed prints "Monzo Bank
+    Ltd" and LinkedIn prints "Wise Payments Limited" where the employer's own
+    board says "Monzo" and "Wise", and the leftover descriptor word means the
+    two never group. Both rows then show, which is the thing an aggregator is
+    most likely to do to this list.
+
+    Restricted to folding an aggregator into a direct board, never one direct
+    board into another. A loose name match is a guess, and the cost of a wrong
+    guess has to fall on the duplicate rather than on somebody's real vacancy.
+    The title must still match exactly, because "Engineering Manager, Platform"
+    and "Engineering Manager, Payments" are two jobs.
+    """
+    direct: dict[str, list[Job]] = {}
+    for j in jobs:
+        if directness(j.platform) >= 2:
+            direct.setdefault(j.title.strip().lower(), []).append(j)
+    if not direct:
+        return jobs
+
+    out = []
+    for j in jobs:
+        if directness(j.platform) >= 2:
+            out.append(j)
+            continue
+        mine = _same_employer(j.company)
+        owner = None
+        for d in direct.get(j.title.strip().lower(), []):
+            theirs = _same_employer(d.company)
+            if not mine or not theirs:
+                continue
+            # One name has to start with the other. Containment anywhere would
+            # fold "Data Engineer at Sky" into "Sky" and also into "Skyscanner".
+            if mine.startswith(theirs) or theirs.startswith(mine):
+                owner = d
+                break
+        if owner is None:
+            out.append(j)
+            continue
+        if j.platform not in " ".join(owner.flags):
+            owner.flags.append(f"also listed on {j.platform}")
     return out
 
 

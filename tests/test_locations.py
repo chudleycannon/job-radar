@@ -104,3 +104,71 @@ def test_an_aggregator_never_outranks_the_employers_own_board():
     assert directness("reed") < directness("greenhouse")
     assert directness("linkedin") < directness("reed")
     assert directness("greenhouse") == directness("workday") == 2
+
+
+# ------------------------------------------------- aggregators and dedupe
+def _row(company, title, platform, desc="x" * 120, location="London"):
+    from jobradar.models import Job
+    return Job(company=company, title=title, url=f"https://{platform}/1",
+               platform=platform, location=location, description=desc)
+
+
+def test_the_employers_own_board_wins_over_an_aggregator_reposting_it():
+    """Adding aggregators means the same role arrives twice, and the copy the
+    reader wants is the one that links to the real apply page rather than a
+    redirect."""
+    from jobradar.screen import dedupe
+
+    out = dedupe([_row("Monzo", "Engineering Manager", "reed"),
+                  _row("Monzo", "Engineering Manager", "greenhouse")])
+    assert len(out) == 1
+    assert out[0].platform == "greenhouse"
+
+
+def test_a_legal_form_or_descriptor_does_not_hide_the_duplicate():
+    """An aggregator prints whatever the employer registered as. Grouping on
+    the raw name left "Monzo Bank Ltd" and "Monzo" in separate groups, so both
+    rows showed and directness never got to decide."""
+    from jobradar.screen import dedupe
+
+    for agg_name, direct_name, plat in (
+            ("Monzo Bank Ltd", "Monzo", "greenhouse"),
+            ("BT Group plc", "BT", "workday"),
+            ("Wise Payments Limited", "Wise", "smartrecruiters")):
+        out = dedupe([_row(agg_name, "Risk Manager", "reed"),
+                      _row(direct_name, "Risk Manager", plat)])
+        assert len(out) == 1, agg_name
+        assert out[0].platform == plat
+        assert any("also listed on" in f for f in out[0].flags)
+
+
+def test_a_loose_name_match_never_collapses_two_real_employers():
+    """The fuzzy half only ever folds an aggregator into a direct board. Sky
+    and Skyscanner both run their own boards and both roles are real, so a
+    prefix match must not be allowed to delete one of them."""
+    from jobradar.screen import dedupe
+
+    out = dedupe([_row("Sky", "Data Engineer", "greenhouse"),
+                  _row("Skyscanner", "Data Engineer", "workday")])
+    assert len(out) == 2
+
+
+def test_two_different_roles_at_one_employer_stay_two_roles():
+    """Titles still have to match exactly. Platform and Payments are two
+    vacancies, and merging them would lose one."""
+    from jobradar.screen import dedupe
+
+    out = dedupe([_row("Monzo", "Engineering Manager, Platform", "greenhouse"),
+                  _row("Monzo Bank Ltd", "Engineering Manager, Payments", "reed")])
+    assert len(out) == 2
+
+
+def test_an_agency_repost_is_left_alone_because_it_names_the_agency():
+    """A role posted by Robert Walters carries Robert Walters as the employer,
+    so no name rule can tie it to Monzo. Reed's postedByDirectEmployer filter
+    is what handles that, at fetch time, not dedupe."""
+    from jobradar.screen import dedupe
+
+    out = dedupe([_row("Monzo", "Engineering Manager", "greenhouse"),
+                  _row("Robert Walters", "Engineering Manager", "reed")])
+    assert len(out) == 2
