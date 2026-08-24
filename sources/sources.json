@@ -43203,7 +43203,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Canon (Ejqe)",
+   "company": "Canon",
    "url": "https://ejqe.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -43233,7 +43233,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Centre for Addiction and Mental Health (CAMH)",
+   "company": "Centre for Addiction and Mental Health",
    "url": "https://iaemup.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -43468,12 +43468,7 @@
    "platform": "oracle"
   },
   {
-   "company": "DTU (Efzu Dev8)",
-   "url": "https://efzu-dev8.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
-   "platform": "oracle"
-  },
-  {
-   "company": "DTU (Efzu)",
+   "company": "DTU",
    "url": "https://efzu.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -43618,7 +43613,7 @@
    "platform": "oracle"
   },
   {
-   "company": "EON (Fa Eylc Saasfaeuraprod1)",
+   "company": "EON",
    "url": "https://fa-eylc-saasfaeuraprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -43743,7 +43738,7 @@
    "platform": "oracle"
   },
   {
-   "company": "First Solar (US)",
+   "company": "First Solar",
    "url": "https://fa-esbv-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44159,7 +44154,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Join (Fa Eoic Saasfaprod1)",
+   "company": "Join",
    "url": "https://fa-eoic-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44184,12 +44179,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Kent (Emqh Dev3)",
-   "url": "https://emqh-dev3.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
-   "platform": "oracle"
-  },
-  {
-   "company": "Kent (Fa Emqh Saasfaprod1)",
+   "company": "Kent",
    "url": "https://fa-emqh-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44391,12 +44381,7 @@
    "platform": "oracle"
   },
   {
-   "company": "Milaha (Ejqa Dev3)",
-   "url": "https://ejqa-dev3.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
-   "platform": "oracle"
-  },
-  {
-   "company": "Milaha (Ejqa)",
+   "company": "Milaha",
    "url": "https://ejqa.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -44436,7 +44421,7 @@
    "platform": "oracle"
   },
   {
-   "company": "MS (Fa Eqid Saasfaprod1)",
+   "company": "Marks & Spencer",
    "url": "https://fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
    "sector": "retail",
@@ -44843,7 +44828,7 @@
    "platform": "oracle"
   },
   {
-   "company": "SHEIN (Fa Exjq Saasfaprod1)",
+   "company": "SHEIN",
    "url": "https://fa-exjq-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -45177,7 +45162,7 @@
    "platform": "oracle"
   },
   {
-   "company": "UL Solutions (Fa Eups Saasfaprod1)",
+   "company": "UL Solutions",
    "url": "https://fa-eups-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -45397,7 +45382,7 @@
    "platform": "oracle"
   },
   {
-   "company": "WTW (Eedu)",
+   "company": "WTW",
    "url": "https://eedu.fa.em3.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle"
   },
@@ -68905,6 +68890,13 @@
    "company": "Jj",
    "url": "https://jj.wd5.myworkdayjobs.com/wday/cxs/jj/NonCompetetiveHiring/jobs",
    "platform": "workday"
+  },
+  {
+   "company": "John Lewis Partnership",
+   "url": "https://jlp.wd3.myworkdayjobs.com/wday/cxs/jlp/JLPjobs_careers/jobs",
+   "platform": "workday",
+   "sector": "retail",
+   "country": "UK"
   },
   {
    "company": "Johnson Matthey",
