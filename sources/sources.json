@@ -1735,7 +1735,8 @@
    "company": "Bedrock Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/bedrock-robotics?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Bedrockocean",
@@ -2347,7 +2348,8 @@
    "company": "Built Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/built-robotics?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Bullpen Talent",
@@ -2780,7 +2782,8 @@
    "company": "Check Technologies",
    "url": "https://api.ashbyhq.com/posting-api/job-board/check-technologies?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Checkatrade",
@@ -3247,7 +3250,8 @@
    "company": "Condor Software",
    "url": "https://api.ashbyhq.com/posting-api/job-board/condor-software?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Conduct",
@@ -3420,7 +3424,8 @@
   {
    "company": "Cosmic Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/cosmic-robotics?includeCompensation=true",
-   "platform": "ashby"
+   "platform": "ashby",
+   "sector": "technology"
   },
   {
    "company": "Cosuno",
@@ -4107,7 +4112,8 @@
    "company": "Dyna Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/dyna-robotics?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "E Source",
@@ -8798,7 +8804,8 @@
    "company": "Neura Robotics Gmbh",
    "url": "https://api.ashbyhq.com/posting-api/job-board/neura-robotics-gmbh?includeCompensation=true",
    "platform": "ashby",
-   "country": "DE"
+   "country": "DE",
+   "sector": "technology"
   },
   {
    "company": "Neural Earth",
@@ -9609,7 +9616,8 @@
    "company": "PAR Technology",
    "url": "https://api.ashbyhq.com/posting-api/job-board/par%20technology?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Parabola Io",
@@ -10925,7 +10933,8 @@
    "company": "Rain Technologies",
    "url": "https://api.ashbyhq.com/posting-api/job-board/rain-technologies?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Rainfallhealth",
@@ -11061,7 +11070,8 @@
   {
    "company": "Rebel Space Technologies",
    "url": "https://api.ashbyhq.com/posting-api/job-board/rebel-space-technologies?includeCompensation=true",
-   "platform": "ashby"
+   "platform": "ashby",
+   "sector": "technology"
   },
   {
    "company": "Rec",
@@ -11241,7 +11251,8 @@
    "company": "Reliable Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/reliable-robotics?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Remarcable Inc",
@@ -11556,7 +11567,8 @@
    "company": "Rivian and Volkswagen Group Technologies",
    "url": "https://api.ashbyhq.com/posting-api/job-board/rivianvw.tech?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "RNRS Solutions",
@@ -13612,7 +13624,8 @@
    "company": "Sygaldry Technologies",
    "url": "https://api.ashbyhq.com/posting-api/job-board/sygaldry-technologies?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Sylvera",
@@ -14091,7 +14104,8 @@
    "company": "Teza Technologies",
    "url": "https://api.ashbyhq.com/posting-api/job-board/teza-technologies?includeCompensation=true",
    "platform": "ashby",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Tgc",
@@ -14571,7 +14585,8 @@
    "company": "Trener Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/trener-robotics?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Trexo Robotics",
@@ -15138,7 +15153,8 @@
    "company": "Verne Robotics",
    "url": "https://api.ashbyhq.com/posting-api/job-board/verne%20robotics?includeCompensation=true",
    "platform": "ashby",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Versemedical",
@@ -15465,7 +15481,8 @@
    "company": "WA.Technology",
    "url": "https://api.ashbyhq.com/posting-api/job-board/wa.technology?includeCompensation=true",
    "platform": "ashby",
-   "country": "RO"
+   "country": "RO",
+   "sector": "technology"
   },
   {
    "company": "Wafer",
@@ -16439,7 +16456,8 @@
    "company": "National Bank of Canada",
    "url": "https://emplois.bnc.ca/fr_CA/careers/SearchJobs/?jobRecordsPerPage=50",
    "platform": "avature",
-   "country": "CA"
+   "country": "CA",
+   "sector": "finance"
   },
   {
    "company": "Nova",
@@ -17288,7 +17306,8 @@
    "company": "Ascent Robotics",
    "url": "https://ascent-robotics.breezy.hr/json",
    "platform": "breezy",
-   "country": "JP"
+   "country": "JP",
+   "sector": "technology"
   },
   {
    "company": "Ash",
@@ -17559,7 +17578,8 @@
    "company": "Bear Robotics",
    "url": "https://bear-robotics.breezy.hr/json",
    "platform": "breezy",
-   "country": "KR"
+   "country": "KR",
+   "sector": "technology"
   },
   {
    "company": "Beech Valley Solutions",
@@ -17696,7 +17716,8 @@
    "company": "Bitdeer Technologies Group",
    "url": "https://bitdeer.breezy.hr/json",
    "platform": "breezy",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Bitwave",
@@ -18025,7 +18046,8 @@
    "company": "Cardinal Technology Systems, Corp.",
    "url": "https://cardinal-technology-systems-corp.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Cardiology Associates of Altoona, L.L.P.",
@@ -18056,7 +18078,8 @@
    "company": "Carnegie Robotics",
    "url": "https://carnegie-robotics.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Cascade Bio",
@@ -18939,7 +18962,8 @@
    "company": "Eagle Technologies LLC",
    "url": "https://eagle-technologies-llc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Earth Angels Home Care",
@@ -19147,7 +19171,8 @@
    "company": "Eureka Robotics",
    "url": "https://eurekarobotics.breezy.hr/json",
    "platform": "breezy",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Euvori Aquatics",
@@ -19159,7 +19184,8 @@
    "company": "Everlight Solar",
    "url": "https://everlight-solar.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Evidencecare",
@@ -19191,7 +19217,8 @@
    "company": "FAAC Technologies",
    "url": "https://faac-group.breezy.hr/json",
    "platform": "breezy",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Fabstation",
@@ -20103,7 +20130,8 @@
   {
    "company": "Jatheon Technologies",
    "url": "https://jatheon-technologies-inc.breezy.hr/json",
-   "platform": "breezy"
+   "platform": "breezy",
+   "sector": "technology"
   },
   {
    "company": "JDEE Transport Services",
@@ -20204,7 +20232,8 @@
    "company": "Kastech Software Solutions Group",
    "url": "https://kastech-canada-inc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Katapult Network",
@@ -20361,7 +20390,8 @@
    "company": "Legna Software",
    "url": "https://legna-software.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Lemonlight",
@@ -20430,7 +20460,8 @@
    "company": "Local Restaurant Group",
    "url": "https://andolini-s-llc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "hospitality"
   },
   {
    "company": "Location3 Media",
@@ -21579,7 +21610,8 @@
    "company": "Plexxis Software",
    "url": "https://plexxis-software.breezy.hr/json",
    "platform": "breezy",
-   "country": "CA"
+   "country": "CA",
+   "sector": "technology"
   },
   {
    "company": "Polco",
@@ -22127,7 +22159,8 @@
    "company": "Rootstock Software",
    "url": "https://rootstock-software.breezy.hr/json",
    "platform": "breezy",
-   "country": "IN"
+   "country": "IN",
+   "sector": "technology"
   },
   {
    "company": "Rose Roofing & Restoration",
@@ -22271,7 +22304,8 @@
    "company": "Sealing Technologies, a Parsons Company",
    "url": "https://sealing-technologies-inc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Seasats",
@@ -22417,7 +22451,8 @@
    "company": "Signature Aviation",
    "url": "https://signatureaviation.breezy.hr/json",
    "platform": "breezy",
-   "country": "UK"
+   "country": "UK",
+   "sector": "transport"
   },
   {
    "company": "Sikhri",
@@ -22446,7 +22481,8 @@
    "company": "SINAI Technologies Inc.",
    "url": "https://sinai.breezy.hr/json",
    "platform": "breezy",
-   "country": "BR"
+   "country": "BR",
+   "sector": "technology"
   },
   {
    "company": "SINE Education",
@@ -22648,7 +22684,8 @@
    "company": "Southern California Institute of Technology",
    "url": "https://southern-california-institute-of-technology.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "education"
   },
   {
    "company": "Southland Pediatric Therapy",
@@ -22707,7 +22744,8 @@
    "company": "Spinnaker Software",
    "url": "https://archsoftware.breezy.hr/json",
    "platform": "breezy",
-   "country": "ZA"
+   "country": "ZA",
+   "sector": "technology"
   },
   {
    "company": "Spinrite",
@@ -22940,7 +22978,8 @@
    "company": "Tactibit Technologies LLC",
    "url": "https://tactibit-technologies-llc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Tagsforhope",
@@ -23002,7 +23041,8 @@
    "company": "Teacher's Pension Services, Inc.",
    "url": "https://teacher-s-pension-services-inc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Team UIS",
@@ -23380,7 +23420,8 @@
    "company": "Triad Electronic Technologies",
    "url": "https://triad-electronic-technologies.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "True Tape Sports GmbH",
@@ -23476,7 +23517,8 @@
    "company": "Twinstate Technologies",
    "url": "https://twinstate-technologies.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Two Hands America Inc",
@@ -23586,7 +23628,8 @@
    "company": "Upwell Revenue Software, Inc.",
    "url": "https://upwell-revenue-software-inc.breezy.hr/json",
    "platform": "breezy",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Urbantz",
@@ -24257,7 +24300,8 @@
    "company": "3MG Roofing & Solar",
    "url": "https://boards-api.greenhouse.io/v1/boards/3mgroofing/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "3Red Partners",
@@ -24751,7 +24795,8 @@
    "company": "Advanced Technology Services",
    "url": "https://boards-api.greenhouse.io/v1/boards/advancedtechnologyservices/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Advertising Specialty Institute",
@@ -24785,7 +24830,8 @@
    "company": "Aechelon Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/aechelontechnology/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "AEG Worldwide",
@@ -25301,7 +25347,8 @@
    "company": "ALTEN Technology USA",
    "url": "https://boards-api.greenhouse.io/v1/boards/altentechnologyusa/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Altos Labs",
@@ -25480,7 +25527,8 @@
    "company": "Amtech Software",
    "url": "https://boards-api.greenhouse.io/v1/boards/amtechsoftware/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "IN"
+   "country": "IN",
+   "sector": "technology"
   },
   {
    "company": "Amwell",
@@ -25678,7 +25726,8 @@
    "company": "Aperia Technologies, Inc",
    "url": "https://boards-api.greenhouse.io/v1/boards/aperiatechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Apex Companies",
@@ -25787,7 +25836,8 @@
    "company": "Appnovation Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/appnovation/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Appodeal",
@@ -26072,7 +26122,8 @@
    "company": "ARX Robotics GmbH",
    "url": "https://boards-api.greenhouse.io/v1/boards/arxroboticsgmbh/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "DE"
+   "country": "DE",
+   "sector": "technology"
   },
   {
    "company": "Asana",
@@ -26539,7 +26590,8 @@
    "company": "Aviation Institute of Maintenance",
    "url": "https://boards-api.greenhouse.io/v1/boards/aviationinstituteofmaintenance/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "transport"
   },
   {
    "company": "Aviator Nation",
@@ -26887,7 +26939,8 @@
    "company": "Baton (A Ryder Technology Lab)",
    "url": "https://boards-api.greenhouse.io/v1/boards/baton/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Baubap",
@@ -27121,7 +27174,8 @@
    "company": "BETA Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/betatechnologiesinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Bethesda Health Group",
@@ -27322,7 +27376,8 @@
    "company": "Black Duck Software, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/blackduck/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Black Forest Labs",
@@ -27545,7 +27600,8 @@
    "company": "Blueprint Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/bpcs/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Bluestaq US",
@@ -28103,7 +28159,8 @@
    "company": "Built Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/getbuilt/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Bullis Charter School",
@@ -28505,7 +28562,8 @@
    "company": "Captivation Software",
    "url": "https://boards-api.greenhouse.io/v1/boards/captivation/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Carbon Direct",
@@ -28787,7 +28845,8 @@
    "company": "Cell Signaling Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/cellsignalingtechnology79/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Cellanome",
@@ -29240,7 +29299,8 @@
    "company": "Clean Crop Technologies, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/cleancroptech/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Clean Simple Eats",
@@ -29284,7 +29344,8 @@
    "company": "ClearScore Technology Limited",
    "url": "https://boards-api.greenhouse.io/v1/boards/clearscoretechnologylimited/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "UK"
+   "country": "UK",
+   "sector": "technology"
   },
   {
    "company": "ClearView Healthcare Partners",
@@ -29369,7 +29430,8 @@
    "company": "Closure Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/closure-tech/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Cloud Chamber",
@@ -29438,7 +29500,8 @@
    "company": "Clutch Technologies Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/clutch/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "CA"
+   "country": "CA",
+   "sector": "technology"
   },
   {
    "company": "Cl\u0113nera, LLC",
@@ -30168,7 +30231,8 @@
    "company": "Cranial Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/cranialtechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Creative Fabrica",
@@ -30404,7 +30468,8 @@
    "company": "Cylus Cybersecurity",
    "url": "https://boards-api.greenhouse.io/v1/boards/cyluscybersecurity/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "security"
   },
   {
    "company": "Cymulate",
@@ -30700,7 +30765,8 @@
    "company": "DelCor Technology Solutions",
    "url": "https://boards-api.greenhouse.io/v1/boards/delcortechnologysolutions/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Delfina",
@@ -31086,7 +31152,8 @@
    "company": "Doma Technology LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/doma/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Domino Data Lab",
@@ -31600,7 +31667,8 @@
    "company": "Elite Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/elitetechnology/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Elixirr",
@@ -31620,7 +31688,8 @@
    "company": "Elwood Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/elwoodtechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "UK"
+   "country": "UK",
+   "sector": "technology"
   },
   {
    "company": "Emarketer",
@@ -31979,7 +32048,8 @@
    "company": "ePlus Technology, inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/eplusinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "EQT Corporation",
@@ -32364,7 +32434,8 @@
    "company": "External Only | Blueprint Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/notexternal/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "ExtraHop",
@@ -32991,7 +33062,8 @@
    "company": "Follett Software, LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/follettsoftware/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Foot Anstey",
@@ -33105,7 +33177,8 @@
    "company": "FORT Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/fortrobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Fortastra Corporation",
@@ -33205,7 +33278,8 @@
    "company": "Foxhole Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/foxholetechnology/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Fractal Portfolio",
@@ -33319,7 +33393,8 @@
    "company": "Fulcrum Global Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/fulcrumglobaltechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Fulfil Solutions",
@@ -33974,7 +34049,8 @@
    "company": "GOLF.com/GOLF Magazine",
    "url": "https://boards-api.greenhouse.io/v1/boards/golf/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "media"
   },
   {
    "company": "Golin UK",
@@ -34317,13 +34393,15 @@
    "company": "Group14 Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/group14/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Group14 Technologies Korea Co. Ltd.",
    "url": "https://boards-api.greenhouse.io/v1/boards/group14korea/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "KR"
+   "country": "KR",
+   "sector": "technology"
   },
   {
    "company": "Grove Collaborative",
@@ -34681,7 +34759,8 @@
    "company": "Headlands Technologies LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/headlandstechnologiesllc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Headout",
@@ -34840,7 +34919,8 @@
    "company": "Hex Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/hextechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Hexium",
@@ -35552,7 +35632,8 @@
    "company": "Incode Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/incode/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Incognia",
@@ -35951,7 +36032,8 @@
    "company": "Invisible Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/invisibletech/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Invite-Only",
@@ -36033,7 +36115,8 @@
    "company": "Irradiant Technologies Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/irradianttechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Isaac",
@@ -36500,7 +36583,8 @@
    "company": "Keen Software House",
    "url": "https://boards-api.greenhouse.io/v1/boards/keensoftwarehouseas/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "CZ"
+   "country": "CZ",
+   "sector": "technology"
   },
   {
    "company": "Keep A Child Alive",
@@ -37583,7 +37667,8 @@
    "company": "Locus Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/locusrobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Lodestar",
@@ -37733,7 +37818,8 @@
    "company": "Lucid Software",
    "url": "https://boards-api.greenhouse.io/v1/boards/lucidsoftware/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Lucky Beverage Co",
@@ -37751,7 +37837,8 @@
    "company": "Ludo Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/ludorobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Lugano - Future Interest Candidate",
@@ -37876,7 +37963,8 @@
    "company": "Lyra Technology Group",
    "url": "https://boards-api.greenhouse.io/v1/boards/lyratechgroup/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "M and M Heating, Cooling, Plumbing and Electrical",
@@ -38524,7 +38612,8 @@
    "company": "Mesh Optical Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/meshopticaltechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Metalab",
@@ -38952,7 +39041,8 @@
   {
    "company": "Mogli Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/mogli/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse"
+   "platform": "greenhouse",
+   "sector": "technology"
   },
   {
    "company": "Mojang Studios",
@@ -39097,7 +39187,8 @@
    "company": "Monument Software, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/monumentsoftwareinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "BR"
+   "country": "BR",
+   "sector": "technology"
   },
   {
    "company": "Monumental Sports & Entertainment",
@@ -39288,7 +39379,8 @@
    "company": "MX Technologies, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/mxtechnologiesinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Mx51",
@@ -39557,7 +39649,8 @@
    "company": "Neros Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/nerostechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Netbrain",
@@ -39657,7 +39750,8 @@
    "company": "New Era Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/neweratech/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "New Leaf Energy, Inc.",
@@ -39901,7 +39995,8 @@
    "company": "Noctua Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/noctuatechnology/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Nom Nom",
@@ -39937,7 +40032,8 @@
    "company": "North Point Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/northpointtechnology/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Northbeam",
@@ -40269,7 +40365,8 @@
    "company": "OfficeSpace Software",
    "url": "https://boards-api.greenhouse.io/v1/boards/officespacesoftware/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Offshore Launch",
@@ -40737,7 +40834,8 @@
    "company": "Optimal Market Technologies, LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/optimal/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Optimove",
@@ -41227,7 +41325,8 @@
    "company": "Park Restaurant and Bar",
    "url": "https://boards-api.greenhouse.io/v1/boards/parkcareers/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "hospitality"
   },
   {
    "company": "Parloa",
@@ -41300,7 +41399,8 @@
    "company": "Path Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/pathrobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Pathstone",
@@ -41525,7 +41625,8 @@
    "company": "Peregrine Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/peregrinetechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Perfectserve",
@@ -41765,7 +41866,8 @@
    "company": "Piston Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/pistontechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "PitchBook Data",
@@ -42710,7 +42812,8 @@
    "company": "Qube Research & Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/quberesearchandtechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "QuEra Computing, Inc.",
@@ -42951,7 +43054,8 @@
    "company": "ReadySet Technology Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/readysettechnologyinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Real Capital",
@@ -43088,7 +43192,8 @@
    "company": "Redwood Software",
    "url": "https://boards-api.greenhouse.io/v1/boards/redwoodsoftware/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Referral Board",
@@ -43471,7 +43576,8 @@
    "company": "Rimes Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/rimestechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Ring Therapeutics",
@@ -43537,7 +43643,8 @@
    "company": "Rival Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/rivaltechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "CA"
+   "country": "CA",
+   "sector": "technology"
   },
   {
    "company": "River AI Inc.",
@@ -43730,7 +43837,8 @@
    "company": "Rugged Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/ruggedrobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Rumble",
@@ -44364,7 +44472,8 @@
    "company": "Seoul Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/seoulrobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "KR"
+   "country": "KR",
+   "sector": "technology"
   },
   {
    "company": "Septerna",
@@ -44434,7 +44543,8 @@
    "company": "Seurat Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/seurat/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Seven Research",
@@ -44670,7 +44780,8 @@
    "company": "Silvus Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/silvus/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Similarweb",
@@ -44682,7 +44793,8 @@
    "company": "Simple Technology Solutions",
    "url": "https://boards-api.greenhouse.io/v1/boards/simpletechnologysolutions/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Simplesense",
@@ -45776,7 +45888,8 @@
    "company": "Strata Decision Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/stratacareers/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Strata Information Group",
@@ -45973,7 +46086,8 @@
    "company": "Sunset Magazine",
    "url": "https://boards-api.greenhouse.io/v1/boards/sunset/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "media"
   },
   {
    "company": "Super Payments",
@@ -46106,7 +46220,8 @@
    "company": "Swift Solar",
    "url": "https://boards-api.greenhouse.io/v1/boards/swiftsolar/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Swoogo",
@@ -46221,7 +46336,8 @@
    "company": "Take-Two Interactive Software, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/taketwo/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "Takealot Group",
@@ -46556,7 +46672,8 @@
   {
    "company": "Teravision Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/teravision/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse"
+   "platform": "greenhouse",
+   "sector": "technology"
   },
   {
    "company": "Terrabis",
@@ -47270,7 +47387,8 @@
    "company": "TooJay\u2019s Deli \u2022 Bakery \u2022 Restaurant",
    "url": "https://boards-api.greenhouse.io/v1/boards/toojaysdeli/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "hospitality"
   },
   {
    "company": "Topsort",
@@ -47288,7 +47406,8 @@
    "company": "Torc Robotics",
    "url": "https://boards-api.greenhouse.io/v1/boards/torcrobotics/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Torii",
@@ -47764,7 +47883,8 @@
    "company": "Two Six Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/twosixtechnologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Typeface",
@@ -47808,7 +47928,8 @@
    "company": "Uber Freight",
    "url": "https://boards-api.greenhouse.io/v1/boards/uberfreight/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "transport"
   },
   {
    "company": "Ubiquiti",
@@ -47971,7 +48092,8 @@
    "company": "Unlimited Technology",
    "url": "https://boards-api.greenhouse.io/v1/boards/unlimitedtechnology/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Unlock Health",
@@ -47983,7 +48105,8 @@
    "company": "Unlock Technologies, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/unlock/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Unqork",
@@ -48296,7 +48419,8 @@
    "company": "Veeam Software",
    "url": "https://boards-api.greenhouse.io/v1/boards/veeamsoftware/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "multi"
+   "country": "multi",
+   "sector": "technology"
   },
   {
    "company": "VEGA Americas",
@@ -48794,7 +48918,8 @@
    "company": "Voyager Technologies, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/voyagertechnologiesinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "VSA Partners",
@@ -48918,7 +49043,8 @@
    "company": "Wasabi Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/wasabi/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Watchmaker Genomics",
@@ -49363,7 +49489,8 @@
    "company": "WiZiX Technology Group, Inc",
    "url": "https://boards-api.greenhouse.io/v1/boards/wizixtechnologygroupinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Wolcott, Wood and Taylor Inc.",
@@ -49859,7 +49986,8 @@
    "company": "Zone 5 Technologies",
    "url": "https://boards-api.greenhouse.io/v1/boards/zone5technologies/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Zoo",
@@ -49871,7 +49999,8 @@
    "company": "ZoomInfo Technologies LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/zoominfo/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Zscaler",
@@ -51135,7 +51264,8 @@
    "company": "Barrios Technology HQ",
    "url": "https://careers-barrios.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Bartlett Tree Experts Careers Center",
@@ -52293,7 +52423,8 @@
    "company": "Community Transit : Employment : Job Listings at Community Transit",
    "url": "https://careers-commtrans.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "transport"
   },
   {
    "company": "ComPsych Corporation",
@@ -55310,7 +55441,8 @@
   {
    "company": "Lettuce Entertain You Restaurants",
    "url": "https://careers-leye.icims.com/jobs/search?ss=1&in_iframe=1",
-   "platform": "icims"
+   "platform": "icims",
+   "sector": "hospitality"
   },
   {
    "company": "Lewis Brisbois",
@@ -58099,7 +58231,8 @@
    "company": "Sky Climber (Renewables Skyclimber)",
    "url": "https://renewables-skyclimber.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Smile America Partners (Bigsmiles)",
@@ -58181,7 +58314,8 @@
   {
    "company": "Solairus Aviation",
    "url": "https://careers-solairus.icims.com/jobs/search?ss=1&in_iframe=1",
-   "platform": "icims"
+   "platform": "icims",
+   "sector": "transport"
   },
   {
    "company": "Somnia Inc.",
@@ -58395,7 +58529,8 @@
    "company": "State Farm Insurance",
    "url": "https://events-statefarm.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Stauffers of Kissel Hill",
@@ -58524,7 +58659,8 @@
    "company": "Streamline Technologies",
    "url": "https://streamline-tech.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Stronghold Companies",
@@ -58700,7 +58836,8 @@
    "company": "Superior Air-Ground Ambulance Service, Inc.",
    "url": "https://careers-superiorindustrialfire.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "healthcare"
   },
   {
    "company": "Sureway Construction Group Ltd",
@@ -58774,7 +58911,8 @@
    "company": "Synchronoss Technologies",
    "url": "https://international-synchronoss.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "IN"
+   "country": "IN",
+   "sector": "technology"
   },
   {
    "company": "Sysmex America",
@@ -60338,7 +60476,8 @@
    "company": "y Aviation",
    "url": "https://careers-jobyaviation.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
-   "country": "US"
+   "country": "US",
+   "sector": "transport"
   },
   {
    "company": "Yelp, Inc.",
@@ -61256,7 +61395,8 @@
    "company": "Liquid Robotics",
    "url": "https://jobs.jobvite.com/liquid-robotics-inc/jobs",
    "platform": "jobvite",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Lordco",
@@ -62952,7 +63092,8 @@
    "company": "BC Pensions",
    "url": "https://fa-exby-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
-   "country": "CA"
+   "country": "CA",
+   "sector": "finance"
   },
   {
    "company": "BCPS",
@@ -63215,7 +63356,8 @@
    "company": "CNC Police Staff",
    "url": "https://fa-euhj-saasfaukgovprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
-   "country": "UK"
+   "country": "UK",
+   "sector": "public-sector"
   },
   {
    "company": "CNRL Professional",
@@ -64880,7 +65022,8 @@
    "company": "First Solar",
    "url": "https://fa-esbv-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "First West",
@@ -66256,7 +66399,8 @@
    "company": "Oxford Nanopore Technologies",
    "url": "https://ejnh.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
-   "country": "UK"
+   "country": "UK",
+   "sector": "technology"
   },
   {
    "company": "Page not found",
@@ -66631,7 +66775,8 @@
    "company": "South Yorkshire Police",
    "url": "https://fa-exru-saasfaukgovprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
-   "country": "UK"
+   "country": "UK",
+   "sector": "public-sector"
   },
   {
    "company": "SPH",
@@ -66928,7 +67073,8 @@
    "company": "Uber Technologies",
    "url": "https://iaziqy.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Ublcloud Iaanbv",
@@ -67622,7 +67768,8 @@
   {
    "company": "Ams Technologies Ag",
    "url": "https://ams-technologies-ag.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Andersinnovations",
@@ -69057,7 +69204,8 @@
   {
    "company": "Digacon Software",
    "url": "https://digacon-software.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Digetiers Gmbh",
@@ -69504,7 +69652,8 @@
   {
    "company": "Esg Solar",
    "url": "https://esg-solar.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "energy"
   },
   {
    "company": "Essentry",
@@ -69741,7 +69890,8 @@
   {
    "company": "Fides Technology Gmbh",
    "url": "https://fides-technology-gmbh.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Fieldfisher",
@@ -70424,7 +70574,8 @@
    "company": "Holy Technologies Gmbh",
    "url": "https://holy-technologies-gmbh.jobs.personio.de/xml",
    "platform": "personio",
-   "country": "DE"
+   "country": "DE",
+   "sector": "technology"
   },
   {
    "company": "Holzkern",
@@ -70512,7 +70663,8 @@
   {
    "company": "Hyimpulse Technologies Gmbh",
    "url": "https://hyimpulse-technologies-gmbh.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Hypatos Gmbh",
@@ -71456,7 +71608,8 @@
   {
    "company": "Luna Restaurant Gmbh",
    "url": "https://luna-restaurant-gmbh.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "hospitality"
   },
   {
    "company": "Lytra",
@@ -71727,7 +71880,8 @@
   {
    "company": "Mm Software Gmbh",
    "url": "https://mm-software-gmbh.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Mobiko",
@@ -71881,7 +72035,8 @@
   {
    "company": "Navax Software",
    "url": "https://navax-software.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Ncs Gmbh",
@@ -73268,12 +73423,14 @@
   {
    "company": "Solar Andresen",
    "url": "https://solar-andresen.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "energy"
   },
   {
    "company": "Solar Materials Gmbh",
    "url": "https://solar-materials-gmbh.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "energy"
   },
   {
    "company": "Sonnenernte Gmbh",
@@ -73945,7 +74102,8 @@
   {
    "company": "Unchained Robotics Gmbh",
    "url": "https://unchained-robotics-gmbh.jobs.personio.de/xml",
-   "platform": "personio"
+   "platform": "personio",
+   "sector": "technology"
   },
   {
    "company": "Unite Ggmbh",
@@ -74605,7 +74763,8 @@
    "company": "Bank of Montreal",
    "url": "https://jobs.bmo.com/ca/en/search-results?s=1",
    "platform": "phenom",
-   "country": "CA"
+   "country": "CA",
+   "sector": "finance"
   },
   {
    "company": "Baptisthlth",
@@ -74793,7 +74952,8 @@
    "company": "GE HealthCare Technologies",
    "url": "https://careers.gehealthcare.com/global/en/search-results?s=1",
    "platform": "phenom",
-   "country": "US"
+   "country": "US",
+   "sector": "healthcare"
   },
   {
    "company": "Givaudan",
@@ -74894,7 +75054,8 @@
    "company": "PNC Financial Services Group",
    "url": "https://careers.pnc.com/global/en/search-results?s=1",
    "platform": "phenom",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "PPG Industries",
@@ -74919,7 +75080,8 @@
    "company": "QBE Insurance",
    "url": "https://careers.qbe.com/gb/en/search-results?s=1",
    "platform": "phenom",
-   "country": "AU"
+   "country": "AU",
+   "sector": "finance"
   },
   {
    "company": "Recruiting2",
@@ -74931,7 +75093,8 @@
    "company": "Regions Financial",
    "url": "https://careers.regions.com/us/en/search-results?s=1",
    "platform": "phenom",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Reinsurance Group of America",
@@ -74943,7 +75106,8 @@
    "company": "Restaurant Brands International Inc.",
    "url": "https://careers.rbi.com/global/en/search-results?s=1",
    "platform": "phenom",
-   "country": "CA"
+   "country": "CA",
+   "sector": "hospitality"
   },
   {
    "company": "Serco",
@@ -74970,7 +75134,8 @@
    "company": "Southwest Airlines",
    "url": "https://careers.southwestair.com/us/en/search-results?s=1",
    "platform": "phenom",
-   "country": "US"
+   "country": "US",
+   "sector": "transport"
   },
   {
    "company": "Tate & Lyle",
@@ -80969,7 +81134,8 @@
    "company": "ANZ Bank",
    "url": "https://careers.anz.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "AU"
+   "country": "AU",
+   "sector": "finance"
   },
   {
    "company": "Assaabloy",
@@ -80987,7 +81153,8 @@
    "company": "Bank of Nova Scotia",
    "url": "https://jobs.scotiabank.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "CA"
+   "country": "CA",
+   "sector": "finance"
   },
   {
    "company": "Bayer",
@@ -81023,7 +81190,8 @@
    "company": "CenterPoint Energy",
    "url": "https://careers.centerpointenergy.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Cintas",
@@ -81041,7 +81209,8 @@
    "company": "CMS Energy",
    "url": "https://careers.consumersenergy.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Coats Group",
@@ -81083,7 +81252,8 @@
    "company": "DCC Energy",
    "url": "https://careers.dcc.ie/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "UK"
+   "country": "UK",
+   "sector": "energy"
   },
   {
    "company": "Delek US Holdings",
@@ -81101,7 +81271,8 @@
    "company": "Dominion Energy",
    "url": "https://careers.dominionenergy.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Dover",
@@ -81113,7 +81284,8 @@
    "company": "DTE Energy",
    "url": "https://careers.dteenergy.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Eastman Chemical",
@@ -81137,7 +81309,8 @@
    "company": "Erie Insurance Group",
    "url": "https://jobs.erieinsurance.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "EssilorLuxottica",
@@ -81155,7 +81328,8 @@
    "company": "Expand Energy",
    "url": "https://jobs.expandenergy.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "EY",
@@ -81173,7 +81347,8 @@
    "company": "Fisher & Paykel Healthcare",
    "url": "https://careers.fphcare.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "AU"
+   "country": "AU",
+   "sector": "healthcare"
   },
   {
    "company": "Freeport-McMoRan",
@@ -81185,13 +81360,15 @@
    "company": "GXO Logistics",
    "url": "https://jobs.gxo.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "transport"
   },
   {
    "company": "Harbour Energy",
    "url": "https://careers.harbourenergy.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "UK"
+   "country": "UK",
+   "sector": "energy"
   },
   {
    "company": "Helios Towers",
@@ -81270,7 +81447,8 @@
    "company": "JetBlue Airways",
    "url": "https://careers.jetblue.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "transport"
   },
   {
    "company": "Kinross Gold Corporation",
@@ -81331,7 +81509,8 @@
    "company": "Origin Energy",
    "url": "https://careers.originenergy.com.au/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "AU"
+   "country": "AU",
+   "sector": "energy"
   },
   {
    "company": "Owens Corning",
@@ -81471,7 +81650,8 @@
    "company": "WEC Energy Group",
    "url": "https://careers.wecenergygroup.com/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Wizz Air",
@@ -81483,7 +81663,8 @@
    "company": "Woodside Energy",
    "url": "https://careers.woodside.com.au/search/?q=&sortColumn=referencedate&sortDirection=desc",
    "platform": "rmk",
-   "country": "AU"
+   "country": "AU",
+   "sector": "energy"
   },
   {
    "company": "XPO",
@@ -81830,7 +82011,8 @@
    "company": "AMOL TECHNOLOGIES",
    "url": "https://api.smartrecruiters.com/v1/companies/amoltechnologies/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "IN"
+   "country": "IN",
+   "sector": "technology"
   },
   {
    "company": "Ample Insight Inc.",
@@ -83635,7 +83817,8 @@
   {
    "company": "GIANTS Software GmbH",
    "url": "https://api.smartrecruiters.com/v1/companies/giantssoftwaregmbh/postings?limit=100",
-   "platform": "smartrecruiters"
+   "platform": "smartrecruiters",
+   "sector": "technology"
   },
   {
    "company": "Gigalogy Inc.",
@@ -83899,7 +84082,8 @@
    "company": "Hstar Technologies",
    "url": "https://api.smartrecruiters.com/v1/companies/hstartechnologies/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Humanity",
@@ -84058,7 +84242,8 @@
    "company": "Information Technology Partners",
    "url": "https://api.smartrecruiters.com/v1/companies/informationtechnologypartners/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Ingenium Plus",
@@ -84941,7 +85126,8 @@
    "company": "Nauticus Robotics",
    "url": "https://api.smartrecruiters.com/v1/companies/nauticusrobotics/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Nazarbayev University",
@@ -85111,7 +85297,8 @@
    "company": "OCTO Technology",
    "url": "https://api.smartrecruiters.com/v1/companies/octotechnology/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "FR"
+   "country": "FR",
+   "sector": "technology"
   },
   {
    "company": "Octopus",
@@ -85187,7 +85374,8 @@
    "company": "Ontario Transit Group",
    "url": "https://api.smartrecruiters.com/v1/companies/ontariotransitgroup/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "CA"
+   "country": "CA",
+   "sector": "transport"
   },
   {
    "company": "Optima Health",
@@ -85255,7 +85443,8 @@
    "company": "pal robotics",
    "url": "https://api.smartrecruiters.com/v1/companies/palrobotics/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "US"
+   "country": "US",
+   "sector": "technology"
   },
   {
    "company": "Parker Wellbore",
@@ -85343,7 +85532,8 @@
   {
    "company": "Polygon Technology",
    "url": "https://api.smartrecruiters.com/v1/companies/polygontechnology/postings?limit=100",
-   "platform": "smartrecruiters"
+   "platform": "smartrecruiters",
+   "sector": "technology"
   },
   {
    "company": "Portman Dentex",
@@ -85889,13 +86079,15 @@
    "company": "Seeka Technology",
    "url": "https://api.smartrecruiters.com/v1/companies/seekatechnology/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "ID"
+   "country": "ID",
+   "sector": "technology"
   },
   {
    "company": "Segula Technologies",
    "url": "https://api.smartrecruiters.com/v1/companies/segulatechnologies/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "FR"
+   "country": "FR",
+   "sector": "technology"
   },
   {
    "company": "Selfa",
@@ -86013,7 +86205,8 @@
    "company": "Silfab Solar",
    "url": "https://api.smartrecruiters.com/v1/companies/silfabsolar/postings?limit=100",
    "platform": "smartrecruiters",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Siloam Hospitals Group",
@@ -86483,7 +86676,8 @@
   {
    "company": "TeraWatt Technology",
    "url": "https://api.smartrecruiters.com/v1/companies/terawatttechnology/postings?limit=100",
-   "platform": "smartrecruiters"
+   "platform": "smartrecruiters",
+   "sector": "technology"
   },
   {
    "company": "Tessenderlo Group",
@@ -87322,7 +87516,8 @@
    "company": "Cincinnati Financial",
    "url": "https://cinfin.taleo.net/careersection/ex/jobsearch.ftl?lang=en",
    "platform": "taleo",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "D.R. Horton",
@@ -87588,7 +87783,8 @@
    "company": "SaaS",
    "url": "https://saasglobal.teamtailor.com/jobs.rss?per_page=200",
    "platform": "teamtailor",
-   "country": "FR"
+   "country": "FR",
+   "sector": "technology"
   },
   {
    "company": "Sabrura Sticks & Sushi",
@@ -87672,7 +87868,8 @@
   {
    "company": "Varnish Software",
    "url": "https://varnish-software.teamtailor.com/jobs.rss?per_page=200",
-   "platform": "teamtailor"
+   "platform": "teamtailor",
+   "sector": "technology"
   },
   {
    "company": "Vidoori",
@@ -87800,7 +87997,8 @@
   {
    "company": "A2E Technologies 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/a2e-technologies-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "A2Mac1",
@@ -87885,12 +88083,14 @@
   {
    "company": "Access Bank",
    "url": "https://apply.workable.com/api/v1/widget/accounts/access-bank",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Access Business Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/access-business-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Access Services 3",
@@ -88035,7 +88235,8 @@
   {
    "company": "Advantagecare Home Health",
    "url": "https://apply.workable.com/api/v1/widget/accounts/advantagecare-home-health",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Advantmed",
@@ -88065,7 +88266,8 @@
   {
    "company": "Aegean Baltic Bank",
    "url": "https://apply.workable.com/api/v1/widget/accounts/aegean-baltic-bank",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Aerones",
@@ -88090,7 +88292,8 @@
   {
    "company": "Agad Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/agad-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Agcp",
@@ -88190,7 +88393,8 @@
   {
    "company": "Al Jomaih Energy And Water",
    "url": "https://apply.workable.com/api/v1/widget/accounts/al-jomaih-energy-and-water",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Al Warren Oil Company Inc",
@@ -88215,7 +88419,8 @@
   {
    "company": "Albireo Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/albireo-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Alborg Diagnostics",
@@ -88395,7 +88600,8 @@
   {
    "company": "American Battery Technology Company",
    "url": "https://apply.workable.com/api/v1/widget/accounts/americanbatterytechnologycompany",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "American Concrete",
@@ -88405,7 +88611,8 @@
   {
    "company": "American Hotel & Lodging Association",
    "url": "https://apply.workable.com/api/v1/widget/accounts/american-hoteland-lodging-association",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "American Institute of Chemical Engineers",
@@ -88560,7 +88767,8 @@
   {
    "company": "Aptus Health Care",
    "url": "https://apply.workable.com/api/v1/widget/accounts/aptus-health-care",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Arabicai",
@@ -88633,7 +88841,8 @@
   {
    "company": "Arkham Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/arkham-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Arondite",
@@ -88668,7 +88877,8 @@
   {
    "company": "Assala Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/assala-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Asseti",
@@ -88733,7 +88943,8 @@
   {
    "company": "Astrome Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/astrome-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Atc Driving Forward",
@@ -88763,7 +88974,8 @@
   {
    "company": "Athens Technology Center 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/athens-technology-center-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Atlantbh",
@@ -88818,7 +89030,8 @@
   {
    "company": "Australian Christian College",
    "url": "https://apply.workable.com/api/v1/widget/accounts/australian-christian-college",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Auto Electric Service",
@@ -88938,12 +89151,14 @@
   {
    "company": "Bank Al Etihad",
    "url": "https://apply.workable.com/api/v1/widget/accounts/bank-al-etihad",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Bank Of Jordan",
    "url": "https://apply.workable.com/api/v1/widget/accounts/bank-of-jordan",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Bardel Entertainment",
@@ -89093,7 +89308,8 @@
   {
    "company": "Bergen Logistics 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/bergen-logistics-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "transport"
   },
   {
    "company": "Berry Street",
@@ -89311,7 +89527,8 @@
   {
    "company": "Block Llp",
    "url": "https://apply.workable.com/api/v1/widget/accounts/block-llp",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "legal"
   },
   {
    "company": "Bloomlife",
@@ -89341,7 +89558,8 @@
   {
    "company": "Blue Sky Utility",
    "url": "https://apply.workable.com/api/v1/widget/accounts/blue-sky-utility",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Blue Stout",
@@ -89511,7 +89729,8 @@
   {
    "company": "Bremer Whyte Brown & O'Meara, LLP",
    "url": "https://apply.workable.com/api/v1/widget/accounts/bremer-whyte-brownand-omeara-llp",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "legal"
   },
   {
    "company": "Brentwood Associates",
@@ -89582,7 +89801,8 @@
   {
    "company": "Brooklyn Waldorf School",
    "url": "https://apply.workable.com/api/v1/widget/accounts/brooklyn-waldorf-school",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Bswarena",
@@ -89637,12 +89857,14 @@
   {
    "company": "Bw Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/bw-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Bwise Media Ag",
    "url": "https://apply.workable.com/api/v1/widget/accounts/bwise-media-ag",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Bystadium",
@@ -89712,7 +89934,8 @@
   {
    "company": "Calibrant Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/calibrant-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Callminer",
@@ -89722,7 +89945,8 @@
   {
    "company": "Calvary Hospital",
    "url": "https://apply.workable.com/api/v1/widget/accounts/calvary-hospital",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Cambridge Gan Devices",
@@ -89732,7 +89956,8 @@
   {
    "company": "Cambridge Healthcare Research",
    "url": "https://apply.workable.com/api/v1/widget/accounts/cambridge-healthcare-research",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Camino Partners 1",
@@ -89792,7 +90017,8 @@
   {
    "company": "Capgemini Insurance",
    "url": "https://apply.workable.com/api/v1/widget/accounts/capgemini-insurance",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Capital Economics",
@@ -89967,7 +90193,8 @@
   {
    "company": "Celtic Bank",
    "url": "https://apply.workable.com/api/v1/widget/accounts/celtic-bank",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Centage",
@@ -89977,7 +90204,8 @@
   {
    "company": "Centorrino Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/centorrino-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Central Houston Inc",
@@ -90057,7 +90285,8 @@
   {
    "company": "Charger Logistics Inc",
    "url": "https://apply.workable.com/api/v1/widget/accounts/charger-logistics-inc",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "transport"
   },
   {
    "company": "Charger Water",
@@ -90157,7 +90386,8 @@
   {
    "company": "Citizens State Bank",
    "url": "https://apply.workable.com/api/v1/widget/accounts/citizens-state-bank",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Citylitics",
@@ -90465,7 +90695,8 @@
   {
    "company": "Compassion Hospice",
    "url": "https://apply.workable.com/api/v1/widget/accounts/compassion-hospice",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Complexio",
@@ -90510,7 +90741,8 @@
   {
    "company": "Connelly School of the Holy Child",
    "url": "https://apply.workable.com/api/v1/widget/accounts/connelly-school-of-the-holy-child",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Connexity",
@@ -90520,7 +90752,8 @@
   {
    "company": "Consigli Construction 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/consigli-construction-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Consumeraffairs 1",
@@ -91138,7 +91371,8 @@
   {
    "company": "Disa Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/disa-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Disability Rights Fund",
@@ -91198,7 +91432,8 @@
   {
    "company": "Dodge Construction Network",
    "url": "https://apply.workable.com/api/v1/widget/accounts/dodge-construction-network",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Dodge Moving And Storage",
@@ -91218,7 +91453,8 @@
   {
    "company": "Domes Resorts",
    "url": "https://apply.workable.com/api/v1/widget/accounts/domes-resorts",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "Donna",
@@ -91398,7 +91634,8 @@
   {
    "company": "Edwards Construction Group",
    "url": "https://apply.workable.com/api/v1/widget/accounts/edwards-construction-group",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Edyn Care",
@@ -91418,7 +91655,8 @@
   {
    "company": "Efm Logistics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/efm-logistics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "transport"
   },
   {
    "company": "Eight And Four",
@@ -91463,7 +91701,8 @@
   {
    "company": "Elevate Semiconductor",
    "url": "https://apply.workable.com/api/v1/widget/accounts/elevate-semiconductor",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Elevation Autism Center",
@@ -91478,7 +91717,8 @@
   {
    "company": "Ella Hotels And Resorts",
    "url": "https://apply.workable.com/api/v1/widget/accounts/ella-hotels-and-resorts",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "Ellaexecutivesearch",
@@ -91488,7 +91728,8 @@
   {
    "company": "Ellison Institute Of Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/ellison-institute-of-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Elmhurst Edu",
@@ -91578,7 +91819,8 @@
   {
    "company": "Energy Infrastructure Partners",
    "url": "https://apply.workable.com/api/v1/widget/accounts/energy-infrastructure-partners",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Energysciences",
@@ -91828,7 +92070,8 @@
   {
    "company": "Evolv Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/evolv-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Evolve Security",
@@ -91873,12 +92116,14 @@
   {
    "company": "Explore Schools 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/explore-schools-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Exponent Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/exponent-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Export Development Canada",
@@ -92133,7 +92378,8 @@
   {
    "company": "Flexion Robotics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/flexion-robotics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Flexxon 1",
@@ -92489,7 +92735,8 @@
   {
    "company": "Gcs Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/gcs-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Gearup2Success 1",
@@ -92534,7 +92781,8 @@
   {
    "company": "Geo Technology Associates Inc",
    "url": "https://apply.workable.com/api/v1/widget/accounts/geo-technology-associates-inc",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Geomagical Labs",
@@ -92634,7 +92882,8 @@
   {
    "company": "Gobi Technologies Inc",
    "url": "https://apply.workable.com/api/v1/widget/accounts/gobi-technologies-inc",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Gocertify",
@@ -92719,7 +92968,8 @@
   {
    "company": "Grapevine MSP Technology Services",
    "url": "https://apply.workable.com/api/v1/widget/accounts/grapevine-msp-technology-services",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Grassrootscarbon",
@@ -92749,7 +92999,8 @@
   {
    "company": "Green Power Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/green-power-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Greenbelt Alliance",
@@ -92945,12 +93196,14 @@
   {
    "company": "Healthcare Central London",
    "url": "https://apply.workable.com/api/v1/widget/accounts/healthcare-central-london",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Healthcare Management Administrators",
    "url": "https://apply.workable.com/api/v1/widget/accounts/healthcare-management-administrators",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Healthcarerecruiter",
@@ -93035,12 +93288,14 @@
   {
    "company": "Heritage Healthcare Services",
    "url": "https://apply.workable.com/api/v1/widget/accounts/heritage-healthcare-services",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Hero Software",
    "url": "https://apply.workable.com/api/v1/widget/accounts/hero-software",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Hextrust",
@@ -93075,7 +93330,8 @@
   {
    "company": "High Voltage Software",
    "url": "https://apply.workable.com/api/v1/widget/accounts/high-voltage-software",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Highbridgecareers",
@@ -93360,7 +93616,8 @@
   {
    "company": "Idaho College of Osteopathic Medicine",
    "url": "https://apply.workable.com/api/v1/widget/accounts/idaho-college-of-osteopathic-medicine",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Ide Global",
@@ -93415,7 +93672,8 @@
   {
    "company": "Illuma Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/illuma-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Imachines",
@@ -93435,7 +93693,8 @@
   {
    "company": "Immediate Media Co",
    "url": "https://apply.workable.com/api/v1/widget/accounts/immediate-media-co",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Impact Clients",
@@ -93845,7 +94104,8 @@
   {
    "company": "Ivyhill Technologies Llc",
    "url": "https://apply.workable.com/api/v1/widget/accounts/ivyhill-technologies-llc",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Izix",
@@ -93955,7 +94215,8 @@
   {
    "company": "Joey Restaurants 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/joey-restaurants-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "John Brooks Company",
@@ -94050,7 +94311,8 @@
   {
    "company": "Karohealthcare",
    "url": "https://apply.workable.com/api/v1/widget/accounts/karohealthcare",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Kaseware Inc",
@@ -94130,7 +94392,8 @@
   {
    "company": "Ki Insurance",
    "url": "https://apply.workable.com/api/v1/widget/accounts/ki-insurance",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Kiavets",
@@ -94215,7 +94478,8 @@
   {
    "company": "Konew Fintech",
    "url": "https://apply.workable.com/api/v1/widget/accounts/konew-fintech",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Konica Minolta Business Solutions Australia",
@@ -94320,7 +94584,8 @@
   {
    "company": "Lafrance Hospitality",
    "url": "https://apply.workable.com/api/v1/widget/accounts/lafrance-hospitality",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "Lago 1",
@@ -94335,7 +94600,8 @@
   {
    "company": "Lakeside Software",
    "url": "https://apply.workable.com/api/v1/widget/accounts/lakeside-software",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Lakshyadigitalglobal",
@@ -94410,7 +94676,8 @@
   {
    "company": "Leap Legal Software",
    "url": "https://apply.workable.com/api/v1/widget/accounts/leap-legal-software",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Learner Education",
@@ -94528,7 +94795,8 @@
   {
    "company": "Lifthium Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/lifthium-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Lilli",
@@ -94683,7 +94951,8 @@
   {
    "company": "Magic Media",
    "url": "https://apply.workable.com/api/v1/widget/accounts/magic-media",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Magicspoon",
@@ -94748,7 +95017,8 @@
   {
    "company": "Mark Iii Construction",
    "url": "https://apply.workable.com/api/v1/widget/accounts/mark-iii-construction",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Massmedia",
@@ -94978,7 +95248,8 @@
   {
    "company": "Mira Construction L Dot L C 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/mira-construction-l-dot-l-c-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Mission 44",
@@ -94993,7 +95264,8 @@
   {
    "company": "Mitchell Construction Group Llc",
    "url": "https://apply.workable.com/api/v1/widget/accounts/mitchell-construction-group-llc",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Mitsis Group",
@@ -95048,7 +95320,8 @@
   {
    "company": "Monadnock Construction",
    "url": "https://apply.workable.com/api/v1/widget/accounts/monadnock-construction",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Mons Royale",
@@ -95083,7 +95356,8 @@
   {
    "company": "Mosaic Media",
    "url": "https://apply.workable.com/api/v1/widget/accounts/mosaic-media",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Moss Holding Company",
@@ -95246,7 +95520,8 @@
   {
    "company": "National Network Logistics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/national-network-logistics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "transport"
   },
   {
    "company": "National Western Center",
@@ -95361,7 +95636,8 @@
   {
    "company": "Newton Media Group",
    "url": "https://apply.workable.com/api/v1/widget/accounts/newton-media-group",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Nexuscareservices",
@@ -95461,7 +95737,8 @@
   {
    "company": "North Park University",
    "url": "https://apply.workable.com/api/v1/widget/accounts/north-park-university",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "education"
   },
   {
    "company": "Northramp",
@@ -95544,7 +95821,8 @@
   {
    "company": "Numo Hotelsand Resorts",
    "url": "https://apply.workable.com/api/v1/widget/accounts/numo-hotelsand-resorts",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "Nutritionintl",
@@ -95599,7 +95877,8 @@
   {
    "company": "Odk Media",
    "url": "https://apply.workable.com/api/v1/widget/accounts/odk-media",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Ofload",
@@ -95759,7 +96038,8 @@
   {
    "company": "Oue Restaurants Pte Ltd",
    "url": "https://apply.workable.com/api/v1/widget/accounts/oue-restaurants-pte-ltd",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "hospitality"
   },
   {
    "company": "Outperform 2",
@@ -95774,7 +96054,8 @@
   {
    "company": "Overactive Media Corp",
    "url": "https://apply.workable.com/api/v1/widget/accounts/overactive-media-corp",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Oversee",
@@ -95934,7 +96215,8 @@
   {
    "company": "Patient Recovery Home Healthcare Services",
    "url": "https://apply.workable.com/api/v1/widget/accounts/patient-recovery-home-healthcare-services",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "healthcare"
   },
   {
    "company": "Pavago",
@@ -96133,7 +96415,8 @@
   {
    "company": "Pitch Software",
    "url": "https://apply.workable.com/api/v1/widget/accounts/pitch-software",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Pivot Agency",
@@ -96321,7 +96604,8 @@
   {
    "company": "Prime Robotics 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/prime-robotics-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Primeglobalpeople Join Us",
@@ -96361,7 +96645,8 @@
   {
    "company": "Proactive Technology Management",
    "url": "https://apply.workable.com/api/v1/widget/accounts/proactive-technology-management",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Proarch 3",
@@ -96381,7 +96666,8 @@
   {
    "company": "Progressive Robotics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/progressive-robotics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Prominence Advisors",
@@ -96526,7 +96812,8 @@
   {
    "company": "Rapyuta Robotics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/rapyuta-robotics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Raspberrypi",
@@ -96656,7 +96943,8 @@
   {
    "company": "Revive Media",
    "url": "https://apply.workable.com/api/v1/widget/accounts/revive-media",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Rezilient",
@@ -96692,7 +96980,8 @@
   {
    "company": "Rise Robotics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/rise-robotics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Rising Academies",
@@ -96732,7 +97021,8 @@
   {
    "company": "Rovex Technologies Corporation",
    "url": "https://apply.workable.com/api/v1/widget/accounts/rovex-technologies-corporation",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Rtm Business Group",
@@ -96747,7 +97037,8 @@
   {
    "company": "Rystad Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/rystad-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Salla",
@@ -96792,7 +97083,8 @@
   {
    "company": "Sapsol Technologies Inc 7",
    "url": "https://apply.workable.com/api/v1/widget/accounts/sapsol-technologies-inc-7",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Satellitevu",
@@ -96807,7 +97099,8 @@
   {
    "company": "Satoshi Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/satoshi-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Sawhorse Productions",
@@ -96998,7 +97291,8 @@
   {
    "company": "Slip Robotics",
    "url": "https://apply.workable.com/api/v1/widget/accounts/slip-robotics",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Slp",
@@ -97048,12 +97342,14 @@
   {
    "company": "Solamerica Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/solamerica-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Solid Sealing Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/solid-sealing-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Solidarmed 1",
@@ -97093,7 +97389,8 @@
   {
    "company": "Spd Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/spd-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Sperasoft",
@@ -97352,7 +97649,8 @@
   {
    "company": "Terabase Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/terabase-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Tesae Sa",
@@ -97427,7 +97725,8 @@
   {
    "company": "The Proactive Technology Group",
    "url": "https://apply.workable.com/api/v1/widget/accounts/the-proactive-technology-group",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "The Ripple Way",
@@ -97482,7 +97781,8 @@
   {
    "company": "Thesoul Publishing 1",
    "url": "https://apply.workable.com/api/v1/widget/accounts/thesoul-publishing-1",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Thespecialistworks",
@@ -97562,7 +97862,8 @@
   {
    "company": "Toyota Financial Services",
    "url": "https://apply.workable.com/api/v1/widget/accounts/toyota-financial-services",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "finance"
   },
   {
    "company": "Tresata",
@@ -97647,7 +97948,8 @@
   {
    "company": "Tyk Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/tyk-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "U Drive",
@@ -97733,7 +98035,8 @@
   {
    "company": "Urban Grid Solar Projects",
    "url": "https://apply.workable.com/api/v1/widget/accounts/urban-grid-solar-projects",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Urgent Action Fund Fa",
@@ -97763,7 +98066,8 @@
   {
    "company": "Valard Construction Lp",
    "url": "https://apply.workable.com/api/v1/widget/accounts/valard-construction-lp",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "construction"
   },
   {
    "company": "Valatam",
@@ -97911,12 +98215,14 @@
   {
    "company": "Vivo Energy",
    "url": "https://apply.workable.com/api/v1/widget/accounts/vivo-energy",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "energy"
   },
   {
    "company": "Vix Technology",
    "url": "https://apply.workable.com/api/v1/widget/accounts/vix-technology",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Vizrt",
@@ -98051,7 +98357,8 @@
   {
    "company": "Winthrop Technologies",
    "url": "https://apply.workable.com/api/v1/widget/accounts/winthrop-technologies",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "technology"
   },
   {
    "company": "Wisedocs Ai",
@@ -98096,7 +98403,8 @@
   {
    "company": "Workman Llp",
    "url": "https://apply.workable.com/api/v1/widget/accounts/workman-llp",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "legal"
   },
   {
    "company": "World Central Kitchen",
@@ -98116,7 +98424,8 @@
   {
    "company": "Wowza Media Systems",
    "url": "https://apply.workable.com/api/v1/widget/accounts/wowza-media-systems",
-   "platform": "workable"
+   "platform": "workable",
+   "sector": "media"
   },
   {
    "company": "Writesonic",
@@ -98636,7 +98945,8 @@
    "company": "Alfa Financial Software",
    "url": "https://alfa.wd3.myworkdayjobs.com/wday/cxs/alfa/Alfa/jobs",
    "platform": "workday",
-   "country": "UK"
+   "country": "UK",
+   "sector": "finance"
   },
   {
    "company": "Alfalaval",
@@ -99349,7 +99659,8 @@
    "company": "Bank of America",
    "url": "https://ghr.wd1.myworkdayjobs.com/wday/cxs/ghr/lateral-us/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Bannerhealth",
@@ -99977,7 +100288,8 @@
    "company": "Canadian Imperial Bank of Commerce",
    "url": "https://cibc.wd3.myworkdayjobs.com/wday/cxs/cibc/search/jobs",
    "platform": "workday",
-   "country": "CA"
+   "country": "CA",
+   "sector": "finance"
   },
   {
    "company": "Canadiantirecorporation",
@@ -100157,7 +100469,8 @@
    "company": "Cenovus Energy Inc.",
    "url": "https://cenovus.wd3.myworkdayjobs.com/wday/cxs/cenovus/careers/jobs",
    "platform": "workday",
-   "country": "CA"
+   "country": "CA",
+   "sector": "energy"
   },
   {
    "company": "Centene",
@@ -100621,7 +100934,8 @@
    "company": "Corebridge Financial",
    "url": "https://corebridgefinancial.wd1.myworkdayjobs.com/wday/cxs/corebridgefinancial/CorebridgeFinancial/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Cornell",
@@ -100961,7 +101275,8 @@
    "company": "Diamondback Energy",
    "url": "https://diamondbackenergy.wd12.myworkdayjobs.com/wday/cxs/diamondbackenergy/DBE/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Dickssportinggoods",
@@ -101072,7 +101387,8 @@
    "company": "Duke Energy",
    "url": "https://dukeenergy.wd1.myworkdayjobs.com/wday/cxs/dukeenergy/search/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Dulyhealthandcare",
@@ -101514,7 +101830,8 @@
    "company": "Fidelity National Financial",
    "url": "https://fntg.wd5.myworkdayjobs.com/wday/cxs/fntg/FNF-Careers/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Fifththird",
@@ -102731,7 +103048,8 @@
    "company": "Intact Financial Corporation",
    "url": "https://intactfc.wd3.myworkdayjobs.com/wday/cxs/intactfc/intactfc/jobs",
    "platform": "workday",
-   "country": "CA"
+   "country": "CA",
+   "sector": "finance"
   },
   {
    "company": "Integer",
@@ -102775,7 +103093,8 @@
    "company": "International Airlines Group",
    "url": "https://iaggbs.wd103.myworkdayjobs.com/wday/cxs/iaggbs/IAGGBS/jobs",
    "platform": "workday",
-   "country": "UK"
+   "country": "UK",
+   "sector": "transport"
   },
   {
    "company": "Invenergyllc",
@@ -104814,7 +105133,8 @@
    "company": "PBF Energy",
    "url": "https://pbfenergy.wd1.myworkdayjobs.com/wday/cxs/pbfenergy/PBF/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "energy"
   },
   {
    "company": "Pbjcal",
@@ -104838,7 +105158,8 @@
    "company": "Pensions",
    "url": "https://pensions.wd501.myworkdayjobs.com/wday/cxs/pensions/BOP/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Perkins Coie",
@@ -105105,7 +105426,8 @@
    "company": "Prudential Financial",
    "url": "https://pru.wd5.myworkdayjobs.com/wday/cxs/pru/Careers/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Prysmian UK",
@@ -105810,7 +106132,8 @@
    "company": "Securian Financial Group",
    "url": "https://hq.wd12.myworkdayjobs.com/wday/cxs/hq/Securian_External/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Sedgwick",
@@ -106398,7 +106721,8 @@
    "company": "Suncor Energy Inc.",
    "url": "https://suncor.wd1.myworkdayjobs.com/wday/cxs/suncor/Suncor_External/jobs",
    "platform": "workday",
-   "country": "CA"
+   "country": "CA",
+   "sector": "energy"
   },
   {
    "company": "Sunlife",
@@ -106553,7 +106877,8 @@
    "company": "TC Energy Corporation",
    "url": "https://tcenergy.wd3.myworkdayjobs.com/wday/cxs/tcenergy/CAREER_SITE_TC/jobs",
    "platform": "workday",
-   "country": "CA"
+   "country": "CA",
+   "sector": "energy"
   },
   {
    "company": "Tcsedsystem",
@@ -106739,7 +107064,8 @@
    "company": "Thrivent Financial",
    "url": "https://thrivent.wd5.myworkdayjobs.com/wday/cxs/thrivent/external/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Tiaa",
@@ -107464,7 +107790,8 @@
    "company": "Voya Financial",
    "url": "https://godirect.wd5.myworkdayjobs.com/wday/cxs/godirect/voya_jobs/jobs",
    "platform": "workday",
-   "country": "US"
+   "country": "US",
+   "sector": "finance"
   },
   {
    "company": "Vrtx",
