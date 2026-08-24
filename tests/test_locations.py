@@ -172,3 +172,35 @@ def test_an_agency_repost_is_left_alone_because_it_names_the_agency():
     out = dedupe([_row("Monzo", "Engineering Manager", "greenhouse"),
                   _row("Robert Walters", "Engineering Manager", "reed")])
     assert len(out) == 2
+
+
+def test_a_postings_own_location_beats_the_boards_country_tag():
+    """A board is tagged with where its vacancies usually are. That is a fair
+    default and a bad override.
+
+    Homebase's board is tagged UK because Homebase is a UK retailer, and the
+    Ashby adapter sets no country, so `j.country or source.country` filed a
+    genuine Toronto vacancy as UK. 23 roles were stored UK while their own
+    location said US."""
+    from jobradar.screen import _countries_in
+
+    def resolve(location, tag):
+        here = _countries_in(location or "")
+        if tag in ("multiple", "multi", "unknown"):
+            tag = ""
+        if len(here) == 1:
+            return here.pop()
+        if here:
+            return tag if tag in here else ""
+        return tag
+
+    assert resolve("Toronto", "UK") == "CA"
+    assert resolve("Berlin", "UK") == "DE"
+    # Only when the posting names nowhere does the board's tag get used.
+    assert resolve("", "UK") == "UK"
+    assert resolve("Remote", "UK") == "UK"
+    # "multiple" is not a country and must never be stored as one.
+    assert resolve("", "multiple") == ""
+    # Several countries named: the tag is usable only if it is one of them.
+    assert resolve("London / New York", "UK") == "UK"
+    assert resolve("Berlin / Paris", "UK") == ""

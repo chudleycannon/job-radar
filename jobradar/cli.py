@@ -18,7 +18,7 @@ from .fetch import (HostLimiter, detect_throttling, fetch_all,
                     interleave_by_host, pace_this_thread,
                     pinned_to_one_page)
 from .models import Source
-from .screen import run as screen_run
+from .screen import run as screen_run, _countries_in
 from .state import State
 
 
@@ -97,7 +97,27 @@ def cmd_scan(args) -> int:
         jobs = adapters.parse(res.payload, res.source)
         for j in jobs:
             j.sector = j.sector or res.source.sector
-            j.country = j.country or res.source.country
+            # The posting's own location beats the board's tag. A board is
+            # tagged with where its vacancies usually are, which is a fair
+            # default and a bad override: Homebase's board is tagged UK
+            # because that is a UK retailer, and a genuine Toronto vacancy on
+            # it was being stored as UK. The tag is only a fallback for a
+            # posting that names nowhere, and it is only used when it names
+            # exactly one country, since "multiple" is not one.
+            if not j.country:
+                here = _countries_in(j.location or "")
+                tag = res.source.country or ""
+                if tag in ("multiple", "multi", "unknown"):
+                    tag = ""            # not a country, never store it as one
+                if len(here) == 1:
+                    j.country = here.pop()
+                elif here:
+                    # Several countries named. The board's tag is only usable
+                    # if it is one of them: "London / New York" on a UK board
+                    # really is partly UK, "Berlin / Paris" is not.
+                    j.country = tag if tag in here else ""
+                else:
+                    j.country = tag
         counts[res.source.key] = len(jobs)
         all_jobs.extend(jobs)
 

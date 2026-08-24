@@ -98,13 +98,11 @@ function apply(){let n=0;
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.seg button').forEach(o=>o.setAttribute('aria-selected','false'));
   b.setAttribute('aria-selected','true'); f=b.dataset.f;
-  // Best fit is a priority list, so it is ordered by fit rather than by the
-  // filter score the rest of the board uses.
-  const list=$('#list');
-  const rows=[...list.querySelectorAll('.row')];
-  rows.sort(f==='fit' ? byFit : byRank);
-  rows.forEach(r=>list.appendChild(r));
-  apply();});
+  // Choosing the Best fit tab implies you want fit order, but it no longer
+  // owns it: the sort select below stays in charge everywhere, so you can
+  // read New in fit order, which is the pairing you actually want.
+  if(f==='fit'){const sel=$('#fsort'); if(sel) sel.value='fit';}
+  resort(); apply();});
 // Rank order, used everywhere except Best fit. Applications you are in come
 // first because they are the ones with a deadline on them; things you settled
 // go last because you have already decided. Score breaks the tie in between.
@@ -114,16 +112,33 @@ function tier(r){
   if(SETTLED.has(st)) return 2;
   return 1;}
 const byRank=(a,b)=>tier(a)-tier(b)||(+b.dataset.score)-(+a.dataset.score);
+// An unranked role stores fit -1. Sorting on that raw value buries every role
+// you have not paid to rank yet below a role scored 0, which reads as "these
+// are bad" rather than "these are unknown". They sort after the scored ones
+// but ahead of a genuine zero, and keep their filter-score order among
+// themselves so the list is still useful before you rank anything.
+const fitOf=(r)=>{const v=+r.dataset.fit; return v<0 ? -0.5 : v;};
 const byFit=(a,b)=>tier(a)-tier(b)
-  ||(+b.dataset.fit)-(+a.dataset.fit)||(+b.dataset.score)-(+a.dataset.score);
+  ||fitOf(b)-fitOf(a)||(+b.dataset.score)-(+a.dataset.score);
+const bySalary=(a,b)=>tier(a)-tier(b)
+  ||(+b.dataset.payfloor||0)-(+a.dataset.payfloor||0)||(+b.dataset.score)-(+a.dataset.score);
+const byNew=(a,b)=>tier(a)-tier(b)
+  ||(b.dataset.seen||'').localeCompare(a.dataset.seen||'')
+  ||(+b.dataset.score)-(+a.dataset.score);
+const SORTS={rank:byRank, fit:byFit, salary:bySalary, new:byNew};
+function resort(){
+  const sel=$('#fsort'), list=$('#list');
+  const cmp=SORTS[sel && sel.value] || byRank;
+  [...list.querySelectorAll('.row')].sort(cmp).forEach(r=>list.appendChild(r));}
 
 // Sort and filter once at load. The filter previously only ran on a click,
 // which was invisible while the default view was All and everything showed
 // anyway; the moment the default became Open, every settled role was still on
 // screen until you touched a tab.
-(function(){const list=$('#list');
-  [...list.querySelectorAll('.row')].sort(byRank).forEach(r=>list.appendChild(r));
-  apply();})();
+(function(){
+  const sel=$('#fsort');
+  if(sel) sel.onchange=()=>{resort(); apply();};
+  resort(); apply();})();
 
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
@@ -488,6 +503,12 @@ def render(con) -> str:
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="selects">
+  <label><span>Sort</span><select id="fsort" aria-label="Sort order">
+    <option value="rank">Priority</option>
+    <option value="fit">Fit against my CV</option>
+    <option value="salary">Salary</option>
+    <option value="new">Newest</option>
+  </select></label>
   <label><span>Country</span><select id="fcountry" aria-label="Country">{countries}</select></label>
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
@@ -589,6 +610,8 @@ def _row(r, arts, job, run=0) -> str:
         f'data-status="{_h.escape(r["status"], quote=True)}" '
         f'data-pay="{1 if paid else 0}" '
         f'data-new="{1 if r["uid"] in run else 0}" '
+        f'data-payfloor="{int(r["salary_min"] or r["salary_max"] or 0)}" '
+        f'data-seen="{_h.escape(str(r["first_seen"] or ""), quote=True)}" '
         f'data-fit="{r["fit"] if r["fit"] is not None else -1}" '
         f'data-score="{r["score"] or 0}" '
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
