@@ -36,6 +36,9 @@ SECTORS = [
     "technology", "finance", "healthcare", "public-sector", "education",
     "retail", "industry", "professional-services", "media", "travel",
     "telecoms", "charity", "hospitality", "legal", "security",
+    "energy",
+    "construction",
+    "transport",
 ]
 
 # Job titles as they appear on a real CV: usually followed by an employer, a
