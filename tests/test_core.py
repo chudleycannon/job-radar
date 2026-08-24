@@ -3535,11 +3535,15 @@ def test_a_reed_town_still_lands_in_the_country_the_filters_ask_for():
     from jobradar.adapters.platforms import parse_reed
     from jobradar.screen import _countries_in, enrich, match
 
-    assert _countries_in("Stoke-on-Trent") == set(), \
-        "if this ever resolves on its own the adapter's suffix can go"
+    # screen.py learned UK towns and counties, so this one now resolves on
+    # its own and the adapter leaves the string alone. The suffix still earns
+    # its place for everything the city list cannot reach, which is why the
+    # rule stays: what matters is that the country comes out right, not
+    # whether the words "United Kingdom" were appended.
+    assert _countries_in("Stoke-on-Trent") == {"UK"}
 
     job = enrich(next(iter(parse_reed(REED_SEARCH, _reed_src()))))
-    assert job.location == "Stoke-on-Trent, United Kingdom", job.location
+    assert _countries_in(job.location) == {"UK"}, job.location
     assert job.country == "UK", job.country
     assert job.city == "Stoke-on-Trent", job.city
 
@@ -3915,8 +3919,11 @@ def test_an_adzuna_town_lands_in_the_country_the_filters_ask_for():
     from jobradar.screen import _countries_in, enrich, match
 
     job = enrich(next(iter(parse_adzuna(ADZUNA_SEARCH, _adzuna_src()))))
-    assert "United Kingdom" in job.location
-    assert _countries_in(job.location) == {"UK"}
+    # The suffix is only added where screen.py cannot place the string on its
+    # own. It now knows UK towns and counties, so "Basingstoke, Hampshire" is
+    # left as it is. The country still has to come out right, which is the
+    # thing this test is actually for.
+    assert _countries_in(job.location) == {"UK"}, job.location
     assert job.country == "UK"
 
     cfg = Config(titles_include=["engineering manager"], countries=["UK"])
@@ -5833,3 +5840,184 @@ def test_the_four_headline_only_platforms_all_have_a_fetcher():
 
     for platform in ("icims", "oracle", "avature", "rmk"):
         assert platform in enrich_mod.FETCHERS, platform
+
+
+# ---------------------------------------------------------------------------
+# Signature scanning: cost, not just correctness
+# ---------------------------------------------------------------------------
+
+def test_no_signature_can_repeat_without_a_bound():
+    """An unbounded `([a-z0-9-]+)` in front of a vendor hostname is quadratic
+    on any long run of characters the class accepts, and under `re.I` that
+    includes uppercase, so 400KB of minified JavaScript or one base64 blob is
+    a single run. Spelled that way, `taleo` took 120 seconds on one page and
+    found nothing, and it killed two large-cap discovery runs before
+    `faulthandler` traced it. `avature`, `rmk`, `icims`, `oracle` and eight
+    more carried the same shape.
+
+    `getwidth()` is the regex engine's own answer to "how long can a match
+    be", and it reports MAXREPEAT the moment a repetition is unbounded, so
+    this catches the fault however it is reintroduced. The ceiling is
+    `_MARGIN` because `_scan_signature` only ever looks at a window that wide
+    around a required word: a signature able to match something longer could
+    straddle a window edge and be lost.
+    """
+    try:                                    # 3.11 moved it and 3.13 hid it
+        from re import _parser as re_parser
+    except ImportError:                     # pragma: no cover - Python 3.9
+        import sre_parse as re_parser
+
+    from jobradar.discover import SIGNATURES, WORKDAY_RE, _MARGIN
+
+    for name, pat in SIGNATURES + [("workday", WORKDAY_RE.pattern)]:
+        _, longest = re_parser.parse(pat).getwidth()
+        assert longest <= _MARGIN, \
+            f"{name} can match {longest} characters, over the {_MARGIN} window"
+
+
+def test_scanning_a_minified_page_finishes_in_well_under_a_second():
+    """The live failure, at the size it actually happened: a 378KB page whose
+    body is one unbroken run of base64. No signature matches it, and the old
+    unbounded `taleo` and `avature` patterns each spent about two minutes
+    proving that. `discover` runs `_scan` over every careers page it is
+    pointed at, so this is user input, and 400KB of minified JavaScript is an
+    ordinary careers site rather than an attack.
+
+    The second input is the harder one: a page that does contain the word a
+    signature needs, so the literal gate cannot skip it and the window has to
+    do the work.
+    """
+    import time
+
+    from jobradar.discover import _scan
+
+    filler = "aGVsbG8gd29ybGQxMjM0NTY3ODkwQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo" * 6000
+    taleo = "https://hilton.taleo.net/careersection/us_hotel_ext/jobsearch.ftl"
+
+    t0 = time.perf_counter()
+    assert _scan(filler, "https://example.com/careers") == []
+    plain = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    hits = _scan(f'{filler}<a href="{taleo}">jobs</a>{filler}', "https://x.com/")
+    anchored = time.perf_counter() - t0
+
+    assert [h[0] for h in hits] == ["taleo"]
+    assert plain < 1.0, f"a page with no signature in it took {plain:.1f}s"
+    assert anchored < 1.0, f"a page with one signature in it took {anchored:.1f}s"
+
+
+def test_windowing_finds_everything_a_full_scan_finds():
+    """`_scan_signature` runs each pattern on windows around a word the
+    pattern requires rather than on the whole page. That is only allowed if it
+    finds exactly what the full scan found: a signature that quietly stops
+    matching reports a real employer as "nothing found", which is worse than
+    the slow scan it replaced.
+
+    Every URL here is a live board shape, and each is checked both on its own
+    and buried in 189KB of minified filler, which is where a window edge would
+    show up.
+    """
+    import re
+
+    from jobradar.discover import SIGNATURES, _scan_signature
+
+    boards = [
+        "https://boards.greenhouse.io/monzo",
+        "https://boards.eu.greenhouse.io/deliveroo",
+        "https://boards.greenhouse.io/embed/job_board?for=stripe",
+        "https://api.greenhouse.io/v1/boards/airbnb/jobs",
+        "https://jobs.ashbyhq.com/primer.io",
+        "https://api.ashbyhq.com/posting-api/job-board/ramp",
+        "https://jobs.lever.co/Expana",
+        "https://jobs.eu.lever.co/starlingbank",
+        "https://apply.workable.com/gousto/",
+        "https://jobs.smartrecruiters.com/Bosch",
+        "https://octopusenergy.recruitee.com/",
+        "https://spotify.teamtailor.com/jobs",
+        "https://oaknorth.pinpointhq.com/",
+        "https://cleo.bamboohr.com/careers",
+        "https://acme.applytojob.com/apply",
+        "https://jobs.jobvite.com/starbucks",
+        "https://mycompany.jobs.personio.de/",
+        "https://fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI",
+        "https://tescobank.avature.net/careers/SearchJobs/",
+        "https://careers.tesco.com/en_GB/careersmarketplace/SearchJobs/",
+        "https://london-gov.jobs2web.com/tfl/search/?q=",
+        "https://hilton.taleo.net/careersection/us_hotel_ext/jobsearch.ftl",
+        "https://careers-didiglobal.icims.com/jobs/search?ss=1",
+    ]
+    # 2KB of filler either side is twice the window margin, so a match that
+    # only survives because the window happened to reach the end of the page
+    # cannot pass here. A bigger filler only slows the full scan on the
+    # right-hand side of the comparison, and that side is the reference rather
+    # than the thing under test.
+    filler = "aGVsbG8gd29ybGQxMjM0NTY3ODkwQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo" * 32
+    pages = boards + [f'{filler}<a href="{b}">apply</a>{filler}' for b in boards]
+    pages.append("".join(f'<a href="{b}">x</a>' for b in boards) + filler)
+
+    for page in pages:
+        low = page.lower()
+        for name, pat in SIGNATURES:
+            assert ([m.groups() for m in _scan_signature(pat, page, low)]
+                    == [m.groups() for m in re.finditer(pat, page, re.I)]), \
+                f"{name} disagrees with a full scan on {page[:80]!r}"
+
+
+def test_a_vendors_own_infrastructure_is_not_an_employer():
+    """`rmk-map-12.jobs2web.com` is SuccessFactors' shared job-map widget and
+    `cookie-policy-scripts.icims.com` is iCIMS' cookie banner. Both were
+    extracted as the employer's own token for 40 large-cap companies in one
+    probe run, all 40 resolving to the same 404. The dead row is not the
+    damage: "this employer runs SuccessFactors and we cannot read it yet"
+    became "we found their RMK board and it is empty", which sends the next
+    adapter at the wrong platform.
+
+    The employer's real board sits on the same page, so filtering the vendor
+    must not cost the row that matters.
+    """
+    from jobradar.discover import _scan
+
+    page = ('<script src="https://rmk-map-12.jobs2web.com/map/v2/map.js">'
+            '</script>'
+            '<script src="https://cookie-policy-scripts.icims.com/c.js">'
+            '</script>'
+            '<a href="https://london-gov.jobs2web.com/tfl/search/?q=">TfL</a>'
+            '<a href="https://careers-didiglobal.icims.com/jobs/search">Jobs</a>')
+    tokens = {tok for _p, tok, _u in _scan(page, "https://example.com/careers")}
+
+    assert not [t for t in tokens if "rmk-map" in t or "cookie-policy" in t]
+    assert "london-gov.jobs2web.com|tfl" in tokens
+    assert "careers-didiglobal" in tokens
+
+
+def test_the_vendor_rule_does_not_swallow_a_real_employer():
+    """`discover` reporting "nothing found" for a live board is worse than one
+    junk row a human deletes, so the rule matches a whole first label and
+    never a substring. Mapfre, Scriptswitch and Imagination Technologies are
+    real employers whose names contain the words the rule is built from.
+
+    The bundled source list is the evidence that the rule is narrow enough:
+    17,836 boards found and verified live, and it must reject none of them.
+    """
+    import json as _j
+    from urllib.parse import urlparse
+
+    from jobradar.discover import _VENDOR_INFRA
+
+    for real in ("mapfre", "scriptswitch", "imagination", "policyexpert",
+                 "consentric", "staticgroup", "cdnetworks", "stagecoach"):
+        assert not _VENDOR_INFRA.fullmatch(real), real
+    # Four numberings of the one widget appear in the probe checkpoints, which
+    # is why this is a pattern and not four more words in `_JUNK_TOKENS`.
+    for junk in ("rmk-map", "rmk-map-2", "rmk-map-12", "rmk-map-55", "stage",
+                 "cookie-policy-scripts", "consent", "www2", "images2",
+                 "scripts"):
+        assert _VENDOR_INFRA.fullmatch(junk), junk
+
+    bundled = _j.loads(
+        Path("sources/sources.json").read_text(encoding="utf-8"))["sources"]
+    rejected = [s["url"] for s in bundled
+                if _VENDOR_INFRA.fullmatch(
+                    urlparse(s["url"]).netloc.split(".")[0])]
+    assert not rejected, f"the rule rejects live boards: {rejected[:5]}"

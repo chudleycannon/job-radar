@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from urllib.parse import urlparse
 
 import requests
@@ -35,57 +36,72 @@ CAREERS_PATHS = [
 ]
 
 # Signatures found in the redirect target or the page body.
+#
+# Every repetition here is bounded, and nothing may reintroduce a bare `+` or
+# `*`. An unbounded class in front of the vendor's hostname, as in the old
+# `([a-z0-9-]+)\.taleo\.net/...`, is quadratic on any long run of characters
+# the class accepts: the engine starts a fresh attempt at each of the 400,000
+# offsets in the page and, at each one, swallows the whole run before the next
+# literal fails. Under the `re.I` in `_scan` the class also accepts uppercase,
+# so a minified bundle or a base64 blob is one single run. That cost 120
+# seconds per page and found nothing, and it killed two large-cap discovery
+# runs before `faulthandler` traced it.
+#
+# 63 is the DNS label limit (RFC 1035), so bounding a hostname label there
+# cannot lose a real host. 80 for a path segment or a plain token is far above
+# anything real: the longest live one is Tesco's two-segment Avature prefix,
+# `en_GB/careersmarketplace`, at 24 characters.
 SIGNATURES: list[tuple[str, str]] = [
-    ("greenhouse", r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/(?:embed/job_board\?for=)?([a-z0-9_.-]+)"),
-    ("greenhouse", r"greenhouse\.io/v1/boards/([a-z0-9_.-]+)"),
-    ("ashby", r"jobs\.ashbyhq\.com/([a-z0-9_.-]+)"),
-    ("ashby", r"ashbyhq\.com/posting-api/job-board/([a-z0-9_.-]+)"),
+    ("greenhouse", r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/(?:embed/job_board\?for=)?([a-z0-9_.-]{1,80})"),
+    ("greenhouse", r"greenhouse\.io/v1/boards/([a-z0-9_.-]{1,80})"),
+    ("ashby", r"jobs\.ashbyhq\.com/([a-z0-9_.-]{1,80})"),
+    ("ashby", r"ashbyhq\.com/posting-api/job-board/([a-z0-9_.-]{1,80})"),
     # Lever tokens are case-sensitive on the wire: api.eu.lever.co answers 200
     # for `Expana` and 404 for `expana`. The character class is spelled with
     # both cases so that stays true if the re.I in `_scan` is ever dropped, and
     # nothing here may lowercase the capture.
-    ("lever", r"jobs\.lever\.co/([A-Za-z0-9_.-]+)"),
+    ("lever", r"jobs\.lever\.co/([A-Za-z0-9_.-]{1,80})"),
     # Lever's EU deployment is a different host with different data, so it
     # needs its own signature. `jobs.lever.co/` cannot match `jobs.eu.lever.co/`
     # (the literal substring is not there), so the two never collide. Europe is
     # where the boards actually are: jobs.lever.co/robots.txt is Disallow:/ for
     # CCBot, ClaudeBot and GPTBot, jobs.eu.lever.co/robots.txt is Allow:/, so a
     # crawl-derived employer list finds EU boards and almost no US ones.
-    ("lever_eu", r"jobs\.eu\.lever\.co/([A-Za-z0-9_.-]+)"),
-    ("workable", r"apply\.workable\.com/([a-z0-9_.-]+)"),
-    ("smartrecruiters", r"(?:jobs|careers)\.smartrecruiters\.com/([a-zA-Z0-9_.-]+)"),
-    ("recruitee", r"([a-z0-9-]+)\.recruitee\.com"),
-    ("breezy", r"([a-z0-9-]+)\.breezy\.hr"),
-    ("teamtailor", r"([a-z0-9-]+)\.teamtailor\.com"),
+    ("lever_eu", r"jobs\.eu\.lever\.co/([A-Za-z0-9_.-]{1,80})"),
+    ("workable", r"apply\.workable\.com/([a-z0-9_.-]{1,80})"),
+    ("smartrecruiters", r"(?:jobs|careers)\.smartrecruiters\.com/([a-zA-Z0-9_.-]{1,80})"),
+    ("recruitee", r"([a-z0-9-]{1,63})\.recruitee\.com"),
+    ("breezy", r"([a-z0-9-]{1,63})\.breezy\.hr"),
+    ("teamtailor", r"([a-z0-9-]{1,63})\.teamtailor\.com"),
     # Pinpoint also sells custom careers domains (careers.<employer>.com), and
     # a board on one of those is invisible to a hostname signature. Those have
     # to be added by hand; this finds the subdomain-hosted ones.
-    ("pinpoint", r"([a-z0-9-]+)\.pinpointhq\.com"),
-    ("bamboohr", r"([a-z0-9-]+)\.bamboohr\.com"),
-    ("jazzhr", r"([a-z0-9-]+)\.applytojob\.com"),
+    ("pinpoint", r"([a-z0-9-]{1,63})\.pinpointhq\.com"),
+    ("bamboohr", r"([a-z0-9-]{1,63})\.bamboohr\.com"),
+    ("jazzhr", r"([a-z0-9-]{1,63})\.applytojob\.com"),
     # Jobvite is the odd one out: the token is a path segment, not a
     # subdomain, because every customer sits on the one jobs.jobvite.com host.
-    ("jobvite", r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)"),
-    ("personio", r"([a-z0-9-]+)\.jobs\.personio\.(?:de|com)"),
+    ("jobvite", r"jobs\.jobvite\.com/([A-Za-z0-9_.-]{1,80})"),
+    ("personio", r"([a-z0-9-]{1,63})\.jobs\.personio\.(?:de|com)"),
     # Oracle needs the whole host, not a short token, and the host bears no
     # relation to the company name.
-    ("oracle", r"([a-z0-9-]+\.fa\.[a-z0-9]+\.oraclecloud\.com)"),
+    ("oracle", r"([a-z0-9-]{1,63}\.fa\.[a-z0-9]{1,63}\.oraclecloud\.com)"),
     # Avature and RMK are whole-host platforms with a path prefix on top, so
     # their token is composite: `host|prefix`, the same string
     # `adapters.build_avature` takes. They used to capture `host/prefix` in one
     # group, which nothing could build a URL from, so `_scan` dropped every hit
     # (it skips platforms with no `build`) and neither platform was ever found
     # by `discover` at all.
-    ("avature", r"([a-z0-9-]+\.avature\.net)/([a-zA-Z0-9_-]+)"),
+    ("avature", r"([a-z0-9-]{1,63}\.avature\.net)/([a-zA-Z0-9_-]{1,80})"),
     # The customer-hosted form, which is the one that matters. Avature serves
     # as often from the employer's own domain as from its own, and Tesco is on
     # careers.tesco.com: a host signature cannot see it, so the signature has
     # to be the path. Tesco's prefix is two segments (`en_GB/careersmarketplace`),
     # hence the optional second one.
     ("avature",
-     r"(?:https?://)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)"
-     r"/([a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)?)/SearchJobs"),
-    ("rmk", r"([a-z0-9-]+\.jobs2web\.com)/([a-zA-Z0-9_-]+)"),
+     r"(?:https?://)?([a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,6})"
+     r"/([a-zA-Z0-9_-]{1,80}(?:/[a-zA-Z0-9_-]{1,80})?)/SearchJobs"),
+    ("rmk", r"([a-z0-9-]{1,63}\.jobs2web\.com)/([a-zA-Z0-9_-]{1,80})"),
     # Taleo is composite for a different reason to Avature and RMK: the second
     # group is not a vendor path prefix, it is which of the tenant's career
     # sections this is, and a tenant runs several with no default among them.
@@ -93,13 +109,14 @@ SIGNATURES: list[tuple[str, str]] = [
     # D.R. Horton's and TTEC's are both `2`. Guessing the section does not
     # fail loudly either: a section that does not exist answers 200 with
     # "Career Section Unavailable", which reads as an empty board.
-    ("taleo", r"([a-z0-9-]+)\.taleo\.net/careersection/([a-zA-Z0-9_-]+)"),
-    ("icims", r"([a-z0-9-]+)\.icims\.com"),
+    ("taleo", r"([a-z0-9-]{1,63})\.taleo\.net/careersection/([a-zA-Z0-9_-]{1,80})"),
+    ("icims", r"([a-z0-9-]{1,63})\.icims\.com"),
 ]
 
 # Workday needs two captures (tenant, site) and its own URL shape.
 WORKDAY_RE = re.compile(
-    r"https?://([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)",
+    r"https?://([a-z0-9-]{1,63})\.(wd\d{1,4})\.myworkdayjobs\.com"
+    r"/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]{1,80})",
     re.I,
 )
 
@@ -122,6 +139,35 @@ _JUNK_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api", "www",
                 # otherwise be handed to a maintainer as an employer board.
                 "staticfe", "images4", "bhrpendo", "resources", "documentation",
                 "static", "images", "assets", "cdn"}
+
+# `_JUNK_TOKENS` matches whole tokens out of a set, which cannot express the
+# shape that did the damage: vendor infrastructure hostnames that carry a
+# deployment number or a purpose in the name, so no fixed list of words ever
+# catches them.
+#
+#   rmk-map-12.jobs2web.com          SuccessFactors' shared job-map widget. It
+#                                    is embedded by every RMK careers site that
+#                                    draws a map.
+#   cookie-policy-scripts.icims.com  iCIMS' cookie-banner host, picked up the
+#                                    same way.
+#
+# Between them those two were extracted as the employer's own token for 40
+# large-cap companies in one probe run, every one of them resolving to the
+# same 404. The cost is not the dead row: it is that "this employer runs
+# SuccessFactors and we cannot read it yet" turns into "we found their RMK
+# board and it is empty", which is the wrong diagnosis and points the next
+# adapter at the wrong platform.
+#
+# Matched with `fullmatch` against the first label of the host only, never as
+# a substring. A real employer may well be called Mapfre, Scripts or
+# Staticiel, and `discover` reporting "nothing found" for a live board is a
+# worse outcome than one junk row a human deletes, so nothing here fires on a
+# name that merely contains one of these words.
+_VENDOR_INFRA = re.compile(
+    r"rmk-map(?:-\d+)?|cookie-policy-scripts|stage|www\d+|static\d*|"
+    r"assets\d*|cdn\d*|img\d*|images?\d*|scripts?|styles?|policy|cookies?|"
+    r"privacy|consent",
+    re.I)
 
 # Platforms we can recognise but cannot read yet. Naming them turns fifteen
 # identical shrugs into a diagnosis, and tells the maintainer which adapter to
@@ -264,9 +310,129 @@ def _candidates(target: str) -> list[str]:
     return uniq[:40]
 
 
+_ESCAPE = re.compile(r"\\.")
+_CHAR_CLASS = re.compile(r"\[[^\]]*\]")
+_REPEAT = re.compile(r"\{\d+(?:,\d*)?\}")
+_LITERAL_RUN = re.compile(r"[A-Za-z0-9]{4,}")
+
+
+def _blank(m: re.Match) -> str:
+    """Same-length spaces, so offsets into the masked pattern still
+    line up with the pattern itself."""
+    return " " * len(m.group(0))
+
+
+# The longest string any signature above can match is the Avature path form:
+# seven 63-character labels, two 80-character path segments, the scheme and
+# the separators, which is under 700. The window margin has to be at least
+# that, or a match could straddle a window edge and be lost. 1024 leaves room
+# for a signature that grows without anyone re-doing this arithmetic, and
+# `test_no_signature_can_repeat_without_a_bound` fails if one ever exceeds it.
+_MARGIN = 1024
+
+
+@lru_cache(maxsize=256)
+def _required_literals(pat: str) -> tuple[str, ...]:
+    """Literal words a page MUST contain for this signature to match at all.
+
+    Required, not merely present: a word is only returned if it sits outside
+    every optional group and every alternation, so skipping a page that lacks
+    one cannot skip a page that would have matched. `https` in the Avature
+    path signature is inside `(?:https?://)?` and is dropped for that reason;
+    `boards` in the Greenhouse signature is inside `(?:boards|job-boards)` and
+    is dropped for the other.
+
+    Derived from the pattern rather than listed beside it, because a hand
+    table silently stops covering whatever gets added next. Taleo is the
+    example: it was added to `SIGNATURES` long after the scanner was written.
+    """
+    # Mask escapes first so `\[` never reads as a class opener and `\.` never
+    # reads as a literal, then mask classes. Both substitutions preserve
+    # length, so offsets still line up with the original pattern.
+    masked = _ESCAPE.sub("  ", pat)
+    masked = _CHAR_CLASS.sub(_blank, masked)
+    # The digits in `{1,63}` are not a literal the page has to contain. Left
+    # in, a bound like `{1,1000}` would make "1000" a required word and every
+    # page without it would be skipped, which is the silent way to lose a
+    # platform.
+    masked = _REPEAT.sub(_blank, masked)
+
+    stack: list[list] = []
+    groups: list[tuple[int, int, bool]] = []   # (open, close, skip-what's-inside)
+    for i, ch in enumerate(masked):
+        if ch == "(":
+            stack.append([i, False])
+        elif ch == "|":
+            if not stack:
+                return ()      # a top-level alternation: no word is required
+            stack[-1][1] = True
+        elif ch == ")" and stack:
+            start, alternation = stack.pop()
+            after = masked[i + 1] if i + 1 < len(masked) else ""
+            optional = after in ("?", "*")
+            groups.append((start, i, alternation or optional))
+
+    out: list[str] = []
+    for m in _LITERAL_RUN.finditer(masked):
+        s, e = m.span()
+        if (masked[e] if e < len(masked) else "") in ("?", "*"):
+            continue           # the last character of the run is optional
+        if any(gs < s and e <= ge and skip for gs, ge, skip in groups):
+            continue
+        out.append(m.group(0).lower())
+    return tuple(dict.fromkeys(out))
+
+
+@lru_cache(maxsize=256)
+def _compiled(pat: str) -> re.Pattern:
+    return re.compile(pat, re.I)
+
+
+def _scan_signature(pat: str, blob: str, low: str):
+    """Yield this signature's matches without letting it loose on the whole page.
+
+    Two pages killed a large-cap run at 120 seconds each. Bounding the
+    repetitions in `SIGNATURES` takes that from quadratic to linear, and this
+    takes the linear pass off all but a few hundred bytes of the page: a
+    signature whose required words are absent is not run at all, and one whose
+    words are present is run only on windows around them. A 400KB careers page
+    is mostly minified JavaScript that no signature can match, and skipping it
+    with `str.find` is a C-speed substring search rather than a regex walk.
+
+    The match objects are relative to their window, so their `.span()` means
+    nothing in the page. Only `.group()` may be used on them.
+    """
+    rx = _compiled(pat)
+    lits = _required_literals(pat)
+    if not lits:
+        # No word is required, so nothing can be ruled out. Still bounded, so
+        # still linear; this is the safe fallback, not the fast path.
+        yield from rx.finditer(blob)
+        return
+    if not all(w in low for w in lits):
+        return
+
+    anchor = max(lits, key=len)
+    spans: list[list[int]] = []
+    at = 0
+    while True:
+        i = low.find(anchor, at)
+        if i < 0:
+            break
+        lo, hi = max(0, i - _MARGIN), i + len(anchor) + _MARGIN
+        if spans and lo <= spans[-1][1]:
+            spans[-1][1] = hi          # merge, so a dense page is scanned once
+        else:
+            spans.append([lo, hi])
+        at = i + len(anchor)
+    for lo, hi in spans:
+        yield from rx.finditer(blob[lo:hi])
+
+
 def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
     """Returns [(platform, token, api_url)] found in a page or its redirect."""
     blob = f"{final_url}\n{text[:400_000]}"
+    low = blob.lower()
     hits: list[tuple[str, str, str]] = []
 
     for m in WORKDAY_RE.finditer(blob):
@@ -288,7 +454,7 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
             hits.append(("phenom", host, ph.build(host)))
 
     for platform, pat in SIGNATURES:
-        for m in re.finditer(pat, blob, re.I):
+        for m in _scan_signature(pat, blob, low):
             # A signature with more than one group is a composite token, joined
             # with "|" exactly as `adapters.build_avature` and the harvester's
             # columnar extractor spell it. The junk test stays on the FIRST
@@ -298,6 +464,13 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
             tok = "|".join(g or "" for g in m.groups())
             head = m.group(1) or ""
             if not head or head.lower() in _JUNK_TOKENS or len(head) < 2:
+                continue
+            # Whole-host platforms (Oracle, Avature, RMK) capture the host in
+            # the first group, subdomain platforms capture just the label, so
+            # the vendor test has to run on the first label either way:
+            # `rmk-map-12.jobs2web.com` and `cookie-policy-scripts` are the
+            # same fault wearing two shapes.
+            if _VENDOR_INFRA.fullmatch(head.split(".")[0]):
                 continue
             p = adapters.by_name(platform)
             if not p or not p.build:

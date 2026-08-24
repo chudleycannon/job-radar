@@ -15,6 +15,7 @@ what it did, and every dropped one carries why.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from .config import Config
 from .models import Job
@@ -35,10 +36,21 @@ from .salary import clears_floor
 _COUNTRY_MARKERS = {
     "UK": r"united kingdom|\buk\b|\bg\.?b\.?\b|\bengland\b|\bscotland\b|\bwales\b|"
           r"northern ireland|\bbritain\b",
-    "US": r"united states|\bu\.?s\.?a\.?\b|\bus\b|\bamericas?\b",
+    # The old form required the trailing "a", so "U.S. Remote" and "Remote
+    # U.S." matched nothing at all and 170 postings written that way arrived
+    # with no country. "U.S." on its own has to be enough.
+    "US": r"united states|\bu\.\s?s\.?(?:a\.?)?|\busa?\b|\bamericas?\b",
     "IE": r"\bireland\b(?!,? *north)",
-    "DE": r"\bgermany\b|\bdeutschland\b", "FR": r"\bfrance\b", "ES": r"\bspain\b",
-    "NL": r"netherlands", "CA": r"\bcanada\b", "AU": r"\baustralia\b",
+    # "Deutschlandweit" is how a German employer writes "anywhere in Germany",
+    # and the word-boundary form did not match it.
+    "DE": r"\bgermany\b|\bdeutschland", "FR": r"\bfrance\b", "ES": r"\bspain\b|\bespaña\b",
+    # "Nederland" is what Dutch boards write, and it was absent: 2,110
+    # postings said it. Guarded because Nederland TX and Nederland CO exist.
+    # Lowercase in the guard because the markers are matched against a
+    # lowercased string; spelling it "TX" made the guard dead and filed
+    # Nederland, Texas in the Netherlands.
+    "NL": r"netherlands|\bnederland\b(?!,?\s*(?:tx|co)\b)",
+    "CA": r"\bcanada\b", "AU": r"\baustralia\b",
     "NZ": r"new zealand", "AE": r"\buae\b|united arab emirates",
     "SG": r"\bsingapore\b", "HK": r"hong kong", "IN": r"\bindia\b",
     "JP": r"\bjapan\b", "CN": r"\bchina\b", "PL": r"\bpoland\b",
@@ -128,21 +140,680 @@ _GENERIC_REMOTE = re.compile(
 _SPLIT = re.compile(r"[;|/]| or |\bor\b")
 
 
+# ---------------------------------------------------------------- place data
+#
+# What follows is lists, not more alternations. A tagging run over 17,834
+# boards read 433,955 live postings and 94,841 of them (21.9%) carried a
+# location this file could not place. The shapes behind that number are not
+# exotic: countries nobody had typed in yet, towns outside the dozen biggest
+# cities, and one widespread ATS convention that writes the country as a
+# lowercase code. A list is the right shape for that, because being wrong
+# about one entry is a one-line fix and being wrong about a regex is an
+# afternoon.
+
+# UTF-8 decoded as Latin-1 turns "München" into "MÃ¼nchen". 2,430 unresolved
+# postings (3.3% of the total) arrived mangled that way, with "MÃ¼nchen",
+# "KÃ¶ln" and "DÃ¼sseldorf" alone accounting for over 1,500. The accented
+# spellings were already on the city list; the bytes just needed putting back.
+_MOJIBAKE = re.compile(r"[ÃÂ][\x80-\xbf]")
+
+
+def _repair(s: str) -> str:
+    """Undo a UTF-8 string that was decoded as Latin-1, where that is what happened."""
+    if _MOJIBAKE.search(s):
+        try:
+            return s.encode("latin-1").decode("utf-8")
+        except (UnicodeError, ValueError):
+            pass
+    return s
+
+
+def _fold(s: str) -> str:
+    """Accents stripped, so a plain pattern can match "Montréal" or "Košice".
+
+    Matching is tried against the folded AND the unfolded text, never only
+    the folded one: the city list holds accented spellings ("münchen",
+    "kraków") that folding would stop matching.
+    """
+    return "".join(c for c in unicodedata.normalize("NFKD", s)
+                   if not unicodedata.combining(c))
+
+
+def _alt(names) -> str:
+    """A word-boundary alternation over a list of place names.
+
+    Longest first, because Python's alternation takes the first branch that
+    matches and "stoke on trent" must win over "stoke".
+    """
+    return r"\b(?:" + "|".join(sorted((re.escape(n) for n in names),
+                                      key=len, reverse=True)) + r")\b"
+
+
+# ISO 3166-1 alpha-2 with the local-language and colloquial spellings
+# employers actually type. Names are matched as a WHOLE comma-separated
+# segment, never as a substring, so "Jordan" cannot fire inside a street name
+# and "Lebanon" cannot fire inside "Lebanon, PA" (the US state tier answers
+# that one before this table is reached anyway).
+#
+# GB is written UK because that is the code this tool's config uses.
+# Georgia is deliberately absent. "Atlanta, Georgia" and "Tbilisi, Georgia"
+# are the same shape and the US state is by far the commoner reading, so the
+# country is recognised from its cities instead and the bare word stays US.
+_ISO_TABLE = """
+AD Andorra
+AE United Arab Emirates|UAE
+AF Afghanistan
+AG Antigua and Barbuda
+AL Albania
+AM Armenia
+AO Angola
+AR Argentina
+AT Austria|Österreich|Oesterreich
+AU Australia
+AZ Azerbaijan
+BA Bosnia and Herzegovina|Bosnia
+BB Barbados
+BD Bangladesh
+BE Belgium|Belgique|België|Belgie
+BF Burkina Faso
+BG Bulgaria
+BH Bahrain
+BI Burundi
+BJ Benin
+BN Brunei|Brunei Darussalam
+BO Bolivia
+BR Brazil|Brasil
+BS Bahamas|The Bahamas
+BT Bhutan
+BW Botswana
+BY Belarus
+BZ Belize
+CA Canada
+CD Democratic Republic of the Congo|DR Congo
+CF Central African Republic
+CH Switzerland|Schweiz|Suisse|Svizzera
+CI Ivory Coast|Côte d'Ivoire|Cote d'Ivoire
+CL Chile
+CM Cameroon
+CN China
+CO Colombia
+CR Costa Rica
+CU Cuba
+CV Cape Verde|Cabo Verde
+CY Cyprus
+CZ Czechia|Czech Republic
+DE Germany|Deutschland
+DK Denmark|Danmark
+DO Dominican Republic
+DZ Algeria
+EC Ecuador
+EE Estonia|Eesti
+EG Egypt
+ER Eritrea
+ES Spain|España|Espana
+ET Ethiopia
+FI Finland|Suomi
+FJ Fiji
+FR France
+GA Gabon
+GH Ghana
+GM Gambia
+GN Guinea
+GQ Equatorial Guinea
+GR Greece|Hellas
+GT Guatemala
+GY Guyana
+HK Hong Kong
+HN Honduras
+HR Croatia|Hrvatska
+HT Haiti
+HU Hungary|Magyarország|Magyarorszag
+ID Indonesia
+IE Ireland|Republic of Ireland|Éire
+IL Israel
+IN India
+IQ Iraq
+IR Iran
+IS Iceland|Ísland
+IT Italy|Italia
+JM Jamaica
+JO Jordan
+JP Japan
+KE Kenya
+KG Kyrgyzstan
+KH Cambodia
+KR South Korea|Korea|Korea, Republic of|Republic of Korea
+KW Kuwait
+KZ Kazakhstan
+LA Laos
+LB Lebanon
+LI Liechtenstein
+LK Sri Lanka
+LR Liberia
+LS Lesotho
+LT Lithuania|Lietuva
+LU Luxembourg|Luxemburg
+LV Latvia|Latvija
+LY Libya
+MA Morocco|Maroc
+MC Monaco
+MD Moldova
+ME Montenegro
+MG Madagascar
+MK North Macedonia
+ML Mali
+MM Myanmar|Burma
+MN Mongolia
+MO Macau|Macao
+MR Mauritania
+MT Malta
+MU Mauritius
+MV Maldives
+MW Malawi
+MX Mexico|México
+MY Malaysia
+MZ Mozambique
+NA Namibia
+NG Nigeria
+NI Nicaragua
+NL Netherlands|Nederland|The Netherlands|Holland
+NO Norway|Norge
+NP Nepal
+NZ New Zealand|Aotearoa
+OM Oman
+PA Panama
+PE Peru|Perú
+PG Papua New Guinea
+PH Philippines|The Philippines|Pilipinas
+PK Pakistan
+PL Poland|Polska
+PR Puerto Rico
+PS Palestine
+PT Portugal
+PY Paraguay
+QA Qatar
+RO Romania|România
+RS Serbia|Srbija
+RU Russia|Russian Federation
+RW Rwanda
+SA Saudi Arabia|KSA|Kingdom of Saudi Arabia
+SC Seychelles
+SD Sudan
+SE Sweden|Sverige
+SG Singapore
+SI Slovenia|Slovenija
+SK Slovakia|Slovensko
+SN Senegal
+SO Somalia
+SR Suriname
+SV El Salvador
+SY Syria
+TD Chad
+TH Thailand
+TJ Tajikistan
+TM Turkmenistan
+TN Tunisia|Tunisie
+TR Turkey|Türkiye|Turkiye
+TT Trinidad and Tobago
+TW Taiwan
+TZ Tanzania
+UA Ukraine
+UG Uganda
+UK United Kingdom|Great Britain|Britain|England|Scotland|Wales|Northern Ireland
+US United States|United States of America|USA|U.S.A.
+UY Uruguay
+UZ Uzbekistan
+VE Venezuela
+VN Vietnam|Viet Nam
+YE Yemen
+ZA South Africa
+ZM Zambia
+ZW Zimbabwe
+"""
+
+# name (lowercased, and again accent-folded) -> country code
+_COUNTRY_NAME: dict[str, str] = {}
+for _line in _ISO_TABLE.strip().splitlines():
+    _code, _rest = _line.split(" ", 1)
+    for _name in _rest.split("|"):
+        _COUNTRY_NAME[_name.lower()] = _code
+        _COUNTRY_NAME[_fold(_name.lower())] = _code
+
+_ISO_CODES = {l.split(" ", 1)[0] for l in _ISO_TABLE.strip().splitlines()}
+
+_US_STATE_CODES = frozenset(
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
+    "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV "
+    "WI WY DC".split())
+
+# The codes that are both an ISO country and a US state, worked out rather
+# than typed, so the two lists cannot drift apart. Same rule as the uppercase
+# case: the code alone proves nothing and something else in the string has to
+# name that country independently.
+_AMBIGUOUS_CC = frozenset(_ISO_CODES & _US_STATE_CODES)
+
+
+def _code_country(cc: str) -> str | None:
+    """A country code in this tool's vocabulary, or None if it names nothing."""
+    cc = cc.upper()
+    if cc == "GB":
+        return "UK"
+    return cc if cc in _ISO_CODES else None
+
+
+# The single biggest fixable shape in the data. 15,915 unresolved postings,
+# 21.4% of everything unresolved, end in a LOWERCASE ISO country code:
+# "Aachen, NRW, de", "Montréal, QC, ca", "Chennai, in", "Sofia, bg". All
+# 1,585 distinct strings carrying it were genuinely that country, with no US
+# state among them, and the lowercasing is itself the disambiguator, because
+# `_US_STATE` is case-sensitive and only ever matches an uppercase code. So
+# ", CA" and ", ca" cannot collide.
+_TRAILING_CC = re.compile(r",\s*([a-z]{2})\s*$")
+
+# Subnational codes and names, used only to corroborate one of the
+# ambiguous codes above. "Whitecourt, AB, ca" is Canada because AB is a
+# Canadian province; "Savannah, ga" stays unresolved because nothing in it
+# names Gabon.
+#
+# Two patterns per country, because case is load-bearing in one half and not
+# the other. The codes are matched against the string as written, the same
+# rule `_US_STATE` follows, so "ON" is Ontario and "on" is the English word.
+# Reading them case-insensitively would let "hands on, ca" corroborate
+# Canada, and "by", "he", "st", "as" and "up" would do the same for Germany
+# and India. The spelled-out names carry no such risk.
+#
+# NL, PE and SK are left out of the Canadian codes on purpose: Newfoundland,
+# Prince Edward Island and Saskatchewan share them with the Netherlands, Peru
+# and Slovakia, so a bare ", NL" is a coin toss.
+_SUBNATIONAL = {
+    "CA": (r"\b(?:AB|BC|MB|NB|NS|NT|NU|ON|QC|YT)\b",
+           r"\b(?:alberta|british columbia|manitoba|new brunswick|"
+           r"nova scotia|ontario|quebec|saskatchewan|newfoundland|nunavut|"
+           r"yukon|northwest territories|prince edward island)\b"),
+    "DE": (r"\b(?:BW|BY|BE|BB|HB|HH|HE|MV|NI|NW|NRW|RP|SL|SN|ST|SH|TH)\b",
+           r"\b(?:nordrhein[- ]westfalen|north rhine[- ]westphalia|bayern|"
+           r"bavaria|baden[- ]wurttemberg|hessen|hesse|niedersachsen|"
+           r"lower saxony|sachsen|saxony|thuringen|thuringia|"
+           r"rheinland[- ]pfalz|schleswig[- ]holstein|brandenburg|saarland|"
+           r"mecklenburg[- ]vorpommern)\b"),
+    "IN": (r"\b(?:AP|AS|BR|CG|GJ|HR|HP|JH|KA|KL|MP|MH|OD|PB|RJ|TN|TG|UP|WB|DL)\b",
+           r"\b(?:maharashtra|karnataka|tamil nadu|telangana|kerala|gujarat|"
+           r"haryana|punjab|rajasthan|west bengal|uttar pradesh|odisha)\b"),
+}
+
+# Canadian provinces as a signal in their own right, not only as
+# corroboration. "Winnipeg, Manitoba", "Brampton, ON" and "Calgary, AB" all
+# named Canada and none of them resolved. The code half is case-sensitive for
+# the reason above; the name half is not.
+_CA_PROVINCE = re.compile(r",\s*(?:AB|BC|MB|NB|NS|NT|NU|ON|QC|YT)\b")
+_CA_PROVINCE_NAME = re.compile(
+    r",\s*(?:alberta|british columbia|manitoba|new brunswick|nova scotia|"
+    r"ontario|quebec|saskatchewan|newfoundland|nunavut|yukon|"
+    r"northwest territories|prince edward island)\b", re.I)
+
+# US states spelled out with no comma in front. "California", "Texas" and
+# "Maryland - Remote" are whole locations on plenty of boards, and the
+# existing rule wanted a leading comma, so a state on its own resolved to
+# nothing. Georgia is excluded, per the note on the ISO table.
+_US_STATES_BARE = (
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "hawaii", "idaho", "illinois",
+    "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
+    "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
+    "missouri", "montana", "nebraska", "nevada", "new hampshire",
+    "new jersey", "new mexico", "new york", "north carolina",
+    "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania",
+    "rhode island", "south carolina", "south dakota", "tennessee", "texas",
+    "utah", "vermont", "virginia", "west virginia", "wisconsin", "wyoming",
+)
+# The work-mode qualifier employers glue on is allowed, because the data has
+# "Virginia-remote", "Maryland - Remote" and "New Hampshire - Remote".
+_US_STATE_ALONE = re.compile(
+    r"^\s*(?:" + "|".join(_US_STATES_BARE) + r")"
+    r"(?:\s*[-–—,]?\s*(?:remote|hybrid|on[- ]?site|in[- ]?office|us|usa))?\s*$",
+    re.I)
+
+# State codes that are NOT also ISO country codes, so they can be trusted with
+# only a space in front. "Dallas TX", "Tampa FL" and "Olathe KS" all name a US
+# state and none resolved, because the rule wanted a comma. Subtracted from
+# the ISO list rather than typed out, so no code can be trusted here and
+# treated as ambiguous three lines further down: without the comma there is
+# nothing to corroborate against, and "Casablanca MA" must not become
+# American. The ambiguous ones stay comma-only.
+_US_STATE_SPACED = re.compile(
+    r"[a-z]\s+(?:" + "|".join(sorted(_US_STATE_CODES - _ISO_CODES)) + r")\s*$")
+
+# Taleo flattens a JSON location array into a hyphen-joined hierarchy,
+# biggest first: "IL-Northbrook", "TX-Plano Legacy", "PH-National
+# Capital-Quezon City". `parse_taleo` unpicks it in the adapter, but boards
+# mirroring Taleo's format send the raw shape here too, so the head is read
+# in this file as well. Only a leading two-letter code counts, which is why
+# "Stoke-on-Trent" and "Aix-en-Provence" are untouched.
+_TALEO_HEAD = re.compile(r"^([A-Z]{2})-(?=[A-Za-z])")
+
+# Georgia the country, told apart from Georgia the state by its cities. This
+# is a precision fix rather than a recall one: "Tbilisi, Georgia" resolved to
+# US before, because the spelled-out state rule matched the last word.
+_GEORGIA_COUNTRY = re.compile(r"\b(?:tbilisi|t'bilisi|batumi|kutaisi|rustavi)\b")
+
+# Any county ending in -shire, which no other country names places after.
+# "New Hampshire" is the one thing this must not swallow.
+_SHIRE = re.compile(r"(?<!new )\b[a-z]{3,}shire\b")
+
+# UK towns and counties. The person running this filters on countries: [UK],
+# so a UK town that does not resolve is a role they never see. BambooHR sends
+# no country at all for office and hybrid roles and Reed sends free text, so
+# "Farnborough", "Stoke-on-Trent" and "Cambridgeshire" all arrived unknown.
+#
+# Names shared with a US place of comparable size are deliberately absent:
+# Durham, Norfolk, Lincoln, Portsmouth, Worcester, Gloucester, Dover,
+# Windsor, Peterborough, Salisbury, Winchester, Richmond, Lancaster,
+# Carlisle, Greenwich and Camden stay unresolved rather than guessed, because
+# a role filed under the wrong country is worse than one filed under none.
+_UK_PLACES = (
+    "farnborough", "stoke-on-trent", "stoke on trent", "aberdeen", "dundee",
+    "inverness", "stirling", "swansea", "wrexham", "londonderry",
+    "lisburn", "wolverhampton", "sunderland", "middlesbrough",
+    "huddersfield", "bradford", "wakefield", "doncaster", "rotherham",
+    "barnsley", "grimsby", "scunthorpe", "kingston upon hull",
+    "harrogate", "chesterfield", "mansfield", "loughborough",
+    "burton upon trent", "tamworth", "solihull", "redditch", "dudley",
+    "walsall", "west bromwich", "telford", "shrewsbury", "stafford",
+    "crewe", "chester", "warrington", "wigan", "bolton", "oldham",
+    "rochdale", "stockport", "salford", "blackburn", "blackpool", "preston",
+    "seaham", "gateshead", "darlington", "hartlepool", "cheltenham",
+    "basingstoke", "aldershot", "camberley", "farnham", "woking",
+    "guildford", "bracknell", "wokingham", "maidenhead", "slough",
+    "high wycombe", "aylesbury", "bedford", "luton", "watford", "stevenage",
+    "hemel hempstead", "st albans", "welwyn garden city", "hatfield",
+    "basildon", "chelmsford", "colchester", "crawley", "horsham", "reigate",
+    "redhill", "epsom", "croydon", "bromley", "ealing", "wembley",
+    "uxbridge", "twickenham", "kingston upon thames", "wimbledon",
+    "islington", "southwark", "lambeth", "hackney", "canary wharf",
+    "shoreditch", "farringdon", "bournemouth", "poole", "weymouth",
+    "eastbourne", "hastings", "margate", "folkestone", "maidstone",
+    "tunbridge wells", "yeovil", "taunton", "torquay", "truro", "newquay",
+    "barnstaple", "chippenham", "trowbridge", "eastleigh", "fareham",
+    "gosport", "havant", "newbury", "didcot", "abingdon", "bicester",
+    "kettering", "corby", "wellingborough", "nuneaton", "worksop",
+    "grantham", "skegness", "beverley", "scarborough", "castleford",
+    "pontefract", "halifax", "keighley", "skipton", "burnley", "accrington",
+    "chorley", "leyland", "st helens", "birkenhead", "runcorn", "widnes",
+    "macclesfield", "congleton", "buxton", "matlock", "belper",
+    "livingston", "motherwell", "paisley", "kilmarnock", "falkirk",
+    "dunfermline", "kirkcaldy", "cumbernauld",
+    # counties and regions, which Reed and BambooHR send instead of a town
+    "north yorkshire", "west yorkshire", "south yorkshire", "east yorkshire",
+    "greater london", "greater manchester", "merseyside", "tyne and wear",
+    "west midlands", "east midlands", "cornwall", "devon", "dorset",
+    "somerset", "surrey", "west sussex", "east sussex", "kent", "essex",
+    "suffolk", "northumberland", "cumbria", "county durham", "rutland",
+    "midlothian", "lothian", "fife", "aberdeenshire", "isle of wight",
+    "anglesey", "gwynedd", "powys", "ceredigion", "county antrim",
+    "county down", "county armagh", "county tyrone", "county fermanagh",
+    "home counties",
+)
+
+# German towns. The mojibake above was mostly German cities, and the
+# non-mangled long tail (Hannover, Bremen, Aachen, Dresden, Karlsruhe) is the
+# same story: the list stopped at the ten biggest.
+_DE_PLACES = (
+    "hannover", "bremen", "aachen", "dresden", "braunschweig", "augsburg",
+    "münster", "muenster", "karlsruhe", "essen", "erfurt", "bonn", "mainz",
+    "darmstadt", "mannheim", "bielefeld", "dortmund", "duisburg", "kiel",
+    "magdeburg", "siegen", "paderborn", "lübeck", "luebeck", "wiesbaden",
+    "bochum", "wuppertal", "chemnitz", "rostock", "kassel", "hagen",
+    "saarbrücken", "saarbruecken", "freiburg", "regensburg", "ingolstadt",
+    "heidelberg", "würzburg", "wuerzburg", "heilbronn", "osnabrück",
+    "osnabruck", "oldenburg", "solingen", "krefeld", "potsdam", "jena",
+    "göppingen", "goeppingen", "landshut", "hildesheim", "bayreuth",
+    "gütersloh", "guetersloh", "ludwigshafen", "leverkusen", "offenbach",
+    "koblenz", "bergisch gladbach", "recklinghausen", "remscheid", "trier",
+    "salzgitter", "cottbus", "zwickau", "iserlohn", "schwerin", "gießen",
+    "giessen", "flensburg", "villingen-schwenningen", "konstanz", "worms",
+    "marburg", "delmenhorst", "bamberg", "aschaffenburg", "lüneburg",
+    "lueneburg", "sindelfingen", "fellbach", "böblingen", "friedrichshafen",
+    "ravensburg", "esslingen", "reutlingen", "tübingen", "tuebingen",
+    "pforzheim", "metzingen", "riederich", "nordrhein-westfalen",
+    "north rhine-westphalia", "baden-württemberg", "baden-wurttemberg",
+    "niedersachsen", "sachsen-anhalt", "rheinland-pfalz",
+    "schleswig-holstein", "mecklenburg-vorpommern",
+)
+
+# US cities that turned up unresolved on their own with no state attached:
+# "Detroit", "Dallas", "NYC", "Miami", "Houston", "Philadelphia". Each is the
+# only place of that size in the world with the name, which is the bar.
+_US_PLACES = (
+    "detroit", "dallas", "houston", "philadelphia", "phoenix", "miami",
+    "san diego", "san mateo", "santa clara", "el segundo", "redwood city",
+    "berkeley", "salt lake city", "indianapolis", "milwaukee",
+    "kansas city", "st. louis", "saint louis", "cincinnati", "cleveland",
+    "pittsburgh", "baltimore", "nashville", "charlotte", "raleigh",
+    "greensboro", "tampa", "orlando", "jacksonville", "new orleans",
+    "oklahoma city", "albuquerque", "tucson", "sacramento", "san antonio",
+    "fort worth", "las vegas", "minneapolis", "des moines", "omaha",
+    "wichita", "olathe", "buffalo", "syracuse", "hartford", "providence",
+    "boise", "anchorage", "honolulu", "irvine", "pasadena", "long beach",
+    "oakland", "fremont", "santa monica", "culver city", "burbank",
+    "scottsdale", "chandler", "plano", "irving", "bethesda", "reston",
+    "mclean", "brooklyn", "manhattan", "nyc", "new york city", "boston",
+)
+
+# Cities elsewhere that the data threw up, each the only place of any size
+# with that name. Where a name is shared (Santiago, Lima, Athens, Cordoba)
+# the entry carries its country with it or is left out entirely.
+_MORE_CITIES = {
+    "CA": ("montreal", "montréal", "calgary", "edmonton", "winnipeg",
+           "mississauga", "brampton", "hamilton ontario", "kitchener",
+           "burnaby", "saskatoon", "regina", "sherbrooke", "laval",
+           "brossard", "etobicoke", "trois-rivières", "trois-rivieres",
+           "saguenay", "oakville", "markham", "vaughan", "richmond hill",
+           "gatineau", "kelowna", "st. john's", "moncton", "québec city",
+           "quebec city"),
+    "TW": ("taipei", "taichung", "kaohsiung", "taoyuan", "tainan", "hsinchu"),
+    "UA": ("kyiv", "kiev", "lviv", "kharkiv", "odesa", "dnipro"),
+    "BG": ("sofia", "plovdiv", "varna", "burgas"),
+    "HU": ("budapest", "debrecen", "szeged"),
+    "LT": ("vilnius", "kaunas", "klaipeda", "klaipėda", "panevėžys"),
+    "LV": ("riga", "rīga"),
+    "EE": ("tallinn", "tartu"),
+    "RS": ("belgrade", "beograd", "novi sad"),
+    "HR": ("zagreb", "rijeka", "osijek"),
+    "SI": ("ljubljana", "maribor"),
+    "SK": ("bratislava", "kosice", "košice"),
+    "GR": ("athens", "thessaloniki", "patras", "heraklion", "marousi"),
+    "CY": ("nicosia", "limassol", "larnaca", "paphos", "latsia"),
+    "MT": ("valletta", "sliema", "birkirkara", "gozo", "st julian's"),
+    "SA": ("riyadh", "jeddah", "dammam", "khobar", "al khobar", "makkah",
+           "ad dammam", "al hufuf"),
+    "QA": ("doha", "al khor", "lusail"),
+    "KW": ("kuwait city", "al ahmadi", "al-ahmadi"),
+    "BH": ("manama",),
+    "OM": ("muscat", "sohar", "salalah"),
+    "EG": ("cairo", "giza", "suez"),
+    "MA": ("casablanca", "rabat", "marrakech", "tangier"),
+    "NG": ("lagos", "abuja", "port harcourt", "ibadan"),
+    "KE": ("nairobi", "mombasa", "eldoret"),
+    "PK": ("karachi", "lahore", "islamabad", "rawalpindi", "faisalabad"),
+    "LK": ("colombo", "kandy"),
+    "BD": ("dhaka", "chittagong", "cox's bazar"),
+    "NP": ("kathmandu", "pokhara"),
+    "KZ": ("almaty", "astana", "nur-sultan", "shymkent"),
+    "GE": ("tbilisi", "t'bilisi", "batumi", "kutaisi"),
+    "AM": ("yerevan",),
+    "AZ": ("baku",),
+    "CO": ("bogota", "bogotá", "medellin", "medellín", "barranquilla",
+           "cartagena"),
+    "PE": ("lima peru", "arequipa", "chorrillos", "callao"),
+    "CL": ("santiago de chile", "valparaiso", "valparaíso", "vitacura",
+           "puerto montt", "coyhaique", "antofagasta", "maipú"),
+    "UY": ("montevideo",),
+    "CR": ("san jose costa rica", "heredia", "cartago"),
+    "SV": ("san salvador",),
+    "GT": ("guatemala city",),
+    "PA": ("panama city",),
+    "DO": ("santo domingo",),
+    "VN": ("hanoi", "ho chi minh", "hcmc", "da nang", "haiphong"),
+    "MM": ("yangon", "naypyidaw"),
+    "KH": ("phnom penh",),
+    "LU": ("luxembourg city", "esch-sur-alzette", "rodange"),
+    "MU": ("port louis", "grand baie", "ebene", "ebène"),
+    "MV": ("malé",),
+    "IN": ("delhi", "new delhi", "gurugram", "chennai", "kolkata",
+           "ahmedabad", "jaipur", "kochi", "coimbatore", "nashik", "indore",
+           "chandigarh", "thiruvananthapuram", "vadodara", "surat",
+           "nagpur", "bhubaneswar"),
+    "NL": ("amersfoort", "hoofddorp", "arnhem", "breda", "tilburg",
+           "nijmegen", "haarlem", "leiden", "zwolle", "apeldoorn", "almere",
+           "amstelveen", "dordrecht", "deventer", "heerenveen", "gorinchem",
+           "naaldwijk", "boxmeer", "oosterhout", "wageningen", "terneuzen",
+           "'s-hertogenbosch", "den bosch", "alkmaar", "enschede", "venlo",
+           "roosendaal", "helmond", "hilversum", "veenendaal", "dongen",
+           "etten-leur"),
+    "BE": ("bruges", "brugge", "wavre", "machelen", "mechelen", "hasselt",
+           "namur", "charleroi", "liege", "liège", "kortrijk", "aalst"),
+    "AT": ("linz", "innsbruck", "klagenfurt", "villach", "wels",
+           "sankt pölten", "steiermark", "styria", "carinthia",
+           "oberösterreich", "wolfsberg"),
+    "CH": ("bern", "berne", "winterthur", "lucerne", "luzern", "st. gallen",
+           "lugano", "thun", "neuchâtel", "neuchatel", "bioggio"),
+    "FR": ("annecy", "la rochelle", "rennes", "montpellier", "grenoble",
+           "dijon", "angers", "clermont-ferrand", "avignon",
+           "aix-en-provence", "aix en provence", "levallois-perret",
+           "issy-les-moulineaux", "rueil-malmaison", "courbevoie",
+           "puteaux", "saint-ouen-sur-seine", "villeurbanne",
+           "saint-priest", "blanquefort", "boulogne-billancourt",
+           "nanterre", "créteil", "versailles", "strasbourg", "toulon",
+           "reims", "le havre", "saint-étienne", "limoges", "amiens",
+           "metz", "besançon", "perpignan", "orléans", "mulhouse", "caen",
+           "occitanie", "nouvelle-aquitaine", "auvergne-rhône-alpes",
+           "île-de-france", "hauts-de-france", "bretagne",
+           "provence-alpes-côte d'azur", "centre-val de loire"),
+    "ES": ("sevilla", "murcia", "las palmas", "alicante", "córdoba",
+           "valladolid", "vigo", "gijón", "granada", "tarragona",
+           "pamplona", "san sebastian", "donostia", "catalunya", "cataluña",
+           "andalucia", "andalucía", "castilla la mancha"),
+    "IT": ("genova", "palermo", "catania", "venezia", "verona", "padova",
+           "trieste", "brescia", "parma", "modena", "reggio emilia",
+           "perugia", "lazio", "lombardia", "piemonte", "veneto", "toscana",
+           "friuli-venezia giulia"),
+    "PL": ("katowice", "lublin", "bydgoszcz", "szczecin", "rzeszow",
+           "rzeszów", "bialystok", "białystok", "gdynia", "torun", "toruń"),
+    "PT": ("guimaraes", "guimarães", "leiria", "setubal", "setúbal"),
+    "RO": ("bucharest", "bucuresti", "bucurești", "cluj-napoca",
+           "timisoara", "timișoara", "iasi", "iași", "constanta",
+           "constanța", "brasov", "brașov"),
+    "SE": ("uppsala", "linkoping", "linköping", "vasteras", "västerås",
+           "orebro", "örebro", "karlstad", "umea", "umeå", "lund"),
+    "NO": ("stavanger", "tromso", "tromsø", "drammen", "kristiansand"),
+    "DK": ("aalborg", "esbjerg", "roskilde", "kolding", "vejle", "horsens"),
+    "FI": ("turku", "oulu", "vantaa", "jyvaskyla", "jyväskylä"),
+    "CZ": ("ostrava", "olomouc", "plzen", "plzeň", "liberec",
+           "mladá boleslav"),
+    "IE": ("waterford", "kilkenny", "athlone", "sligo", "drogheda",
+           "dundalk"),
+    "IL": ("jerusalem", "haifa", "herzliya", "ra'anana"),
+    "TR": ("ankara", "izmir", "bursa", "antalya", "gaziantep", "adana"),
+    "ZA": ("pretoria", "durban", "gqeberha", "stellenbosch", "tembisa"),
+    "AU": ("adelaide", "canberra", "hobart", "gold coast", "newcastle nsw",
+           "wollongong", "geelong", "townsville", "moruya"),
+    "NZ": ("christchurch", "dunedin", "tauranga", "napier", "invercargill"),
+    "MX": ("guadalajara", "monterrey", "queretaro", "querétaro", "puebla",
+           "tijuana", "cancun", "cancún", "merida", "mérida", "zapopan",
+           "ciudad de méxico", "ciudad de mexico", "cdmx", "mexico city"),
+    "BR": ("brasilia", "brasília", "belo horizonte", "curitiba",
+           "porto alegre", "recife", "fortaleza", "campinas",
+           "florianopolis", "florianópolis", "manaus", "goiania",
+           "goiânia", "são bernardo do campo"),
+    "AR": ("cordoba argentina", "rosario", "mendoza"),
+    "JP": ("osaka", "yokohama", "nagoya", "fukuoka", "sapporo", "kyoto",
+           "kobe", "sendai"),
+    "KR": ("busan", "incheon", "daegu", "daejeon", "pangyo", "seongnam"),
+    "CN": ("guangzhou", "hangzhou", "chengdu", "wuhan", "suzhou", "nanjing",
+           "tianjin", "qingdao", "dalian"),
+    "TH": ("chiang mai", "rayong", "chonburi", "phuket"),
+    "MY": ("penang", "johor bahru", "shah alam", "petaling jaya",
+           "cyberjaya", "selangor"),
+    "ID": ("surabaya", "bandung", "medan", "yogyakarta", "tangerang",
+           "bekasi"),
+    "PH": ("makati", "taguig", "quezon city", "cebu", "pasig",
+           "bonifacio global city", "mandaluyong", "davao"),
+    "TN": ("tunis", "sousse", "sfax", "monastir", "zaghouan"),
+    "DZ": ("algiers",),
+    "GH": ("accra",),
+    "TZ": ("dar es salaam",),
+    "UZ": ("tashkent",),
+    "KG": ("bishkek",),
+    "MD": ("chisinau", "chișinău"),
+}
+
+# Fold the new lists into the existing city table. Appending rather than
+# replacing keeps every hand-tuned guard already in there ("london" not
+# followed by Ontario, "paris" not followed by TX) exactly as it was.
+_CITY_HINTS["UK"] += "|" + _alt(_UK_PLACES)
+_CITY_HINTS["DE"] += "|" + _alt(_DE_PLACES)
+_CITY_HINTS["US"] += "|" + _alt(_US_PLACES)
+for _code, _names in _MORE_CITIES.items():
+    if _code in _CITY_HINTS:
+        _CITY_HINTS[_code] += "|" + _alt(_names)
+    else:
+        _CITY_HINTS[_code] = _alt(_names)
+
+
 def _country_of(location: str) -> str | None:
     """Best single guess at the country a location string refers to.
 
-    Tiered deliberately: an explicit country name beats a US state code beats
-    a city name. Returns None when nothing identifies it, which callers treat
-    as unknown rather than as a match.
+    Tiered deliberately: an explicit country code or name beats a US state
+    code beats a city name. Returns None when nothing identifies it, which
+    callers treat as unknown rather than as a match, and None stays a real
+    answer: "Remote", "2 Locations" and "EMEA" name no country, and 17% of
+    everything this file cannot place is of exactly that kind.
     """
     if not location:
         return None
-    raw = location
+    raw = _repair(location)
     low = raw.lower()
+    # Accents folded, tried alongside the unfolded text rather than instead
+    # of it. "Montréal, QC, ca" and "Košice, Slovakia" need the folded form;
+    # "München" and "Kraków" need the unfolded one.
+    fold = _fold(low)
+
+    def hit(pat: str) -> bool:
+        return bool(re.search(pat, low) or (fold != low and re.search(pat, fold)))
+
+    # An explicit lowercase country code at the end of the string is the most
+    # specific signal a posting can carry: the employer named the country
+    # outright, in a field of its own. It goes first because the city tier
+    # would get it wrong, not merely miss it: "Newcastle, au" is Australia
+    # and the UK city list would claim it.
+    cc = _TRAILING_CC.search(raw)
+    if cc:
+        code = _code_country(cc.group(1))
+        if code and code not in _AMBIGUOUS_CC:
+            return code
+        if code:
+            # One that is also a US state code, so the same rule applies
+            # as for the uppercase form: something else has to name that
+            # country. A province or Land does it ("Whitecourt, AB, ca"),
+            # and so does a city ("Chennai, in"). Nothing does it for
+            # "Savannah, ga", so Gabon is not claimed and it stays unknown.
+            sub = _SUBNATIONAL.get(code)
+            if sub and (re.search(sub[0], raw) or re.search(sub[1], fold)):
+                return code
+            city = _CITY_HINTS.get(code)
+            if city and hit(city):
+                return code
 
     for code, pat in _COUNTRY_MARKERS.items():
-        if re.search(pat, low):
+        if hit(pat):
             return code
+
+    # Georgia the country before Georgia the state, and only ever on the
+    # evidence of a Georgian city. "Tbilisi, Georgia" used to resolve to US,
+    # because the spelled-out state rule matched the last word of it.
+    if _GEORGIA_COUNTRY.search(fold):
+        return "GE"
+
     # Twenty state codes are also country codes. "Berlin, DE" read as Delaware
     # and "Toronto, CA" as California, so a German role and a Canadian one
     # both arrived filed as US, a country the user may need a visa for.
@@ -157,12 +828,44 @@ def _country_of(location: str) -> str | None:
     if amb:
         code = amb.group(1).upper()
         pat = _CITY_HINTS.get(code)
-        if pat and re.search(pat, low):
+        if pat and hit(pat):
             return code
-    if _US_STATE.search(raw) or _US_STATE_NAME.search(low):
+    if (_US_STATE.search(raw) or _US_STATE_NAME.search(low)
+            or _US_STATE_ALONE.match(low) or _US_STATE_SPACED.search(raw)):
         return "US"
+    # A Canadian province names Canada as plainly as a US state names the US,
+    # and nothing read them: "Winnipeg, Manitoba", "Brampton, ON" and
+    # "Calgary, AB" all arrived unknown.
+    if _CA_PROVINCE.search(raw) or _CA_PROVINCE_NAME.search(fold):
+        return "CA"
+    # Taleo's hyphen hierarchy, biggest first. "IL-Northbrook" and
+    # "TX-Plano Legacy" are US states; "PH-National Capital-Quezon City" is a
+    # country. The state reading is tried first because that is what the data
+    # is: 258 postings arrive in this shape and almost all of them are US.
+    head = _TALEO_HEAD.match(raw)
+    if head:
+        code = head.group(1)
+        if code in _US_STATE_CODES:
+            return "US"
+        named = _code_country(code)
+        if named:
+            return named
+    # A country written out in full, as its own comma-separated segment.
+    # Read back to front, because a location hierarchy puts the country last:
+    # "Benin, Nigeria" is the city of Benin in Nigeria, not the country of
+    # Benin. This is where Qatar, Saudi Arabia, Taiwan, Colombia, Ukraine and
+    # forty other countries nobody had typed in yet get recognised.
+    for seg in reversed(re.split(r"[,/;|]|\s+[-–—]\s+", fold)):
+        code = _COUNTRY_NAME.get(seg.strip(" .()"))
+        if code:
+            return code
+    # A county ending in -shire is British and nothing else. Cambridgeshire
+    # and Lincolnshire both arrived unknown, and Reed sends counties rather
+    # than towns for a large share of its adverts.
+    if _SHIRE.search(fold):
+        return "UK"
     for code, pat in _CITY_HINTS.items():
-        if re.search(pat, low):
+        if hit(pat):
             return code
     return None
 

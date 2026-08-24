@@ -273,3 +273,274 @@ def test_a_personal_config_is_preferred_over_the_one_that_ships():
         assert _cfg_path("config.yaml").name == "config.yaml"
     finally:
         os.chdir(here)
+
+
+# --------------------------------------------------- country resolution, 2026
+# A tagging run over 17,834 boards read 433,955 live postings and 94,841 of
+# them (21.9%) carried a location `_countries_in` could not place. Every test
+# below is a shape taken from that run's `unrecognised_samples`, weighted by
+# how many postings actually carried it, not a case anyone invented.
+
+def test_a_lowercase_country_code_at_the_end_names_the_country():
+    """The single biggest fixable shape in the data: 15,915 unresolved
+    postings, 21.4% of everything unresolved, end in a lowercase ISO code.
+
+    "Aachen, NRW, de", "Chennai, in", "Sofia, bg" and "Budapest, hu" are how a
+    whole family of boards writes a location, and none of them resolved, so
+    every German, Indian and Bulgarian role on those boards was invisible to
+    the country filter in both directions."""
+    assert _countries_in("Sofia, bg") == {"BG"}
+    assert _countries_in("Budapest, hu") == {"HU"}
+    assert _countries_in("Riga, lv") == {"LV"}
+    assert _countries_in("Vilnius, Vilnius County, lt") == {"LT"}
+    assert _countries_in("Campinas, SP, br") == {"BR"}
+    assert _countries_in("Makati City, NCR, ph") == {"PH"}
+    # And it beats the city list, which is the point of putting it first:
+    # the UK entry would otherwise claim Newcastle for Britain.
+    assert _countries_in("Newcastle, au") == {"AU"}
+
+
+def test_a_lowercase_code_that_is_also_a_state_still_needs_corroborating():
+    """23 ISO codes are also US state codes, and the rule for the uppercase
+    form applies unchanged to the lowercase one.
+
+    A province or Land corroborates it, and so does a city: "Calgary, AB, ca"
+    and "Chennai, in" are safe. Nothing in "Savannah, ga" names Gabon, so it
+    stays unresolved rather than being filed on the far side of the world.
+    And a US city written in lowercase must still read as the state."""
+    assert _countries_in("Montréal, QC, ca") == {"CA"}
+    assert _countries_in("Whitecourt, AB, ca") == {"CA"}
+    assert _countries_in("Aachen, NRW, de") == {"DE"}
+    assert _countries_in("Chennai, in") == {"IN"}
+    assert _countries_in("Barasat, WB, in") == {"IN"}
+
+    assert _countries_in("Savannah, ga") == set()
+    assert _countries_in("Los Angeles, ca") == {"US"}
+    assert _countries_in("San Francisco, ca") == {"US"}
+
+
+def test_the_corroborating_code_is_read_case_sensitively():
+    """The province and Land codes are matched against the string as written,
+    the same rule `_US_STATE` already follows.
+
+    Reading them case-insensitively would let the ordinary English words "on",
+    "by", "he", "st", "as" and "up" corroborate Canada, Germany and India, so
+    "hands on, ca" would come back as a Canadian role."""
+    assert _countries_in("hands on, ca") == set()
+    assert _countries_in("Kingston, ON") == {"CA"}
+
+
+def test_a_uk_town_or_county_resolves_without_the_word_britain():
+    """The person running this filters on countries: [UK], so a UK town that
+    does not resolve is a role they never see.
+
+    BambooHR sends no country at all for office and hybrid roles and Reed
+    sends free text, so "Farnborough", "Stoke-on-Trent" and "Cambridgeshire"
+    all arrived unknown and were dropped as unplaceable. The county names are
+    the same story: Reed sends "North Yorkshire" and "Dorset" as whole
+    locations."""
+    for loc in ("Farnborough", "Stoke-on-Trent", "Cambridgeshire", "GRIMSBY",
+                "lincolnshire", "North Yorkshire", "Dorset", "Horsham",
+                "Seaham", "Hackney", "Basingstoke", "Wolverhampton"):
+        assert _countries_in(loc) == {"UK"}, loc
+
+
+def test_a_shire_is_british_but_new_hampshire_is_not():
+    """No other country names its counties -shire, which makes the suffix a
+    reliable signal and the one American state ending in it the only trap.
+
+    "New Hampshire" and "New Hampshire - Remote" are US locations and reading
+    them as British would put a role in front of someone who cannot take it."""
+    assert _countries_in("Oxfordshire") == {"UK"}
+    assert _countries_in("Hampshire") == {"UK"}
+    assert _countries_in("New Hampshire") == {"US"}
+    assert _countries_in("New Hampshire - Remote") == {"US"}
+    # A comma and a state code still answer before the suffix is consulted.
+    assert _countries_in("Berkshire, MA") == {"US"}
+
+
+def test_utf8_that_was_decoded_as_latin1_is_put_back_together():
+    """2,430 unresolved postings (3.3%) were mojibake, and "MÃ¼nchen",
+    "KÃ¶ln" and "DÃ¼sseldorf" alone accounted for over 1,500 of them.
+
+    The accented spellings were already on the city list. Only the bytes were
+    wrong, so repairing them is worth more than any city anyone could add."""
+    assert _countries_in("MÃ¼nchen") == {"DE"}
+    assert _countries_in("KÃ¶ln") == {"DE"}
+    assert _countries_in("ZÃ¼rich") == {"CH"}
+    # A string that was never mangled must come through untouched.
+    assert _countries_in("München") == {"DE"}
+
+
+def test_accents_are_folded_before_matching_but_not_instead_of_it():
+    """Matching is tried against the folded and the unfolded text both.
+
+    Folding alone would break "München" and "Kraków", which are on the city
+    list in their accented form; not folding at all leaves "Montréal",
+    "Košice" and "București" unresolved."""
+    assert _countries_in("Montréal") == {"CA"}
+    assert _countries_in("Košice, Slovakia") == {"SK"}
+    assert _countries_in("București, București, ro") == {"RO"}
+    assert _countries_in("Kraków") == {"PL"}
+    assert _countries_in("São Paulo") == {"BR"}
+
+
+def test_a_country_nobody_had_typed_in_yet_is_still_a_country():
+    """The marker table held 45 countries, so Qatar, Saudi Arabia, Taiwan,
+    Colombia, Ukraine and forty others resolved to nothing at all.
+
+    An ISO table is the right shape for this: a list of every country's name
+    is small, stable and checkable, where another forty alternations is not."""
+    for loc, want in (("Qatar", "QA"), ("Saudi Arabia", "SA"),
+                      ("Taiwan", "TW"), ("Colombia", "CO"), ("Ukraine", "UA"),
+                      ("Sri Lanka", "LK"), ("Kuwait", "KW"), ("Egypt", "EG"),
+                      ("Serbia", "RS"), ("Kazakhstan", "KZ"),
+                      ("Riyadh, Saudi Arabia", "SA"),
+                      ("Belgrade, Serbia", "RS"),
+                      ("Cox's Bazar, Bangladesh", "BD")):
+        assert _countries_in(loc) == {want}, loc
+
+
+def test_a_country_written_in_another_language_is_the_same_country():
+    """A German employer writes Deutschland or Deutschlandweit, a Swiss one
+    writes Schweiz, a Dutch one writes Nederland. 2,110 postings said
+    Nederland and none of them resolved."""
+    assert _countries_in("Deutschlandweit") == {"DE"}
+    assert _countries_in("Naaldwijk, Nederland") == {"NL"}
+    assert _countries_in("Schweiz") == {"CH"}
+    assert _countries_in("Türkiye") == {"TR"}
+    assert _countries_in("Österreich") == {"AT"}
+
+
+def test_nederland_texas_is_still_in_texas():
+    """Nederland TX and Nederland CO are real American towns, so the Dutch
+    name is guarded. The guard was written "TX" first, against a string this
+    file has already lowercased, which made it dead on arrival."""
+    assert _countries_in("Nederland, TX") == {"US"}
+    assert _countries_in("Nederland, CO") == {"US"}
+    assert _countries_in("Nederland") == {"NL"}
+
+
+def test_a_country_name_is_read_from_the_end_of_the_hierarchy():
+    """A location hierarchy puts the country last, so the segments are read
+    back to front.
+
+    "Benin, Nigeria" is the Nigerian city of Benin, and taking the first
+    segment that happens to be a country name would file it in Benin, a
+    different country 400 miles away."""
+    assert _countries_in("Benin, Nigeria") == {"NG"}
+    assert _countries_in("Casablanca, Morocco") == {"MA"}
+
+
+def test_a_state_named_on_its_own_is_still_the_united_states():
+    """"California", "Texas" and "Maryland - Remote" are whole locations on
+    plenty of boards, and the spelled-out rule wanted a leading comma, so a
+    state on its own resolved to nothing."""
+    for loc in ("California", "Texas", "Massachusetts", "Ohio",
+                "Maryland - Remote", "Virginia-remote", "New Jersey"):
+        assert _countries_in(loc) == {"US"}, loc
+
+
+def test_a_state_code_with_only_a_space_in_front_still_counts():
+    """"Dallas TX", "Tampa FL" and "Olathe KS" name a US state and none of
+    them resolved, because the rule wanted a comma.
+
+    Only the 29 codes that are not also ISO country codes are trusted this
+    loosely. The other 23 keep needing a comma and corroboration, so a
+    hypothetical "Berlin DE" cannot become an American role."""
+    for loc in ("Dallas TX", "Tampa FL", "Olathe KS", "St. Louis MO"):
+        assert _countries_in(loc) == {"US"}, loc
+
+
+def test_a_canadian_province_names_canada_the_way_a_state_names_the_us():
+    """Nothing read them, so "Winnipeg, Manitoba", "Brampton, ON" and
+    "Calgary, AB" all arrived unknown.
+
+    Newfoundland, Prince Edward Island and Saskatchewan are left out: their
+    codes are also the Netherlands, Peru and Slovakia, so a bare ", NL" is a
+    coin toss and stays unresolved rather than being guessed."""
+    assert _countries_in("Winnipeg, Manitoba") == {"CA"}
+    assert _countries_in("Brampton, ON") == {"CA"}
+    assert _countries_in("Calgary, AB") == {"CA"}
+    assert _countries_in("Etobicoke, Ontario") == {"CA"}
+    assert _countries_in("Somewhere, NL") == set()
+
+
+def test_taleos_hyphen_hierarchy_is_read_biggest_first():
+    """Taleo flattens a JSON array into a hyphen-joined string. `parse_taleo`
+    unpicks it in the adapter, but boards mirroring the format send the raw
+    shape straight here.
+
+    Only a leading two-letter code counts, which is why "Stoke-on-Trent" and
+    "Aix-en-Provence" are left alone by it."""
+    assert _countries_in("IL-Northbrook") == {"US"}
+    assert _countries_in("TX-Plano Legacy") == {"US"}
+    assert _countries_in("PH-National Capital-Quezon City, Metro Manila") == {"PH"}
+    assert _countries_in("Nebraska-Omaha") == {"US"}
+    assert _countries_in("Stoke-on-Trent") == {"UK"}
+    assert _countries_in("Aix-en-Provence, Provence-Alpes-Côte d'Azur, fr") == {"FR"}
+
+
+def test_georgia_the_country_is_told_apart_from_georgia_the_state():
+    """A precision fix, not a recall one: "Tbilisi, Georgia" resolved to US,
+    because the spelled-out state rule matched the last word of it.
+
+    The country is recognised from its cities and never from the bare word,
+    and the bare word is not claimed for the state either, because "Georgia"
+    on its own is genuinely both."""
+    assert _countries_in("Tbilisi, Georgia") == {"GE"}
+    assert _countries_in("Batumi") == {"GE"}
+    assert _countries_in("Atlanta, Georgia") == {"US"}
+    assert _countries_in("Georgia") == set()
+
+
+def test_the_united_states_can_be_spelled_with_two_full_stops():
+    """The marker required the trailing "a", so "U.S. Remote" and "Remote
+    U.S." matched nothing and 170 postings written that way arrived with no
+    country, on a filter where the US is a relocation target."""
+    assert _countries_in("U.S. Remote") == {"US"}
+    assert _countries_in("Remote U.S.") == {"US"}
+    assert _countries_in("U.S. (Remote)") == {"US"}
+
+
+def test_a_shape_that_is_genuinely_ambiguous_is_left_alone():
+    """A role filed under the wrong country is worse than one filed under
+    none, because the reader acts on it.
+
+    Durham is a US city of 280,000 and a UK city of 48,000; "Remote - CA" is
+    California or Canada with nothing to separate them; and a name shared with
+    a large American place (Norfolk, Lincoln, Portsmouth, Worcester, Dover,
+    Windsor, Peterborough, Salisbury, Winchester, Richmond, Lancaster,
+    Carlisle, Greenwich, Camden) is deliberately absent from the UK list."""
+    for loc in ("Durham", "Remote - CA", "Norfolk", "Lincoln", "Portsmouth",
+                "Worcester", "Windsor", "Peterborough", "Richmond"):
+        assert _countries_in(loc) == set(), loc
+
+
+def test_a_location_that_names_no_place_still_names_no_country():
+    """17.4% of the unresolved corpus is unresolved correctly, and it has to
+    stay that way. "2 Locations" is how Ashby summarises a multi-site
+    vacancy, "In-Office" is a work mode, "HQ" is a building, and none of them
+    is a country. Resolving any of them would put a role in front of someone
+    who cannot take it."""
+    for loc in ("2 Locations", "3 Locations", "Multiple Locations", "Hybrid",
+                "In-Office", "Hybrid; In-Office", "Distributed", "Virtual",
+                "HQ", "Headquarters", "Main Campus", "LATAM", "APAC",
+                "South East Asia", "World Wide - Remote", "Alle Standorte"):
+        assert _countries_in(loc) == set(), loc
+
+
+def test_the_old_state_and_city_answers_are_all_unchanged():
+    """Every tier added here runs alongside rules that were each won against
+    a real bug, and the one that matters most is the city list that once
+    marked 59 of 296 American roles as British. None of the new tiers may
+    reach a string those rules already answered."""
+    for loc, want in (("San Francisco, CA", "US"), ("Toronto, CA", "CA"),
+                      ("Berlin, DE", "DE"), ("Birmingham, AL", "US"),
+                      ("Reading, PA", "US"), ("Bath, ME", "US"),
+                      ("Manchester, NH", "US"), ("Wilmington, DE", "US"),
+                      ("Chicago, IL", "US"), ("Indianapolis, IN", "US"),
+                      ("Lebanon, PA", "US"), ("London", "UK"),
+                      ("Dublin, OH", "US"), ("Paris, TX", "US"),
+                      ("London, Ontario", "CA")):
+        assert _country_of(loc) == want, loc
