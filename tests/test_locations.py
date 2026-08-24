@@ -251,3 +251,25 @@ def test_the_same_avature_job_linked_twice_is_one_row():
                                            url="https://x/external/SearchJobs/")))
     assert len(jobs) == 1
     assert jobs[0].title == "GSC: Senior Control Manager (Cyber)"
+
+
+def test_a_personal_config_is_preferred_over_the_one_that_ships():
+    """`discover <employer> --add` wrote a personal board into config.yaml,
+    which is the file the repo distributes. config.local.yaml is the personal
+    one and is gitignored, so anything added there stays where it belongs."""
+    import os, tempfile
+    from pathlib import Path
+    from jobradar.cli import _cfg_path
+
+    here = os.getcwd()
+    d = tempfile.mkdtemp()
+    try:
+        os.chdir(d)
+        Path("config.yaml").write_text("titles:\n", encoding="utf-8")
+        assert _cfg_path(None).name == "config.yaml"      # no personal one yet
+        Path("config.local.yaml").write_text("titles:\n", encoding="utf-8")
+        assert _cfg_path(None).name == "config.local.yaml"
+        # An explicit path always wins, in either direction.
+        assert _cfg_path("config.yaml").name == "config.yaml"
+    finally:
+        os.chdir(here)

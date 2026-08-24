@@ -544,7 +544,14 @@ def _cfg_path(raw) -> Path:
     ` /path/c.yaml`", which reads as the file being missing rather than as a
     typo in the argument.
     """
-    return Path(str(raw or "config.yaml").strip()).expanduser()
+    if raw:
+        return Path(str(raw).strip()).expanduser()
+    # config.local.yaml is the personal one and is gitignored; config.yaml
+    # ships. Defaulting to the latter meant `discover <employer> --add` wrote
+    # somebody's own board into the file the repo distributes, which is either
+    # committed by accident or silently lost on the next pull.
+    local = Path("config.local.yaml")
+    return local if local.exists() else Path("config.yaml")
 
 
 def _cfg_or_default(raw) -> Config:
