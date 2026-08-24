@@ -286,6 +286,13 @@ def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
         why = res.error or (f"HTTP {res.status}" if res.status else "no answer")
         if res.status in (429, 503) or res.throttled:
             why = f"rate limited ({why})"
+        elif res.status in (401, 403) and src.platform == "reed":
+            # `validate` does not carry credentials, so it cannot speak to
+            # Reed at all. Reporting a bare "HTTP 401" here reads as a broken
+            # source and would have anyone with a perfectly good key in their
+            # config hunting a fault that is not there.
+            why = ("needs an API key, which `validate` does not send; "
+                   "this says nothing about whether Reed is working")
         return 0, [], why
     jobs = adapters.parse(res.payload, src)
     return len(jobs), jobs, None

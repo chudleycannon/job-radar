@@ -194,6 +194,80 @@ def fetch_nhs(
     return Result(src, payload="".join(parts))
 
 
+# Reed hard-limits a page to 100 and documents it. Three pages per keyword is
+# 300 postings for one job title, which is far past the point the title filter
+# has stopped discarding things, and `expand_templates` already makes one of
+# these per title in `titles.include`.
+REED_PAGE = 100
+
+
+def fetch_reed(
+    src: Source,
+    api_key: str,
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 3,
+) -> Result:
+    """Reed's jobseeker API. Keyed, and paged with resultsToSkip.
+
+    The key goes in as the HTTP Basic username with an empty password, which
+    is Reed's own documented scheme. It is set on the session rather than
+    built into the URL, so it never lands in a log line, a saved source list
+    or an error message.
+
+    With no key this returns a stated error rather than fetching. Reed answers
+    401 to an unkeyed request, and a 401 arriving through the ordinary path
+    would be reported next to genuinely broken boards as "could not be read",
+    which tells the reader nothing about the one thing they need to do.
+    """
+    if not api_key:
+        return Result(src, error="no Reed API key: set sources.reed_api_key in "
+                                 "your config, or the REED_API_KEY environment "
+                                 "variable. Free key: "
+                                 "https://www.reed.co.uk/developers/jobseeker")
+
+    session = requests.Session()
+    # (key, "") is Basic auth with an empty password, which is what Reed asks
+    # for. requests base64-encodes it into the Authorization header.
+    session.auth = (api_key, "")
+    sep = "&" if "?" in src.url else "?"
+
+    merged: dict[Any, dict] = {}
+    total = 0
+    first_error: Result | None = None
+
+    for page in range(max_pages):
+        probe = Source(
+            company=src.company,
+            url=f"{src.url}{sep}resultsToTake={REED_PAGE}"
+                f"&resultsToSkip={page * REED_PAGE}",
+            platform="reed", sector=src.sector, country=src.country,
+        )
+        res = fetch_one(probe, timeout=timeout, retries=retries,
+                        user_agent=user_agent, session=session)
+        if not res.ok or not isinstance(res.payload, dict):
+            # Carry the failure on the ORIGINAL source, not the paged probe:
+            # `detect_throttling` and the state file key on `source.key`, and
+            # a URL with resultsToSkip in it is a different key every page.
+            first_error = Result(src, error=res.error or "bad payload",
+                                 status=res.status, throttled=res.throttled)
+            break
+        rows = res.payload.get("results") or []
+        total = max(total, int(res.payload.get("totalResults") or 0))
+        for r in rows:
+            if isinstance(r, dict) and r.get("jobId") is not None:
+                merged.setdefault(r["jobId"], r)
+        if len(rows) < REED_PAGE:
+            break
+
+    if not merged and first_error is not None:
+        return first_error
+    return Result(src, payload={"results": list(merged.values()),
+                                "totalResults": total})
+
+
 def fetch_phenom(
     src: Source,
     *,
@@ -262,6 +336,10 @@ def fetch_all(
     retries: int = 2,
     user_agent: str = "job-radar/0.1",
     search_terms: list[str] | None = None,
+    # Keyed by platform name. Only Reed needs one so far. Passed down rather
+    # than read from the environment inside the fetcher, so a caller can run
+    # two configs in one process without them sharing a key.
+    api_keys: dict[str, str] | None = None,
     on_result: Callable[[Result], None] | None = None,
 ) -> list[Result]:
     sources = list(sources)
@@ -274,7 +352,8 @@ def fetch_all(
             # same 50ms and look like something worth blocking.
             delay = (i % max(1, concurrency)) * 0.05
             futs[ex.submit(_delayed_fetch, src, delay, timeout, retries,
-                           user_agent, search_terms or [])] = src
+                           user_agent, search_terms or [],
+                           api_keys or {})] = src
         for f in as_completed(futs):
             res = f.result()
             out.append(res)
@@ -283,9 +362,12 @@ def fetch_all(
     return out
 
 
-def _delayed_fetch(src, delay, timeout, retries, ua, terms) -> Result:
+def _delayed_fetch(src, delay, timeout, retries, ua, terms, keys=None) -> Result:
     if delay:
         time.sleep(delay)
+    if src.platform == "reed":
+        return fetch_reed(src, (keys or {}).get("reed", ""), timeout=timeout,
+                          retries=retries, user_agent=ua)
     if src.platform == "workday":
         return fetch_workday(src, terms, timeout=timeout, retries=retries,
                              user_agent=ua)

@@ -136,6 +136,35 @@ REGISTRY: list[Platform] = [
         note="search page, not a board; JSON API is auth-gated and .rss returns HTML. "
              "Salary is usually stated because trusts publish Agenda for Change bands",
     ),
+    # The only aggregator here reached through a documented, keyed API rather
+    # than a public page. It is keyword-driven like NHS Jobs, so it ships as a
+    # `keyword_template` source and `sources.expand_templates` turns it into
+    # one search per title in `titles.include`.
+    #
+    # `postedByDirectEmployer=true` is in the builder on purpose. Reed carries
+    # the same vacancy once per agency that has been given it, and the API
+    # gives no per-result flag saying which kind of listing you are looking
+    # at: it is a request filter or nothing. Filtering at the query is
+    # therefore the only place duplicates can be cut before they reach the
+    # pipeline. Drop the parameter if you do want agency listings.
+    Platform(
+        "reed",
+        r"reed\.co\.uk/api/",
+        platforms.parse_reed,
+        build=lambda kw: (
+            "https://www.reed.co.uk/api/1.0/search"
+            f"?keywords={kw.replace(' ', '%20')}"
+            "&postedByDirectEmployer=true"
+        ),
+        verified=False,
+        note="needs a free API key as the HTTP Basic username, empty password. "
+             "401 without one, and 200 with an empty `results` list both for a "
+             "search that matched nothing and for a nonsense keyword, so "
+             "liveness is the result count. Search results carry no "
+             "`salaryType`, so an unlabelled figure below 2,000 is a rate and "
+             "is left unconfirmed rather than read as an annual salary. "
+             "UNVERIFIED against a live call: no key was obtainable here",
+    ),
     Platform(
         "recruitee",
         r"\.recruitee\.com/api/offers",

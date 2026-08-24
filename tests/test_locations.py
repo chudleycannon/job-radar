@@ -92,3 +92,15 @@ def test_a_platforms_own_remote_flag_beats_prose_in_the_advert():
     # And an explicitly hybrid posting is hybrid whatever the flag says.
     assert work_mode(job(location="London", remote=True,
                          description="Hybrid, 3 days a week in the office.")) == "hybrid"
+
+
+def test_an_aggregator_never_outranks_the_employers_own_board():
+    """Dedupe picks a winner by directness first and description length
+    second. Reed returns full advert text, so at the default score a Reed
+    repost could take the row from the employer's own posting and hand the
+    reader a reed.co.uk redirect instead of the real apply page."""
+    from jobradar.screen import directness
+
+    assert directness("reed") < directness("greenhouse")
+    assert directness("linkedin") < directness("reed")
+    assert directness("greenhouse") == directness("workday") == 2

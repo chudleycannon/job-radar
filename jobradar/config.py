@@ -61,6 +61,10 @@ class Config:
     source_countries: list[str] = field(default_factory=list)
     use_bundled_sources: bool = True
     extra_sources: list[dict] = field(default_factory=list)
+    # Reed's jobseeker API is the one source here that needs a credential.
+    # Empty means the Reed source is skipped with a message rather than
+    # fetched into a 401. See `_api_key` for where it can come from.
+    reed_api_key: str = ""
 
     cv_path: str = ""
     formats: list[str] = field(default_factory=lambda: ["html", "json"])
@@ -209,7 +213,7 @@ KNOWN_KEYS = {
                   "need_sponsorship"},
     "salary": {"floor", "currency"},
     "cv": {"path"},
-    "sources": {"use_bundled", "countries", "extra"},
+    "sources": {"use_bundled", "countries", "extra", "reed_api_key"},
     "output": {"formats", "dir"},
     "fetch": {"concurrency", "timeout", "retries", "user_agent"},
 }
@@ -292,6 +296,23 @@ def _currency(v, where: str) -> str:
             f"Valid: {', '.join(sorted(VALID_CURRENCIES))}. Salaries in any "
             f"other currency are shown and never compared to your floor.")
     return t
+
+
+def _api_key(value, env_var: str) -> str:
+    """A credential, from the config file or from the environment.
+
+    Both, because this repo has two kinds of user and neither route serves the
+    other. Locally the key belongs in config.local.yaml, which is gitignored;
+    in GitHub Actions there is no local file at all and the key arrives as a
+    secret in the environment. Reading only one of the two strands the other.
+
+    The file wins when it has a value, so a stale export in a shell cannot
+    quietly override the key someone just wrote down. Empty means no key, and
+    the source that needs one is skipped and says so, rather than being
+    fetched into a 401 that reads like a broken board.
+    """
+    v = str(value or "").strip()
+    return v or os.environ.get(env_var, "").strip()
 
 
 def _sectors(values) -> list[str]:
@@ -407,6 +428,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         source_countries=_countries(_as_list(src.get("countries")), "sources.countries"),
         use_bundled_sources=_bool(src.get("use_bundled", True), "sources.use_bundled"),
         extra_sources=_as_list(src.get("extra")),
+        reed_api_key=_api_key(src.get("reed_api_key"), "REED_API_KEY"),
         cv_path=str((raw.get("cv") or {}).get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
         out_dir=Path(out.get("dir") or "out"),

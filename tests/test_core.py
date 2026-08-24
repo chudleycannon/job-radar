@@ -3105,3 +3105,368 @@ def test_breezy_and_jobvite_read_the_same_json_ld_block():
     from jobradar import enrich as enrich_mod
 
     assert enrich_mod.FETCHERS["jobvite"] is enrich_mod.FETCHERS["breezy"]
+
+
+# -------------------------------------------------------------------- reed
+# Reed's jobseeker API, https://www.reed.co.uk/api/1.0/search. Field names and
+# shape are from Reed's own documentation at
+# https://www.reed.co.uk/developers/jobseeker plus a published response sample.
+# NOT recorded from a live call: the API needs a key, and no key was created
+# here, so every assertion below is against the documented shape rather than
+# against bytes off the wire.
+REED_SEARCH = {
+    "results": [
+        {
+            "jobId": 40227781,
+            "employerId": 563926,
+            "employerName": "Bet365",
+            "employerProfileId": None,
+            "employerProfileName": None,
+            "jobTitle": "Engineering Manager",
+            "locationName": "Stoke-on-Trent",
+            "minimumSalary": 90000.00,
+            "maximumSalary": 110000.00,
+            "currency": "GBP",
+            "expirationDate": "12/05/2026",
+            "date": "31/03/2026",
+            "jobDescription": ("Lead two platform teams. Hybrid working, three "
+                               "days a week in our Stoke office."),
+            "applications": 1,
+            "jobUrl": ("https://www.reed.co.uk/jobs/engineering-manager/"
+                       "40227781"),
+        },
+    ],
+    "totalResults": 1,
+}
+
+
+def _reed_src():
+    from jobradar.models import Source
+    return Source(
+        company="Reed", platform="reed", country="UK", keyword_template=False,
+        url=("https://www.reed.co.uk/api/1.0/search?keywords=engineering+manager"
+             "&postedByDirectEmployer=true"))
+
+
+def test_a_reed_town_still_lands_in_the_country_the_filters_ask_for():
+    """Reed states a town and no country at all, and `locationName` is free
+    text an employer typed. screen.py resolves a country from a city list,
+    which cannot hold every town and county in Britain: "Stoke-on-Trent" and
+    "Cambridgeshire" both resolve to nothing, and `match` drops a posting it
+    cannot place whenever `locations.countries` is set. That is every UK user,
+    on most of the listings, with no message. So the adapter names the country
+    outright."""
+    from jobradar.adapters.platforms import parse_reed
+    from jobradar.screen import _countries_in, enrich, match
+
+    assert _countries_in("Stoke-on-Trent") == set(), \
+        "if this ever resolves on its own the adapter's suffix can go"
+
+    job = enrich(next(iter(parse_reed(REED_SEARCH, _reed_src()))))
+    assert job.location == "Stoke-on-Trent, United Kingdom", job.location
+    assert job.country == "UK", job.country
+    assert job.city == "Stoke-on-Trent", job.city
+
+    keep, why = match(job, _cfg(salary_floor=None))
+    assert keep is True, why
+
+
+def test_a_reed_role_outside_the_uk_is_not_relabelled_as_british():
+    """The country is only added where the location does not already name one.
+    screen.py does not split a location on the comma and tests the UK marker
+    first, so "Dublin, United Kingdom" would file an Irish role as British and
+    walk it straight through a UK-only filter."""
+    from jobradar.adapters.platforms import parse_reed
+    from jobradar.screen import enrich
+
+    payload = {"results": [dict(REED_SEARCH["results"][0], jobId=1,
+                                locationName="Dublin")]}
+    job = enrich(next(iter(parse_reed(payload, _reed_src()))))
+    assert job.location == "Dublin", job.location
+    assert job.country == "IE", job.country
+
+
+def test_a_reed_hybrid_role_is_not_reported_as_remote():
+    """Reed has no remote field of any kind, so the arrangement is only ever in
+    the words, and adverts say "hybrid" and "remote" in the same sentence.
+    Reading the first keyword that matches marks an office-based role remote,
+    which is the one thing a remote filter must never do."""
+    from jobradar.adapters.platforms import parse_reed
+    from jobradar.screen import enrich
+
+    job = enrich(next(iter(parse_reed(REED_SEARCH, _reed_src()))))
+    assert job.remote is False, "hybrid is not remote"
+    assert job.work_mode == "hybrid", job.work_mode
+
+
+def test_a_reed_work_from_home_listing_keeps_its_country():
+    """Reed employers put the arrangement in the location field instead of a
+    place: "Work From Home" is a real `locationName`. Left alone it became the
+    city on the dashboard and a facet you could filter by, and appending the
+    country to it read no better. Rewritten to "Remote" it is a phrase
+    screen.py already knows is not a city, and keeping ", United Kingdom" on
+    the end stops the role skipping the country check as an employer who
+    named nowhere."""
+    from jobradar.adapters.platforms import parse_reed
+    from jobradar.screen import enrich, match
+
+    for typed in ("Work From Home", "Homeworking", "Home Based", "Remote"):
+        payload = {"results": [dict(REED_SEARCH["results"][0], jobId=2,
+                                    locationName=typed,
+                                    jobDescription="Fully remote role.")]}
+        job = enrich(next(iter(parse_reed(payload, _reed_src()))))
+        assert job.location == "Remote, United Kingdom", (typed, job.location)
+        assert job.city == "", (typed, job.city)
+        assert job.country == "UK", (typed, job.country)
+        assert job.remote is True
+        keep, why = match(job, _cfg(salary_floor=None))
+        assert keep is True, why
+
+
+def test_an_unlabelled_reed_day_rate_is_not_read_as_an_annual_salary():
+    """Reed's search endpoint returns `minimumSalary` and `maximumSalary` as
+    bare numbers with no period; only the per-job details endpoint carries
+    `salaryType`. Taking 650 at face value reads a £650 a day contract as £650
+    a year and drops it against any floor at all. So a figure too small to be
+    an annual salary is left unconfirmed, which can never disqualify a role,
+    and the advert text gets a second go at it because that does say
+    "per day"."""
+    from jobradar.adapters.platforms import parse_reed
+    from jobradar.salary import from_reed
+
+    bare = from_reed({"minimumSalary": 650.0, "maximumSalary": 700.0,
+                      "currency": "GBP"})
+    assert bare.confirmed is False, "an unlabelled 650 is not an annual salary"
+
+    payload = {"results": [dict(REED_SEARCH["results"][0], jobId=3,
+                                minimumSalary=650.0, maximumSalary=700.0,
+                                jobDescription=("Interim engineering manager, "
+                                                "£650 - £700 per day, outside "
+                                                "IR35."))]}
+    job = next(iter(parse_reed(payload, _reed_src())))
+    assert job.salary.confirmed is True
+    assert job.salary.period == "day" and job.salary.max == 700
+    assert job.salary.annualised() == 154000
+    assert clears_floor(job.salary, 140000, "GBP")[0] is True
+
+
+def test_a_reed_salary_type_is_used_when_the_details_endpoint_gives_one():
+    """The details endpoint states `salaryType` and its own annualisation.
+    Reed's figures beat ours, and a weekly or monthly rate has no `period` to
+    live in, so it is annualised rather than dropped: a rate this tool cannot
+    express is a rate the floor cannot act on, which quietly loses the role."""
+    from jobradar.salary import from_reed
+
+    hourly = from_reed({"minimumSalary": 45.0, "maximumSalary": 60.0,
+                        "currency": "GBP", "salaryType": "per hour"})
+    assert hourly.confirmed and hourly.period == "hour"
+    assert hourly.annualised() == 60 * 220 * 8
+
+    monthly = from_reed({"minimumSalary": 9000.0, "maximumSalary": 11000.0,
+                         "currency": "GBP", "salaryType": "per month"})
+    assert monthly.confirmed and monthly.period == "year"
+    assert (monthly.min, monthly.max) == (108000.0, 132000.0)
+
+    yearly = from_reed({"minimumSalary": 45.0, "maximumSalary": 60.0,
+                        "yearlyMinimumSalary": 79200.0,
+                        "yearlyMaximumSalary": 105600.0,
+                        "currency": "GBP", "salaryType": "per hour"})
+    assert yearly.period == "year" and yearly.max == 105600.0, \
+        "Reed's own annualisation wins over doing it here"
+
+
+def test_a_reed_role_with_a_hidden_salary_is_shown_not_dropped():
+    """Reed lets an employer hide the salary, and then none of the salary
+    fields are populated. That is "no figure was published", not a parse
+    failure, and only a confirmed figure may disqualify a role. Returning a
+    zero or a confirmed empty band would hide every one of them behind the
+    floor."""
+    from jobradar.adapters.platforms import parse_reed
+
+    payload = {"results": [dict(REED_SEARCH["results"][0], jobId=4,
+                                minimumSalary=None, maximumSalary=None,
+                                currency=None)]}
+    job = next(iter(parse_reed(payload, _reed_src())))
+    assert job.salary.confirmed is False
+    assert job.salary.label() == "unconfirmed salary"
+    assert clears_floor(job.salary, 140000, "GBP")[0] is True
+
+
+def test_an_empty_reed_search_is_not_a_parse_failure():
+    """Reed documents that "if no jobs match the search parameters an empty
+    list will be returned", and a misspelled keyword returns the same thing.
+    Liveness here is the result count and never a status code, exactly as with
+    Ashby and Breezy. A missing key is the one case that is loud: Reed answers
+    401, which cannot be mistaken for a quiet day on the board."""
+    from jobradar import adapters
+
+    src = _reed_src()
+    assert adapters.detect(src.url).name == "reed"
+    assert adapters.parse({"results": [], "totalResults": 0}, src) == []
+    assert adapters.parse({}, src) == []
+    assert len(adapters.parse(REED_SEARCH, src)) == 1
+
+
+def test_reed_asks_for_direct_employers_and_expands_per_title():
+    """Reed lists the same vacancy once per agency holding it, and the API
+    exposes no per-result flag saying which sort of listing you have: it is a
+    request filter or nothing. So the filter has to be in the built URL. And
+    Reed is a search, not a board, so shipping it with a fixed keyword would
+    ship whoever wrote it their own job titles, which is the bug NHS Jobs
+    already had."""
+    from jobradar import adapters
+    from jobradar.models import Source
+    from jobradar.sources import expand_templates
+
+    built = adapters.by_name("reed").build("engineering manager")
+    assert "postedByDirectEmployer=true" in built
+    assert adapters.detect(built).name == "reed"
+
+    tmpl = Source(company="Reed", platform="reed", keyword_template=True,
+                  url="https://www.reed.co.uk/api/1.0/search?keywords={keyword}")
+    out = expand_templates([tmpl], ["engineering manager", "head of engineering"])
+    assert len(out) == 2
+    assert out[0].url.endswith("keywords=engineering+manager")
+    assert all("{keyword}" not in s.url for s in out)
+
+
+def test_a_reed_repost_does_not_beat_the_employers_own_board():
+    """The same role arriving from Reed and from the employer's own Greenhouse
+    board is one job, and the copy to keep is the employer's: it has the real
+    apply URL rather than a reed.co.uk redirect. `screen.dedupe` already
+    collapses these on company plus title, and it must not need a second
+    deduplication scheme bolted on beside it."""
+    from jobradar.screen import dedupe, directness
+
+    reed = Job(company="Bet365", title="Engineering Manager",
+               url="https://www.reed.co.uk/jobs/engineering-manager/40227781",
+               platform="reed", location="Stoke-on-Trent, United Kingdom")
+    own = Job(company="Bet365", title="Engineering Manager",
+              url="https://boards.greenhouse.io/bet365/jobs/1",
+              platform="greenhouse", location="Stoke-on-Trent",
+              description="x" * 400)
+
+    out = dedupe([reed, own])
+    assert len(out) == 1, "one role, listed twice"
+    assert out[0].platform == "greenhouse", "the employer's own board wins"
+    assert directness("reed") <= directness("greenhouse")
+
+    # KNOWN GAP, and it lives in screen.py, which this change did not touch.
+    # directness() is {"linkedin": 0, "nhs": 1} with everything else 2, so
+    # "reed" currently TIES with a real applicant tracking system and the
+    # winner above is settled by the next key, description length. Reed's
+    # search endpoint does return advert text, so a Reed repost carrying a
+    # fuller description than the employer's own board would take the row and
+    # the reader would follow a reed.co.uk redirect instead of the real apply
+    # form. The fix is one line: {"linkedin": 0, "nhs": 1, "reed": 1}. This
+    # test keeps passing either way; it is the assertion above that gets
+    # stronger once that lands.
+
+
+def test_reed_is_skipped_with_a_message_when_there_is_no_api_key():
+    """Without a key Reed can only answer 401, and a 401 arriving through the
+    ordinary fetch path is reported next to genuinely broken boards as "could
+    not be read", which tells the reader nothing about the one thing they have
+    to do. So it never gets sent, and the error says where the free key is."""
+    from jobradar.fetch import fetch_reed
+
+    res = fetch_reed(_reed_src(), "")
+    assert res.ok is False
+    assert "REED_API_KEY" in res.error and "developers/jobseeker" in res.error
+
+
+def test_a_reed_key_is_read_from_the_config_file_or_the_environment():
+    """Two kinds of user and neither route serves the other: locally the key
+    belongs in config.local.yaml, which is gitignored, and in GitHub Actions
+    there is no local file and it arrives as a secret in the environment.
+    Reading only one of the two strands the other. The file wins, so a stale
+    export in a shell cannot override the key someone just wrote down."""
+    import os
+    from jobradar.config import _api_key
+
+    before = os.environ.pop("REED_API_KEY", None)
+    try:
+        assert _api_key(None, "REED_API_KEY") == ""
+        assert _api_key("  from-file  ", "REED_API_KEY") == "from-file"
+        os.environ["REED_API_KEY"] = "from-env"
+        assert _api_key(None, "REED_API_KEY") == "from-env"
+        assert _api_key("from-file", "REED_API_KEY") == "from-file"
+    finally:
+        os.environ.pop("REED_API_KEY", None)
+        if before is not None:
+            os.environ["REED_API_KEY"] = before
+
+
+def test_a_reed_key_never_travels_in_the_url():
+    """Reed authenticates with HTTP Basic, the key as the username and an empty
+    password. Putting it in the query string instead would write it into every
+    saved source list, every error message and every log line, and the source
+    list is a file this repo publishes."""
+    import base64
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    seen = []
+
+    class FakeSession:
+        auth = None
+        def get(self, url, headers=None, timeout=None):
+            seen.append((url, self.auth))
+            class R:
+                status_code = 200
+                headers = {"Content-Type": "application/json"}
+                text = "{}"
+                @staticmethod
+                def json():
+                    return {"results": [REED_SEARCH["results"][0]],
+                            "totalResults": 1}
+            return R()
+
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_reed(_reed_src(), "sekrit")
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert res.ok and len(res.payload["results"]) == 1
+    url, auth = seen[0]
+    assert "sekrit" not in url, url
+    assert auth == ("sekrit", ""), "key is the Basic username, password empty"
+    # requests turns that tuple into `Authorization: Basic <base64 of "key:">`,
+    # which is Reed's documented scheme: key as the username, empty password.
+    assert base64.b64encode(b"sekrit:").decode() == "c2Vrcml0Og=="
+    # And the paging parameters go on the request, not on the stored source.
+    assert "resultsToTake=100" in url and "resultsToSkip=0" in url
+    assert res.source.url == _reed_src().url, (
+        "the result must carry the ORIGINAL source: the state file and the "
+        "throttle check key on source.url, and a URL with resultsToSkip in it "
+        "is a different key on every page")
+
+
+def test_validate_does_not_call_reed_dead_for_want_of_a_key():
+    """`validate` carries no credentials, so it cannot speak to Reed at all
+    and always gets a 401. Reported as a bare "HTTP 401" that reads as a
+    broken source, and would have anyone with a perfectly good key in their
+    config hunting a fault that is not there. It must also come back
+    `unreachable` and never `dead`, because `validate --prune` deletes what
+    looks dead."""
+    import jobradar.discover as disc
+
+    src = _reed_src()
+    src.keyword_template = False
+
+    def fake_fetch_one(s, **kw):
+        from jobradar.fetch import Result
+        return Result(s, error="HTTP 401", status=401)
+
+    import jobradar.fetch as fetch_mod
+    old, fetch_mod.fetch_one = fetch_mod.fetch_one, fake_fetch_one
+    try:
+        n, jobs, why = disc.count_jobs(src)
+        row = disc.validate_source(src)
+    finally:
+        fetch_mod.fetch_one = old
+
+    assert (n, jobs) == (0, [])
+    assert "API key" in why and "validate" in why, why
+    assert row["verdict"] == "unreachable", row

@@ -72,8 +72,40 @@ sources:
   use_bundled: true
   # Limit the bundled list by country. Empty means all.
   countries: []
+
+  # Reed (reed.co.uk) is the one source that needs a credential, and the only
+  # aggregator here besides LinkedIn. Everything else in the bundled list is
+  # one employer's own job board, which only reaches employers somebody has
+  # added; Reed is searched by keyword and reaches its whole UK market at
+  # once, which is where the mid-size employers are.
+  #
+  # The key is free: fill in the short form at
+  # https://www.reed.co.uk/developers/jobseeker and it is emailed to you.
+  # There is no card and no paid tier. Leave this empty and the Reed source
+  # below is skipped with a message; nothing else changes.
+  #
+  # DO NOT put a real key here if this file is `config.yaml`: that one is
+  # committed. Put it in `config.local.yaml`, which is gitignored, or leave
+  # this blank and export REED_API_KEY instead.
+  reed_api_key: ""
+
   # Boards you added yourself, or that `job-radar discover --add` found.
   extra: []
+    # Reed. Uncomment to switch it on. `{keyword}` is expanded into one search
+    # per entry in titles.include, the same way NHS Jobs works, so this single
+    # line becomes up to six searches.
+    #
+    # `postedByDirectEmployer=true` asks Reed for employers only. Reed lists
+    # the same vacancy once per agency that has been given it, and the API
+    # exposes no per-result flag saying which sort of listing you are looking
+    # at, so the query is the only place the duplicates can be cut. Swap it
+    # for `postedByRecruitmentAgency=true`, or drop it entirely, if you do
+    # want agency listings.
+    # - company: Reed
+    #   url: "https://www.reed.co.uk/api/1.0/search?keywords={keyword}&postedByDirectEmployer=true"
+    #   platform: reed
+    #   country: UK
+    #   keyword_template: true
 
 output:
   formats: [html, json]

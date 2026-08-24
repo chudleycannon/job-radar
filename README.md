@@ -65,6 +65,80 @@ so postings appear there first and appear once.
 The trade is coverage. This only sees employers on the list, which is why
 `discover` exists.
 
+### The one aggregator worth the trouble: Reed
+
+That coverage gap is real and it does not close by adding employers one at a
+time. A mid-size British employer running a careers page nobody has harvested
+is invisible to every source above, and a lot of them advertise on Reed.
+
+Reed is in for one reason the other aggregators are not: it publishes a
+[documented REST API](https://www.reed.co.uk/developers/jobseeker) and hands
+out a free key for it. No scraping, no browser, no working around a bot check.
+It is off by default and it does nothing until you switch it on.
+
+**Getting a key.** Fill in the three-field form at
+<https://www.reed.co.uk/developers/jobseeker> (first name, last name, email)
+and it is emailed to you. Free, no card, no paid tier. Then either:
+
+```yaml
+sources:
+  reed_api_key: ""       # put it here in config.local.yaml, which is gitignored
+  extra:
+    - company: Reed
+      url: "https://www.reed.co.uk/api/1.0/search?keywords={keyword}&postedByDirectEmployer=true"
+      platform: reed
+      country: UK
+      keyword_template: true
+```
+
+or leave `reed_api_key` blank and export `REED_API_KEY` instead, which is what
+GitHub Actions wants. **Never put a real key in `config.yaml`.** That file is
+committed; `config.local.yaml` is not. With no key the Reed source is skipped
+and the scan says so by name.
+
+`{keyword}` expands into one search per entry in `titles.include`, the same
+way NHS Jobs works, so that single line becomes up to six searches.
+
+**What to expect from it.** These are aggregator listings and they are not the
+equal of an employer's own board:
+
+- **The apply link goes through reed.co.uk**, not the employer's form. Every
+  Reed role is flagged so you can see which kind of link you are following.
+- **`employerName` is whoever posted the job.** On an agency listing that is
+  the agency, so the company name on the row may not be the company you would
+  be working for. `postedByDirectEmployer=true` in the URL above asks Reed for
+  employers only, which is the shipped default. Take it out if you want the
+  agency listings too.
+- **Duplicates.** The same vacancy is listed once per agency that has it.
+  Filtering to direct employers cuts most of that at the query; the rest is
+  handled by the existing dedupe, which collapses roles on company and title
+  and prefers the more direct source. A role that reaches you from both Reed
+  and the employer's own Greenhouse board should show up once.
+- **Salary needs care.** The search endpoint gives numbers with no period
+  attached, so a bare `650` might be a year or a day. Anything under 2,000 is
+  treated as an unlabelled rate and left unconfirmed rather than annualised on
+  a guess, which means it is shown to you and cannot be used to disqualify the
+  role. Reed also lets an employer hide the salary, in which case nothing
+  comes back at all, which is the same as any other board.
+
+### Indeed is not in, and will not be
+
+Indeed retired its public Publisher API and did not replace it with anything
+self-serve. What is left is partner-gated and employer-side, granted "entirely
+in Indeed's sole discretion" after an approval process, and its terms say you
+"shall not embed the Indeed API in third party systems". There is no keyed
+route in for a tool like this one.
+
+The public site is not a route either. A plain, honest, identified GET to
+`uk.indeed.com/jobs` answers **403** with "Security Check ... Additional
+Verification Required. Please enable JavaScript to complete the security
+check." The RSS path is gone (404, and disallowed in robots.txt besides).
+Getting past that check means rotating user agents, driving a headless
+browser, or paying a proxy service to launder the requests, which is a
+different activity from reading a published feed and is not something this
+repo is going to do. Indeed is actively refusing automated access, and the
+answer to that is to take no for an answer.
+
 ---
 
 ## What it does
@@ -365,6 +439,7 @@ the adapters are shaped the way they are.
 | **Avature** | Absolute hrefs to `/JobDetail/`, and the location is only in the slug. |
 | **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. |
 | **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
+| **Reed** | The one source that needs a credential: a free API key, sent as the **HTTP Basic username with an empty password**, which is Reed's own documented scheme. Unkeyed requests are **401**, which is the good news, because a 401 cannot be mistaken for "no jobs today". A search that matched nothing is **200 with an empty `results` list**, and so is a nonsense keyword, so liveness is the result count. Pages are capped at **100** and walked with `resultsToSkip`. The catch is salary: the **search endpoint returns `minimumSalary` / `maximumSalary` with no period at all** (only the per-job details endpoint carries `salaryType`), so a bare `650` could be a year or a day. Anything under 2,000 is read as an unlabelled rate and left **unconfirmed** rather than annualised wrongly, and the advert text gets a second go at it. `locationName` is free text, so most of it is towns and counties the location matcher has never heard of ("Stoke-on-Trent", "Cambridgeshire"), and the country has to be added by the adapter or a UK-filtered search drops the lot. There is **no remote field**, and `employerName` is whoever posted the job, which on an agency listing is the agency. |
 
 **Tokens rarely match company names.** `mymoose` is Rapid7. `evergreenix` is
 Garrison. `knowbe4` is Egress. `primer.io` is Primer. This is why `discover`
@@ -528,6 +603,7 @@ generic agent:
 |---|---|
 | NHS Jobs, Serco and Thales (Phenom), Transport for London (SuccessFactors), Metro Bank (Avature), OSB Group (iCIMS) | allowed |
 | **LinkedIn** (`jobs-guest` endpoint) | **`Disallow: /`** |
+| **Reed** (`/api/1.0/search`) | allowed. `User-agent: *` has no `/api/` rule; only `PerplexityBot` is disallowed from it. |
 
 So the bundled LinkedIn source fetches a path LinkedIn's robots.txt tells
 crawlers not to. It is one entry that gets expanded into one search per job
@@ -546,6 +622,20 @@ the single entry with `"platform": "linkedin"` from `sources/sources.json`, or
 set `sources.use_bundled: false` and list your own. `scan --no-enrich` turns
 off the per-role fetch on its own. Everything else in the tool works without
 any of it.
+
+**Reed is not the same case as LinkedIn, despite both being read over an
+API.** Reed's `robots.txt` allows `/api/` for `User-agent: *`; the only agent
+disallowed from it is `PerplexityBot`. Reed also publishes that exact path as
+a developer API, documents it, and runs a signup form to hand out the key it
+requires, so a key is a permission rather than a workaround.
+
+Their Website Terms and Conditions contain **no anti-robot, anti-spider or
+anti-scraping clause at all**. What they restrict is load ("you must not ...
+seek to overload the system via spamming or flooding") and republication ("You
+may copy material on the Website for your own private or domestic purposes,
+but no copying for any commercial or business use is permitted"). A personal
+job search, keyed, at a handful of requests per run, is inside both.
+Publishing the listings you pull would not be.
 
 If you are running this at work, on shared infrastructure, or anywhere the
 consequences are not purely yours, read that table before you press go.

@@ -93,6 +93,7 @@ the untagged sources. Check with `job-radar coverage`.
 | `use_bundled` | true / false | |
 | `countries` | list of codes | Only filters sources that carry a country tag; most do not. |
 | `extra` | list | Either a bare URL string, or `{company, url, platform}`. `job-radar discover <name> --add` writes these for you. |
+| `reed_api_key` | string | Free key from <https://www.reed.co.uk/developers/jobseeker>, needed only if you add the Reed source. Falls back to the `REED_API_KEY` environment variable when blank, which is the route for GitHub Actions. **Put a real key in `config.local.yaml`, never in `config.yaml`**: the second one is committed. Blank means the Reed source is skipped, with a message naming it. |
 
 ## output
 

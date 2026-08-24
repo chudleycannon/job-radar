@@ -45,10 +45,21 @@ def cmd_scan(args) -> int:
     if len(cfg.titles_include) > 6:
         _say(f"  note: only the first 6 of your {len(cfg.titles_include)} titles "
              f"are used as search terms (Workday uses 3). Order matters.")
+    # Reed is the one source that needs a credential, and without one it can
+    # only 401. Say so here, once, by name: buried in the list of sources that
+    # "could not be read" it looks like a broken board rather than a two
+    # minute signup.
+    if not cfg.reed_api_key and any(s.platform == "reed" for s in srcs):
+        _say("  ! Reed is in your sources but there is no API key, so it will "
+             "be skipped.")
+        _say("    Free key: https://www.reed.co.uk/developers/jobseeker  "
+             "Then set sources.reed_api_key or $REED_API_KEY.")
+
     results = fetch_all(
         srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
         retries=cfg.retries, user_agent=cfg.user_agent,
-        search_terms=cfg.titles_include, on_result=tick,
+        search_terms=cfg.titles_include,
+        api_keys={"reed": cfg.reed_api_key}, on_result=tick,
     )
 
     all_jobs, counts, ok = [], {}, 0

@@ -230,6 +230,89 @@ def from_pinpoint(posting: dict | None) -> Salary:
     )
 
 
+# What Reed's `salaryType` says, in the vocabulary Salary understands.
+_REED_PERIOD = {
+    "per annum": "year", "annum": "year", "annual": "year", "annually": "year",
+    "per day": "day", "day": "day", "daily": "day",
+    "per hour": "hour", "hour": "hour", "hourly": "hour",
+}
+# Salary models only year, day and hour, so weekly and monthly rates are
+# annualised rather than dropped, exactly as from_pinpoint does: a rate this
+# tool cannot express is a rate the floor cannot act on, which quietly loses
+# the role.
+_REED_ANNUALISE = {"per week": 52.0, "week": 52.0, "weekly": 52.0,
+                   "per month": 12.0, "month": 12.0, "monthly": 12.0}
+
+# Reed's SEARCH endpoint returns `minimumSalary` and `maximumSalary` as bare
+# numbers with no period at all; only the per-job details endpoint carries
+# `salaryType`. So a figure off the search endpoint has to be read for what it
+# plainly is. Nothing below this can be a UK annual salary (the National
+# Minimum Wage alone puts a full-time year several times higher, and even a few
+# hours a week runs to thousands), while senior contract day rates top out
+# somewhere near 1,500. So a number under this is a rate Reed has not labelled,
+# and treating it as an annual figure would read a 650 a day contract as 650 a
+# year and bin it against any floor at all.
+_REED_MIN_ANNUAL = 2000.0
+
+
+def from_reed(job: dict | None) -> Salary:
+    """Reed publishes pay as numbers, but which numbers depends on the endpoint.
+
+    The details endpoint states `yearlyMinimumSalary` / `yearlyMaximumSalary`,
+    which is Reed's own annualisation and is preferred over doing it here.
+    The search endpoint states neither those nor `salaryType`, so an unlabelled
+    figure is only trusted as annual when it is big enough to be one.
+
+    An unlabelled rate comes back UNCONFIRMED rather than as a guess. That is
+    the safe direction: an unconfirmed salary is shown to the reader and can
+    never disqualify a role, whereas a wrongly annualised one silently deletes
+    it. `parse_reed` then gets a second go at it from the advert text, which
+    does say "per day".
+
+    Reed also lets an employer hide the salary, in which case none of these
+    fields are populated at all. That is "the employer published no figure",
+    not a parse failure, and it must stay unconfirmed for the same reason.
+    """
+    if not isinstance(job, dict):
+        return Salary()
+
+    def _amt(key):
+        v = job.get(key)
+        try:
+            return float(v) if v is not None and float(v) > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    raw = str(job.get("salary") or "").strip()[:120] or None
+    currency = str(job.get("currency") or "").strip().upper() or None
+
+    lo, hi = _amt("yearlyMinimumSalary"), _amt("yearlyMaximumSalary")
+    period = "year"
+    if lo is None and hi is None:
+        lo, hi = _amt("minimumSalary"), _amt("maximumSalary")
+        stype = str(job.get("salaryType") or "").strip().lower()
+        mult = _REED_ANNUALISE.get(stype)
+        if mult is not None:
+            lo = lo * mult if lo is not None else None
+            hi = hi * mult if hi is not None else None
+        elif stype:
+            period = _REED_PERIOD.get(stype, "year")
+        else:
+            top = hi if hi is not None else lo
+            if top is not None and top < _REED_MIN_ANNUAL:
+                return Salary(min=lo, max=hi if hi is not None else lo,
+                              currency=currency, period="year", raw=raw,
+                              confirmed=False)
+
+    if lo is None and hi is None:
+        return parse_text(raw)
+
+    return Salary(
+        min=lo, max=hi if hi is not None else lo, currency=currency,
+        period=period, raw=raw, confirmed=True,
+    )
+
+
 def clears_floor(sal: Salary, floor: float | None, currency: str | None = None) -> tuple[bool, str]:
     """Apply the rule. Returns (keep, why).
 

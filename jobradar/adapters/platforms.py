@@ -18,7 +18,8 @@ from typing import Any, Iterator
 from urllib.parse import unquote, urljoin, urlparse
 
 from ..models import Job, Salary, Source
-from ..salary import from_ashby, from_greenhouse, from_pinpoint, parse_text
+from ..salary import (from_ashby, from_greenhouse, from_pinpoint, from_reed,
+                       parse_text)
 
 _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
@@ -1364,3 +1365,150 @@ def parse_icims(payload: Any, src: Source) -> Iterator[Job]:
             source_id=src.key,
             flags=["not screened: search listing only, open the advert"],
         )
+
+
+# --------------------------------------------------------------------------
+# Reed
+# --------------------------------------------------------------------------
+def _screen():
+    """screen.py, imported on first use rather than at module import.
+
+    The adapter layer sits below the filter chain, and importing screen.py at
+    the top of this file would make `import jobradar.adapters` drag in
+    config.py behind it. config.py already defers its own screen.py import for
+    the same reason, and this is the other half of that arrangement.
+    """
+    from .. import screen
+    return screen
+
+
+# Reed employers put the working arrangement in the location field instead of
+# a place. screen.py knows "Remote" is not a city and knows to look in the
+# body for the country; it does not know these spellings, so "Work From Home"
+# came out as the city on the dashboard and as a facet you could filter by.
+_REED_NOT_A_PLACE = re.compile(
+    r"^\s*(?:work[\s-]?from[\s-]?home|homeworking|home[\s-]?based|home[\s-]?working|"
+    r"wfh|remote(?:\s*working)?)\s*$", re.I)
+
+
+def _reed_location(name: str) -> str:
+    """Reed states a town and nothing else, so the country has to be added.
+
+    reed.co.uk is a UK site and `locationName` is free text the employer
+    typed: "Stoke-on-Trent", "Cambridgeshire", "City of London". screen.py
+    resolves a country from a location string against a city list, and that
+    list cannot hold every town and county in Britain: "Stoke-on-Trent" and
+    "Cambridgeshire" both resolve to no country at all, and `match` drops a
+    posting whose location it cannot place whenever the user has set
+    `locations.countries`. Which is every UK user, on the majority of the
+    listings, silently.
+
+    So the country is named outright. Only where the location does not already
+    name one, because Reed does carry a handful of overseas roles and
+    "Dublin, United Kingdom" would file an Irish job as British: the UK marker
+    is tested first, and screen.py does not split a location on the comma.
+    """
+    name = (name or "").strip()
+    if not name:
+        return "United Kingdom"
+    if _REED_NOT_A_PLACE.match(name):
+        # Keep the country. A Reed listing is a UK listing, and "Remote" on
+        # its own is read downstream as "the employer named no country",
+        # which sends the role past the country filter untested.
+        return "Remote, United Kingdom"
+    if _screen()._countries_in(name):
+        return name
+    return f"{name}, United Kingdom"
+
+
+def parse_reed(payload: Any, src: Source) -> Iterator[Job]:
+    """Reed's jobseeker API: https://www.reed.co.uk/api/1.0/search
+
+    The first aggregator here that is neither an employer's own board nor an
+    HTML page, and the reason it earns a place is coverage. Every other source
+    is one employer's applicant tracking system, which reaches an employer only
+    once somebody has added them; Reed is keyword-driven and reaches the whole
+    of its UK market at once, including the mid-size employers who never
+    appear on an enumerable board.
+
+    What that costs, and what is done about it:
+
+      * The same role is listed many times, usually once per agency. Reed
+        answers that at the query, not here: `postedByDirectEmployer=true`
+        asks for employers only, which is what the shipped source uses. Where
+        two copies do reach the pipeline, `screen.dedupe` collapses them on
+        company plus title and keeps the more direct platform.
+      * `employerName` is whoever posted it. On an agency listing that is the
+        agency, not the employer, so these roles cannot be trusted to name the
+        company they are actually for.
+      * The apply link is a reed.co.uk page rather than the employer's own
+        form. Only the per-job details endpoint carries `externalUrl`, and
+        that is one request per role. Each posting is flagged so the reader
+        knows which kind of link they are following.
+
+    Two failure modes worth stating. An empty `results` list means a search
+    that matched nothing, which is also what a search for something misspelled
+    returns, so liveness here is a result count and never a status code. And a
+    missing or wrong API key is a 401, not an empty list, which is the one
+    piece of good news: it cannot be mistaken for "no jobs today".
+    """
+    items = payload.get("results") if isinstance(payload, dict) else payload
+    for j in items or []:
+        if not isinstance(j, dict):
+            continue
+
+        title = _text(j.get("jobTitle"))
+        url = _text(j.get("jobUrl"))
+        if not url and j.get("jobId") is not None:
+            url = f"https://www.reed.co.uk/jobs/{j['jobId']}"
+        if not (title and url):
+            continue
+
+        desc = _text(j.get("jobDescription") or j.get("description"))
+        location = _reed_location(_text(j.get("locationName")))
+
+        sal = from_reed(j)
+        if not sal.confirmed:
+            # Second go at an unlabelled rate. from_reed will not guess
+            # whether a bare 650 is a day rate or an hourly one, but the
+            # advert almost always spells it out, and parse_text reads
+            # "per day" and "per hour".
+            from_advert = parse_text(desc[:1500], default_currency=sal.currency)
+            if from_advert.confirmed:
+                sal = from_advert
+
+        # Reed has no remote field of any kind, so the working arrangement can
+        # only come from the words. Ask screen.py rather than re-deriving it:
+        # it checks hybrid BEFORE remote, which is what stops a "hybrid, 2 days
+        # in the London office" advert being handed to a remote filter as a
+        # remote job on the strength of containing the word.
+        probe = Job(company="", title=title, url=url, platform="reed",
+                    location=location, description=desc)
+        mode = _screen().work_mode(probe)
+        if mode == "remote":
+            remote: bool | None = True
+        elif mode in ("hybrid", "office"):
+            remote = False
+        else:
+            remote = _remote(location, title)
+
+        job = Job(
+            company=_text(j.get("employerName")) or "Unknown employer",
+            title=title,
+            url=url,
+            platform="reed",
+            location=location,
+            remote=remote,
+            department=None,
+            # Reed writes dates as dd/MM/yyyy, which `_iso` already handles.
+            # `date` is the search field and `datePosted` the details one.
+            posted_at=_iso(j.get("date") or j.get("datePosted")),
+            description=desc,
+            salary=sal,
+            source_id=src.key,
+        )
+        job.flags.append("listed on Reed; the apply link goes via reed.co.uk")
+        exp = _text(j.get("expirationDate"))
+        if exp:
+            job.flags.append(f"closes {exp}")
+        yield job

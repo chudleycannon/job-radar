@@ -630,7 +630,15 @@ def score(job: Job, cfg: Config) -> float:
 # is a copy, usually with no description, sometimes reposted by an agency. So
 # when the same job arrives twice, keep the one closest to the employer.
 def directness(platform: str) -> int:
-    return {"linkedin": 0, "nhs": 1}.get((platform or "").lower(), 2)
+    """How close a source is to the employer, for picking a dedupe winner.
+
+    An aggregator scores below an employer's own board. Reed sits with NHS
+    Jobs rather than with Greenhouse: it carries full advert text, so leaving
+    it at the default would let a Reed repost beat the employer's own posting
+    on description length alone and hand the reader a redirect instead of the
+    real apply page.
+    """
+    return {"linkedin": 0, "nhs": 1, "reed": 1}.get((platform or "").lower(), 2)
 
 
 def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
