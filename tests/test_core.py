@@ -2411,3 +2411,697 @@ def test_every_platform_with_a_fetcher_is_actually_enriched():
     got = {r["platform"] for r in enrich_mod.candidates(con)}
     assert got == set(enrich_mod.FETCHERS), \
         f"platforms with a fetcher but no candidate query: {set(enrich_mod.FETCHERS) - got}"
+
+
+# ------------------------------------------------------------------ lever EU
+# Trimmed from a real response to
+# https://api.eu.lever.co/v0/postings/innogames?mode=json, recorded 2026-08-24.
+# The US host answers 404 for this same token.
+LEVER_EU = [{
+    "id": "43c99485-0591-41ac-ba64-2d898e348a37",
+    "text": "CRM & Monetization Manager for Forge of Empires",
+    "categories": {"commitment": "Full-time", "location": "Hamburg",
+                   "team": "CRM", "allLocations": ["Hamburg"]},
+    "country": "DE",
+    "workplaceType": "hybrid",
+    "createdAt": 1779094121616,
+    "descriptionPlain": "Join us as a CRM & Monetization Manager for our "
+                        "Free-to-Play title Forge of Empires.",
+    "lists": [{"text": "Your mission",
+               "content": "<ul><li>Monetization strategy.</li></ul>"}],
+    "hostedUrl": "https://jobs.eu.lever.co/innogames/43c99485-0591-41ac-ba64-2d898e348a37",
+    "applyUrl": "https://jobs.eu.lever.co/innogames/43c99485-0591-41ac-ba64-2d898e348a37/apply",
+}]
+
+
+def test_a_european_lever_board_is_built_against_the_eu_host():
+    """Lever runs two deployments that share no data. The registry held one
+    Lever entry hardcoded to api.lever.co, so every European board 404ed and
+    was counted as having zero live postings. That is the exact condition
+    `validate --prune` deletes a source on, so 44 real employers were one
+    maintenance run away from being dropped off the list."""
+    from jobradar import adapters
+
+    assert adapters.by_name("lever_eu").build("seb") == \
+        "https://api.eu.lever.co/v0/postings/seb?mode=json"
+    assert adapters.by_name("lever").build("seb") == \
+        "https://api.lever.co/v0/postings/seb?mode=json"
+
+
+def test_the_two_lever_hosts_never_match_each_others_urls():
+    """`detect` returns the first entry whose pattern matches, so if the US
+    pattern also matched an EU URL the EU boards would silently be fetched
+    with the wrong builder on any re-derivation. `api.lever.co` is not a
+    substring of `api.eu.lever.co`, and this is the test that keeps it that
+    way if either pattern is ever edited."""
+    from jobradar import adapters
+
+    assert adapters.detect(
+        "https://api.eu.lever.co/v0/postings/seb?mode=json").name == "lever_eu"
+    assert adapters.detect(
+        "https://api.lever.co/v0/postings/seb?mode=json").name == "lever"
+
+
+def test_a_european_lever_posting_reads_as_an_ordinary_lever_job():
+    """The EU host returns byte-identical JSON, so `lever_eu` shares
+    `parse_lever` and the jobs it yields must stay stamped `lever`. Stamping
+    them `lever_eu` would split one ATS into two platforms everywhere
+    downstream that groups or filters by platform, for no gain."""
+    from jobradar import adapters
+    from jobradar.models import Source
+
+    src = Source(company="InnoGames", platform="lever_eu",
+                 url="https://api.eu.lever.co/v0/postings/innogames?mode=json")
+    jobs = adapters.parse(LEVER_EU, src)
+
+    assert len(jobs) == 1
+    assert jobs[0].platform == "lever"
+    assert jobs[0].title == "CRM & Monetization Manager for Forge of Empires"
+    assert jobs[0].location == "Hamburg"
+    assert jobs[0].url.startswith("https://jobs.eu.lever.co/innogames/")
+    assert "Monetization strategy" in jobs[0].description
+
+
+def test_a_lever_token_keeps_the_case_the_careers_page_gave_it():
+    """Lever tokens are case-sensitive on the wire: `Expana` answers 200 and
+    `expana` answers 404. `_scan` reads the token straight off the page, so
+    lowercasing it anywhere between the page and the builder turns a live
+    board into a dead one, and the crawl-extracted list contains exactly such
+    a token."""
+    from jobradar import discover
+
+    hits = discover._scan(
+        '<a href="https://jobs.eu.lever.co/Expana">Careers</a>',
+        "https://expana.com/careers")
+    eu = [h for h in hits if h[0] == "lever_eu"]
+
+    assert eu, hits
+    assert eu[0][1] == "Expana"
+    assert eu[0][2] == "https://api.eu.lever.co/v0/postings/Expana?mode=json"
+    # The US signature must not also fire on an EU careers link, or every EU
+    # board would be offered a second time as a source that 404s.
+    assert not [h for h in hits if h[0] == "lever"], hits
+
+
+# ------------------------------------------------------------------ teamtailor
+# Trimmed from real responses to https://<company>.teamtailor.com/jobs.rss,
+# recorded 2026-08-24. Descriptions are cut down; every other field is verbatim.
+TEAMTAILOR_RSS = '''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:tt="https://teamtailor.com/locations">
+  <channel>
+    <title>Hill Group UK</title>
+    <description/>
+    <link>https://hillgroupuk.teamtailor.com/jobs</link>
+    <item>
+      <title>Accounts Assistant</title>
+      <description>&lt;p&gt;&lt;strong&gt;Role Overview&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;The Accounts Assistant supports the accounts team.&lt;/p&gt;</description>
+      <pubDate>Wed, 19 Aug 2026 16:47:00 +0100</pubDate>
+      <link>https://hillgroupuk.teamtailor.com/jobs/8243366-accounts-assistant</link>
+      <remoteStatus>none</remoteStatus>
+      <guid>37e46a21-6b9d-4519-9efd-a1da91a3d9da</guid>
+      <tt:locations>
+        <tt:location>
+          <tt:name>Head Office </tt:name>
+          <tt:address>The Power House</tt:address>
+          <tt:zip>EN9 1BN</tt:zip>
+          <tt:city>Waltham Abbey</tt:city>
+          <tt:country>United Kingdom</tt:country>
+        </tt:location>
+      </tt:locations>
+      <tt:department>Finance</tt:department>
+      <tt:role/>
+    </item>
+    <item>
+      <title>Performance Marketing Manager Specialist (Paid Media) - Boston (Hybrid)</title>
+      <description>&lt;p&gt;You will run paid media campaigns from our Boston office.&lt;/p&gt;</description>
+      <pubDate>Sat, 08 Aug 2026 11:07:17 +0200</pubDate>
+      <link>https://dolead.teamtailor.com/jobs/8194645-performance-marketing-manager</link>
+      <remoteStatus>hybrid</remoteStatus>
+      <guid>e4c9052d-cc1d-41e9-aa9b-922bf29691cf</guid>
+      <tt:locations>
+        <tt:location>
+          <tt:name>USA - BOSTON</tt:name>
+          <tt:address>625 Massachusetts Ave</tt:address>
+          <tt:zip>02139</tt:zip>
+          <tt:city>Cambridge</tt:city>
+          <tt:country>United States</tt:country>
+        </tt:location>
+      </tt:locations>
+      <tt:department>Traffic NAM</tt:department>
+      <tt:role>Performance Marketing Manager</tt:role>
+    </item>
+    <item>
+      <title>Marketing Operations Project Manager - Freelance S2 2026</title>
+      <description>&lt;p&gt;Freelance, working with our operations team.&lt;/p&gt;</description>
+      <pubDate>Mon, 17 Aug 2026 13:57:26 +0200</pubDate>
+      <link>https://dolead.teamtailor.com/jobs/8229014-marketing-operations-project-manager</link>
+      <remoteStatus>fully</remoteStatus>
+      <guid>2677c500-98c5-4ece-a5e1-7e4563dd0c83</guid>
+      <tt:locations>
+        <tt:location>
+          <tt:name>Full remote Latin America</tt:name>
+          <tt:address>Latin America</tt:address>
+          <tt:zip/>
+          <tt:city>South or Central America</tt:city>
+          <tt:country>Latin America</tt:country>
+        </tt:location>
+        <tt:location>
+          <tt:name>Full Remote</tt:name>
+          <tt:address>United States</tt:address>
+          <tt:zip/>
+          <tt:city>Remote</tt:city>
+          <tt:country>United States</tt:country>
+        </tt:location>
+      </tt:locations>
+      <tt:department>Marketing Operations (MOPS)</tt:department>
+      <tt:role/>
+    </item>
+  </channel>
+</rss>'''
+
+
+def _teamtailor_src(token="hillgroupuk", company="Hill Group UK"):
+    from jobradar.models import Source
+    return Source(company=company, platform="teamtailor",
+                  url=f"https://{token}.teamtailor.com/jobs.rss?per_page=200")
+
+
+def test_a_teamtailor_board_is_read_by_its_own_parser_not_the_generic_feed_one():
+    """The generic `rss` entry's pattern matches any URL ending `.rss`, and
+    `detect` returns the first entry that matches. If Teamtailor were ever
+    ordered below it, every board would be read by a parser that knows nothing
+    about remoteStatus, tt:country or tt:department, and the roles would look
+    plausible while being wrong about all three."""
+    from jobradar import adapters
+
+    url = "https://hillgroupuk.teamtailor.com/jobs.rss?per_page=200"
+    assert adapters.detect(url).name == "teamtailor"
+    assert adapters.by_name("teamtailor").build("hillgroupuk") == url
+
+
+def test_a_teamtailor_uk_role_lands_in_the_country_the_filters_ask_for():
+    """The other public feed, `/jobs.json`, gives the country as `GB`, which is
+    not what any country filter in this tool asks for, and a bare two-letter
+    code in a location string is worse than useless: twenty US state codes are
+    also ISO country codes. The RSS names the country in words, and this test
+    is what stops anyone "simplifying" the adapter onto the JSON feed."""
+    from jobradar.adapters.platforms import parse_teamtailor
+    from jobradar.screen import enrich
+
+    job = enrich(next(iter(parse_teamtailor(TEAMTAILOR_RSS, _teamtailor_src()))))
+    assert job.location == "Waltham Abbey, United Kingdom"
+    assert job.country == "UK", job.country
+
+
+def test_a_teamtailor_hybrid_role_is_not_reported_as_remote():
+    """`remoteStatus` is the only field that separates the two, and hybrid is
+    the common case rather than an edge case: 14 of the 16 roles on
+    Teamtailor's own board are hybrid. Reading anything else, such as the word
+    "remote" in the advert, marks an office-based role as remote, which is the
+    one thing a remote filter must never do."""
+    from jobradar.adapters.platforms import parse_teamtailor
+    from jobradar.screen import enrich
+
+    jobs = [enrich(j) for j in parse_teamtailor(TEAMTAILOR_RSS, _teamtailor_src())]
+    hybrid = jobs[1]
+    assert hybrid.remote is False
+    assert hybrid.work_mode == "hybrid"
+    # And the fully remote one still reads as remote.
+    assert jobs[2].remote is True
+    assert jobs[2].work_mode == "remote"
+
+
+def test_a_teamtailor_posting_in_two_places_stays_separable():
+    """screen.py splits a multi-location string on the slash but reads a comma
+    as binding a place to its qualifier, so joining locations with a comma
+    fuses "South or Central America, Latin America" and "Remote, United
+    States" into one string that resolves to neither country."""
+    from jobradar.adapters.platforms import parse_teamtailor
+
+    job = list(parse_teamtailor(TEAMTAILOR_RSS, _teamtailor_src()))[2]
+    assert job.location == \
+        "South or Central America, Latin America / Remote, United States"
+
+
+def test_a_teamtailor_role_carries_the_date_the_feed_published_it():
+    """Every RSS `<pubDate>` is RFC 822 ("Wed, 19 Aug 2026 16:47:00 +0100"),
+    a format `_iso` did not know. Without it no Teamtailor role had a date at
+    all, so the recency points never fired and a whole board scored flat."""
+    from jobradar.adapters.platforms import parse_teamtailor
+
+    jobs = list(parse_teamtailor(TEAMTAILOR_RSS, _teamtailor_src()))
+    assert [j.posted_at for j in jobs] == ["2026-08-19", "2026-08-08", "2026-08-17"]
+
+
+def test_a_teamtailor_board_names_its_own_employer():
+    """The channel title is the board's own claim about who it belongs to, and
+    `discover` checks identity against exactly that. Falling back to the
+    company we already believed would make every board agree with itself."""
+    from jobradar.adapters.platforms import parse_teamtailor
+    from jobradar.discover import verify_identity
+
+    jobs = list(parse_teamtailor(TEAMTAILOR_RSS,
+                                 _teamtailor_src(company="Something Else")))
+    assert jobs[0].company == "Hill Group UK"
+    verdict, note = verify_identity(jobs, None, "Hill Group UK", "teamtailor")
+    assert verdict == "ok", note
+
+
+def test_a_teamtailor_role_arrives_with_its_advert_attached():
+    """The feed carries the whole advert, so these are screenable postings and
+    not leads. If this ever came back empty the roles would sail past every
+    dealbreaker and the salary floor with nothing to test against."""
+    from jobradar.adapters.platforms import parse_teamtailor
+
+    job = next(iter(parse_teamtailor(TEAMTAILOR_RSS, _teamtailor_src())))
+    assert "The Accounts Assistant supports the accounts team." in job.description
+    assert "<p>" not in job.description
+    assert job.department == "Finance"
+
+
+def test_teamtailor_is_no_longer_reported_as_an_unreadable_platform():
+    """`detect_unsupported` is what tells a maintainer "recognised but cannot
+    be read". Leaving Teamtailor in that list after writing the adapter means
+    `discover` diagnoses a board it can now actually fetch, and quietly
+    declines to add it."""
+    from jobradar.discover import detect_unsupported
+
+    assert detect_unsupported("", "https://hillgroupuk.teamtailor.com/jobs") == ""
+
+
+def test_a_teamtailor_careers_link_offers_only_the_employers_own_board():
+    """Every Teamtailor career site footer links the vendor's own site, and
+    the support and partner subdomains turn up on the marketing pages. Each
+    one would otherwise be offered as a separate employer board to validate,
+    and career.teamtailor.com would be offered as every customer's board."""
+    from jobradar import discover
+
+    page = ('<a href="https://hillgroupuk.teamtailor.com/jobs">Jobs</a>'
+            '<a href="https://www.teamtailor.com">Career site by Teamtailor</a>'
+            '<a href="https://support.teamtailor.com/en">Help</a>'
+            '<a href="https://career.teamtailor.com/jobs">Teamtailor careers</a>')
+    tokens = [h[1] for h in discover._scan(page, "https://hill.co.uk/careers")
+              if h[0] == "teamtailor"]
+
+    assert tokens == ["hillgroupuk"], tokens
+
+
+# ------------------------------------------------------------------ pinpoint
+# Trimmed from real responses to
+# https://<company>.pinpointhq.com/postings.json, recorded 2026-08-24.
+# Advert bodies are cut down; every other field is verbatim.
+PINPOINT = {"data": [
+    {
+        "id": "525650",
+        "title": "Staff Software Engineer, IoT Cloud",
+        "url": "https://smartthings.pinpointhq.com/en/postings/c796e935-6c6e",
+        "path": "/en/postings/c796e935-6c6e",
+        "description": "<div><!--block-->Own the IoT cloud platform.</div>",
+        "key_responsibilities_header": "Key Responsibilities",
+        "key_responsibilities": "<ul><li><!--block-->Design cloud services.</li></ul>",
+        "skills_knowledge_expertise_header": "Skills, Knowledge &amp; Expertise",
+        "skills_knowledge_expertise": "<ul><li><!--block-->8+ years in distributed systems.</li></ul>",
+        "benefits_header": "SmartThings Benefits",
+        "benefits": "<div><!--block-->Comprehensive healthcare.</div>",
+        "compensation": None, "compensation_minimum": None,
+        "compensation_maximum": None, "compensation_currency": None,
+        "compensation_frequency": None, "compensation_visible": False,
+        "deadline_at": None,
+        "employment_type": "full_time", "employment_type_text": "Full Time",
+        "workplace_type": "hybrid", "workplace_type_text": "Hybrid",
+        "job": {"id": "531131", "requisition_id": "1393",
+                "department": {"id": "41782", "name": "Interfaces"}},
+        "location": {"id": "1908", "city": "Minneapolis",
+                     "name": "Minneapolis, MN", "postal_code": "",
+                     "province": "Minnesota", "street_address": None},
+    },
+    {
+        "id": "1136554",
+        "title": "Senior Development Test Engineer",
+        "url": "https://impulsespace.pinpointhq.com/en/postings/6ffd-1a2b",
+        "description": "<div><!--block-->Test hardware for orbital transfer vehicles.</div>",
+        "compensation": "$110,000 - $180,000 / year",
+        "compensation_minimum": 110000.0, "compensation_maximum": 180000.0,
+        "compensation_currency": "USD", "compensation_frequency": "year",
+        "compensation_visible": True,
+        "employment_type": "full_time",
+        "workplace_type": "onsite", "workplace_type_text": "On-site",
+        "job": {"id": "1", "department": {"id": "2", "name": "Assembly, Integration & Test"}},
+        "location": {"id": "3", "city": "Redondo Beach", "name": "Redondo Beach ",
+                     "postal_code": None, "province": "California",
+                     "street_address": None},
+    },
+    {
+        "id": "559663",
+        "title": "Head of Legal ",
+        "url": "https://workwithus.pinpointhq.com/en/postings/ce6c9e5c-a2d3",
+        "description": "<div><!--block-->Own commercial contracting end to end.</div>",
+        "compensation": "$150,000 / year",
+        "compensation_minimum": 150000.0, "compensation_maximum": 150000.0,
+        "compensation_currency": "USD", "compensation_frequency": "year",
+        # The employer switched the figure off. It is still in the payload.
+        "compensation_visible": False,
+        "employment_type": "full_time",
+        "workplace_type": "remote", "workplace_type_text": "Fully remote",
+        "job": {"id": "562609", "department": {"id": "1788", "name": "Operations"}},
+        "location": {"id": "283", "city": "London", "name": "Remote",
+                     "postal_code": None, "province": "London",
+                     "street_address": None},
+    },
+]}
+
+
+def _pinpoint_src(token="smartthings", company="SmartThings"):
+    from jobradar.models import Source
+    return Source(company=company, platform="pinpoint",
+                  url=f"https://{token}.pinpointhq.com/postings.json")
+
+
+def test_a_pinpoint_board_is_read_from_the_documented_free_endpoint():
+    """Three endpoints answer on these hosts and only one of them is both free
+    and current: `/jobs.json` is deprecated, `/api/v1/jobs` is 401 without an
+    X-API-KEY, and `/postings.json` is the documented public one."""
+    from jobradar import adapters
+
+    assert adapters.by_name("pinpoint").build("smartthings") == \
+        "https://smartthings.pinpointhq.com/postings.json"
+    assert adapters.detect(
+        "https://smartthings.pinpointhq.com/postings.json").name == "pinpoint"
+
+
+def test_a_pinpoint_hybrid_role_is_not_reported_as_remote():
+    """`workplace_type` is the field that separates the two. Reading anything
+    else, such as the word "remote" in a benefits section, marks an
+    office-based role as remote, which is the one thing a remote filter must
+    never do."""
+    from jobradar.adapters.platforms import parse_pinpoint
+
+    jobs = list(parse_pinpoint(PINPOINT, _pinpoint_src()))
+    assert [j.remote for j in jobs] == [False, False, True]
+
+
+def test_a_pinpoint_location_never_arrives_as_a_two_letter_code():
+    """Pinpoint's `location.name` is free text the employer typed, and real
+    values include "Minneapolis, MN" and "Anna, IL". A bare two-letter code is
+    the worst thing to put in a location string: twenty US state codes are
+    also ISO country codes, so "Anna, IL" reads as Israel. `city` plus the
+    spelled-out `province` resolves to the right country instead."""
+    from jobradar.adapters.platforms import parse_pinpoint
+    from jobradar.screen import enrich
+
+    jobs = [enrich(j) for j in parse_pinpoint(PINPOINT, _pinpoint_src())]
+    assert jobs[0].location == "Minneapolis, Minnesota"
+    assert jobs[0].country == "US", jobs[0].country
+    # A city that is its own region must not come out as "London, London".
+    assert jobs[2].location == "London"
+    assert jobs[2].country == "UK", jobs[2].country
+
+
+def test_a_pinpoint_salary_the_employer_hid_is_not_treated_as_published():
+    """The figures stay in the payload when `compensation_visible` is false.
+    Taking them at face value publishes pay the employer chose not to, and
+    worse, lets the salary floor drop a role on a number nobody advertised."""
+    from jobradar.adapters.platforms import parse_pinpoint
+
+    jobs = list(parse_pinpoint(PINPOINT, _pinpoint_src()))
+    assert jobs[1].salary.confirmed is True
+    assert (jobs[1].salary.min, jobs[1].salary.max) == (110000.0, 180000.0)
+    assert jobs[1].salary.currency == "USD"
+    assert jobs[2].salary.confirmed is False, "hidden compensation was published"
+
+
+def test_a_pinpoint_weekly_rate_is_annualised_rather_than_dropped():
+    """`compensation_frequency` really does come back as `week` on live
+    boards, and Salary only models year, day and hour. A period it cannot
+    express is a figure the floor cannot compare, so the role passes the floor
+    unfiltered and the reader is told nothing."""
+    from jobradar.salary import from_pinpoint
+
+    s = from_pinpoint({"compensation_visible": True, "compensation_minimum": 1000.0,
+                       "compensation_maximum": 1200.0, "compensation_currency": "GBP",
+                       "compensation_frequency": "week",
+                       "compensation": "£1,000 - £1,200 / week"})
+    assert s.confirmed and s.period == "year"
+    assert (s.min, s.max) == (52000.0, 62400.0)
+
+
+def test_a_pinpoint_advert_keeps_the_responsibilities_and_the_must_haves():
+    """The advert is split across four fields. A parser that reads only
+    `description` keeps the marketing paragraph and throws away exactly the
+    half the dealbreaker patterns and the fit judgement are written against."""
+    from jobradar.adapters.platforms import parse_pinpoint
+
+    job = next(iter(parse_pinpoint(PINPOINT, _pinpoint_src())))
+    assert "Design cloud services." in job.description
+    assert "8+ years in distributed systems." in job.description
+    assert "Comprehensive healthcare." in job.description
+    assert "<div>" not in job.description
+    assert job.department == "Interfaces"
+
+
+def test_an_empty_pinpoint_board_is_not_a_parse_failure():
+    """A board with nothing open answers 200 with an empty list, exactly like
+    Ashby and Breezy, so liveness has to be the job count. A subdomain that
+    does not exist answers 404 and serves HTML, which must not raise."""
+    from jobradar import adapters
+
+    assert adapters.parse({"data": []}, _pinpoint_src("tradecentric", "TradeCentric")) == []
+    assert adapters.parse("<!DOCTYPE html><html>404</html>",
+                          _pinpoint_src("nope", "Nope")) == []
+
+
+# ------------------------------------------------------------------ bamboohr
+# Trimmed from real responses to
+# https://<company>.bamboohr.com/careers/list, recorded 2026-08-24. Verbatim
+# apart from the selection of rows.
+BAMBOOHR = {"meta": {"totalCount": 3}, "result": [
+    {"id": "217", "jobOpeningName": "Senior Software Engineer",
+     "departmentId": "18820", "departmentLabel": "OCTO",
+     "employmentStatusLabel": "Full-Time", "employmentType": None,
+     "location": {"city": "Farnborough", "state": None},
+     "atsLocation": {"country": None, "state": None, "province": None, "city": None},
+     "isRemote": None, "locationType": "2"},
+    {"id": "196", "jobOpeningName": "Support Engineer",
+     "departmentId": None, "departmentLabel": None,
+     "employmentStatusLabel": "Full-Time", "employmentType": None,
+     "location": {"city": "Farnborough", "state": None},
+     "atsLocation": {"country": None, "state": None, "province": None, "city": None},
+     "isRemote": None, "locationType": "0"},
+    {"id": "526", "jobOpeningName": "Business Development Manager(BC)",
+     "departmentId": "19084", "departmentLabel": "Wealth",
+     "employmentStatusLabel": "Full-Time", "employmentType": None,
+     "location": {"city": None, "state": None},
+     "atsLocation": {"country": "Canada", "state": "British Columbia",
+                     "province": None, "city": "Vancouver"},
+     "isRemote": None, "locationType": "1"},
+]}
+
+
+def _bamboohr_src(token="sixworks", company="SiXworks"):
+    from jobradar.models import Source
+    return Source(company=company, platform="bamboohr",
+                  url=f"https://{token}.bamboohr.com/careers/list")
+
+
+def test_a_bamboohr_remote_role_is_told_apart_from_a_hybrid_one():
+    """The field literally called `isRemote` is a decoy: it was null on all 155
+    postings across the five live boards this was built against. `locationType`
+    is the one that carries the answer, and its enum was pinned against the
+    labels BambooHR's own embed widget renders for the same posting ids:
+    0 is a plain office location, 1 renders "Remote", 2 renders "(Hybrid)".
+    Reading `isRemote` instead marks every posting, hybrid ones included, as
+    location-unknown."""
+    from jobradar.adapters.platforms import parse_bamboohr
+
+    jobs = list(parse_bamboohr(BAMBOOHR, _bamboohr_src()))
+    assert all(j.__dict__ for j in jobs)
+    assert [j.remote for j in jobs] == [False, False, True]
+
+
+def test_a_bamboohr_remote_role_keeps_the_only_country_the_payload_has():
+    """A remote posting carries no company address at all, so its location
+    lives entirely in `atsLocation`, which is also the only place in this
+    payload a country ever appears. Reading `location` for every row loses
+    both the town and the country for exactly the remote roles."""
+    from jobradar.adapters.platforms import parse_bamboohr
+    from jobradar.screen import enrich
+
+    job = [enrich(j) for j in parse_bamboohr(BAMBOOHR, _bamboohr_src())][2]
+    assert job.location == "Vancouver, British Columbia, Canada"
+    assert job.country == "CA", job.country
+
+
+def test_a_bamboohr_role_links_to_the_url_its_advert_can_be_read_from():
+    """`enrich` turns this URL back into the detail endpoint by appending
+    /detail, and the list payload contains no URL of its own. If the shape
+    here and the shape the fetcher expects ever drift apart, every BambooHR
+    role silently keeps an empty description and passes every dealbreaker."""
+    from jobradar.adapters.platforms import parse_bamboohr
+    from jobradar.enrich import _from_bamboohr
+
+    job = next(iter(parse_bamboohr(BAMBOOHR, _bamboohr_src())))
+    assert job.url == "https://sixworks.bamboohr.com/careers/217"
+
+    asked = []
+
+    class _R:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"result": {"jobOpening": {
+                "description": "<p>Build secure systems.</p><p>5 years experience.</p>",
+                "compensation": "£70,000 - £85,000 / year"}}}
+
+    class _S:
+        def get(self, url, **kw):
+            asked.append(url)
+            return _R()
+
+    text = _from_bamboohr(job.url, _S())
+    assert asked == ["https://sixworks.bamboohr.com/careers/217/detail"], asked
+    assert "Build secure systems." in text
+    # The list endpoint has no pay at all, so the detail record's compensation
+    # string is the only chance the salary parser gets at these roles.
+    assert text.startswith("Compensation: £70,000 - £85,000 / year")
+
+
+def test_an_unknown_bamboohr_subdomain_is_not_mistaken_for_a_live_board():
+    """BambooHR does not 404 for a subdomain nobody owns and does not return
+    an empty list either. It answers 200 with its own marketing homepage as
+    HTML, so both the status code and the content type prove nothing, and a
+    parser that assumes JSON raises on it. Liveness is the job count."""
+    from jobradar import adapters
+
+    assert adapters.parse("<!DOCTYPE html><html><title>BambooHR</title></html>",
+                          _bamboohr_src("nosuchcompany", "Nobody")) == []
+    assert adapters.parse({"meta": {"totalCount": 0}, "result": []},
+                          _bamboohr_src()) == []
+    assert len(adapters.parse(BAMBOOHR, _bamboohr_src())) == 3
+
+
+# ------------------------------------------------------------------ jobvite
+# Trimmed from real responses to https://jobs.jobvite.com/<company>/jobs,
+# recorded 2026-08-24. Two employers' markup, because it genuinely differs:
+# NinjaOne render the rows as <td> and LHH render the same cells as <div>.
+JOBVITE_TD = '''
+<h1 class="jv-logo"><a href="/ninjaone/jobs"> NinjaOne Careers </a></h1>
+<h2><center>NinjaOne Open Opportunities</center></h2>
+<h3 class="h2">Accounting &amp; Finance</h3>
+<table class="jv-job-list"><tbody>
+<tr>
+  <td class="jv-job-list-name"> <a href="/ninjaone/job/okinAfwj">Billing Operations Specialist</a> </td>
+  <td class="jv-job-list-location"> Hybrid Remote<span>,</span> Manila, Philippines </td>
+</tr>
+<tr>
+  <td class="jv-job-list-name"> <a href="/ninjaone/job/o3gEAfwh">Payroll Accountant - Indonesia</a> </td>
+  <td class="jv-job-list-location"> Remote<span>,</span> Bandung Wetan, Kota Bandung, Jawa Barat </td>
+</tr>
+</tbody></table>
+<h3 class="h2">Technical Support</h3>
+<table class="jv-job-list"><tbody>
+<tr>
+  <td class="jv-job-list-name"> <a href="/ninjaone/job/olzCAfwQ">Technical Support Specialist - DACH</a> </td>
+  <td class="jv-job-list-location"> Hybrid Remote<span>,</span> Berlin, Germany </td>
+</tr>
+</tbody></table>
+'''
+
+JOBVITE_DIV = '''
+<h1 class="jv-logo"><img alt="LHH logo"></h1>
+<h3>Job Seeker Tools</h3>
+<h3>Connect With Us</h3>
+<h3>Commerce / Vente : Sales</h3>
+<div class="jv-job-list">
+  <div class="tr">
+    <div class="jv-job-list-name"> <a href="/lhhcareers/job/o1UtAfwI">Director, Enterprise New Business Developer</a> </div>
+    <div class="jv-job-list-location"> United Kingdom </div>
+    <div class="jv-job-contract-duration"> Full-time </div>
+  </div>
+</div>
+'''
+
+
+def _jobvite_src(token="ninjaone", company="NinjaOne"):
+    from jobradar.models import Source
+    return Source(company=company, platform="jobvite",
+                  url=f"https://jobs.jobvite.com/{token}/jobs")
+
+
+def test_a_jobvite_hybrid_role_is_not_reported_as_remote():
+    """Jobvite writes the working arrangement in front of the place, and the
+    string it uses for hybrid is "Hybrid Remote". Any keyword check for the
+    word "remote" says yes to that, which marked all 31 hybrid roles on
+    NinjaOne's board as remote. Only the leading token can be trusted."""
+    from jobradar.adapters.platforms import parse_jobvite
+    from jobradar.screen import enrich
+
+    jobs = [enrich(j) for j in parse_jobvite(JOBVITE_TD, _jobvite_src())]
+    assert [j.remote for j in jobs] == [False, True, False]
+    # And the arrangement must not be left sitting in front of the place, or
+    # the location reads as a country nobody can filter on.
+    assert jobs[0].location == "Manila, Philippines"
+    assert jobs[0].country == "PH", jobs[0].country
+    assert jobs[2].location == "Berlin, Germany"
+    assert jobs[2].country == "DE", jobs[2].country
+
+
+def test_a_jobvite_row_is_found_whatever_element_the_employer_used():
+    """These career sites are employer-customisable and the templates really
+    do differ: NinjaOne render each cell as `<td>` and LHH render the same
+    cells as `<div>`. Anchoring on the element name reads one board and
+    returns nothing at all for the other, silently."""
+    from jobradar.adapters.platforms import parse_jobvite
+
+    td = list(parse_jobvite(JOBVITE_TD, _jobvite_src()))
+    div = list(parse_jobvite(JOBVITE_DIV, _jobvite_src("lhhcareers", "LHH")))
+
+    assert len(td) == 3 and len(div) == 1
+    assert div[0].location == "United Kingdom"
+    assert div[0].url == "https://jobs.jobvite.com/lhhcareers/job/o1UtAfwI"
+
+
+def test_a_jobvite_location_survives_the_comma_span_inside_the_cell():
+    """NinjaOne put a `<span>,</span>` inside the location cell. Closing the
+    capture on the first closing tag rather than on `</td>` or `</div>` cuts
+    every location down to its first word, so "Manila, Philippines" becomes
+    "Hybrid Remote" and resolves to no country at all."""
+    from jobradar.adapters.platforms import parse_jobvite
+
+    jobs = list(parse_jobvite(JOBVITE_TD, _jobvite_src()))
+    assert jobs[1].location == "Bandung Wetan, Kota Bandung, Jawa Barat"
+
+
+def test_a_jobvite_role_takes_its_department_from_the_heading_above_it():
+    """The rows carry no department of their own; the board groups them under
+    an `<h3>`. LHH's sidebar headings are `<h3>` too, so this also checks that
+    a heading which is not a department does not get attached to a job."""
+    from jobradar.adapters.platforms import parse_jobvite
+
+    td = list(parse_jobvite(JOBVITE_TD, _jobvite_src()))
+    assert [j.department for j in td] == \
+        ["Accounting & Finance", "Accounting & Finance", "Technical Support"]
+
+    div = list(parse_jobvite(JOBVITE_DIV, _jobvite_src("lhhcareers", "LHH")))
+    assert div[0].department == "Commerce / Vente : Sales"
+
+
+def test_a_jobvite_company_that_does_not_exist_yields_no_jobs():
+    """Jobvite answers 302 rather than 404 for a company nobody owns, and the
+    fetch follows redirects, so "no such board" arrives as a perfectly
+    ordinary 200 page. Liveness has to be the job count."""
+    from jobradar import adapters
+
+    assert adapters.parse("<html><body>nothing here</body></html>",
+                          _jobvite_src("nosuchcompany", "Nobody")) == []
+    assert len(adapters.parse(JOBVITE_TD, _jobvite_src())) == 3
+
+
+def test_breezy_and_jobvite_read_the_same_json_ld_block():
+    """Both publish a schema.org JobPosting on the posting page and neither
+    puts the advert in its list endpoint. They share one fetcher rather than
+    keeping two copies that drift; this is what stops someone fixing a bug in
+    one and leaving it in the other."""
+    from jobradar import enrich as enrich_mod
+
+    assert enrich_mod.FETCHERS["jobvite"] is enrich_mod.FETCHERS["breezy"]

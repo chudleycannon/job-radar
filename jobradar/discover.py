@@ -40,11 +40,31 @@ SIGNATURES: list[tuple[str, str]] = [
     ("greenhouse", r"greenhouse\.io/v1/boards/([a-z0-9_.-]+)"),
     ("ashby", r"jobs\.ashbyhq\.com/([a-z0-9_.-]+)"),
     ("ashby", r"ashbyhq\.com/posting-api/job-board/([a-z0-9_.-]+)"),
-    ("lever", r"jobs\.lever\.co/([a-z0-9_.-]+)"),
+    # Lever tokens are case-sensitive on the wire: api.eu.lever.co answers 200
+    # for `Expana` and 404 for `expana`. The character class is spelled with
+    # both cases so that stays true if the re.I in `_scan` is ever dropped, and
+    # nothing here may lowercase the capture.
+    ("lever", r"jobs\.lever\.co/([A-Za-z0-9_.-]+)"),
+    # Lever's EU deployment is a different host with different data, so it
+    # needs its own signature. `jobs.lever.co/` cannot match `jobs.eu.lever.co/`
+    # (the literal substring is not there), so the two never collide. Europe is
+    # where the boards actually are: jobs.lever.co/robots.txt is Disallow:/ for
+    # CCBot, ClaudeBot and GPTBot, jobs.eu.lever.co/robots.txt is Allow:/, so a
+    # crawl-derived employer list finds EU boards and almost no US ones.
+    ("lever_eu", r"jobs\.eu\.lever\.co/([A-Za-z0-9_.-]+)"),
     ("workable", r"apply\.workable\.com/([a-z0-9_.-]+)"),
     ("smartrecruiters", r"(?:jobs|careers)\.smartrecruiters\.com/([a-zA-Z0-9_.-]+)"),
     ("recruitee", r"([a-z0-9-]+)\.recruitee\.com"),
     ("breezy", r"([a-z0-9-]+)\.breezy\.hr"),
+    ("teamtailor", r"([a-z0-9-]+)\.teamtailor\.com"),
+    # Pinpoint also sells custom careers domains (careers.<employer>.com), and
+    # a board on one of those is invisible to a hostname signature. Those have
+    # to be added by hand; this finds the subdomain-hosted ones.
+    ("pinpoint", r"([a-z0-9-]+)\.pinpointhq\.com"),
+    ("bamboohr", r"([a-z0-9-]+)\.bamboohr\.com"),
+    # Jobvite is the odd one out: the token is a path segment, not a
+    # subdomain, because every customer sits on the one jobs.jobvite.com host.
+    ("jobvite", r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)"),
     ("personio", r"([a-z0-9-]+)\.jobs\.personio\.(?:de|com)"),
     # Oracle needs the whole host, not a short token, and the host bears no
     # relation to the company name.
@@ -65,8 +85,22 @@ WORKDAY_RE = re.compile(
 # "app", "help" and "support" are here for Breezy: a careers page that embeds a
 # Breezy board also links app.breezy.hr and help.breezy.hr, and each of those
 # would otherwise be offered as a separate employer board to go and validate.
+# "career", "careers", "partner" and "dashboard" are the same problem on
+# Teamtailor: support.teamtailor.com and partner.teamtailor.com are the
+# vendor's own, and career.teamtailor.com is Teamtailor recruiting for itself,
+# which is a real board but never the board of the employer whose page we just
+# read. The cost of listing it is that Teamtailor-the-employer has to be added
+# by hand; the cost of not listing it is offering their board as every
+# customer's board.
 _JUNK_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api", "www",
-                "search", "app", "help", "support", "blog"}
+                "search", "app", "help", "support", "blog",
+                "career", "careers", "partner", "dashboard", "developers",
+                # A live BambooHR board page links four of the vendor's own
+                # hosts alongside the employer's: staticfe (assets), images4,
+                # bhrpendo (analytics) and resources (marketing). Each would
+                # otherwise be handed to a maintainer as an employer board.
+                "staticfe", "images4", "bhrpendo", "resources", "documentation",
+                "static", "images", "assets", "cdn"}
 
 # Platforms we can recognise but cannot read yet. Naming them turns fifteen
 # identical shrugs into a diagnosis, and tells the maintainer which adapter to
@@ -81,7 +115,6 @@ UNSUPPORTED = [
     ("Oleeo", r"oleeo\.com|\.tal\.net"),
     ("Taleo", r"taleo\.net"),
     ("iCIMS portal", r"icims\.com/jobs/search(?!.*in_iframe)"),
-    ("Teamtailor", r"teamtailor\.com"),
     ("Workday (site unknown)", r"myworkdayjobs\.com(?!.*/wday/cxs)"),
     ("Civil Service Jobs", r"civilservicejobs\.service\.gov\.uk"),
     ("CharityJob", r"charityjob\.co\.uk"),

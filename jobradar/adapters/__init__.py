@@ -66,7 +66,31 @@ REGISTRY: list[Platform] = [
         platforms.parse_lever,
         build=lambda t: f"https://api.lever.co/v0/postings/{t}?mode=json",
         verified=True,
-        note="returns a bare top-level list",
+        note="returns a bare top-level list; tokens are case-sensitive",
+    ),
+    # Lever runs two separate deployments and they do not share data. Every
+    # European board answers 404 on api.lever.co and 200 on api.eu.lever.co,
+    # with byte-identical JSON, which is why this shares parse_lever and only
+    # differs in the host. Checked live: seb 98 postings, jacquemus 46,
+    # innogames 3, all three 404 on the US host. Before this entry existed the
+    # single hardcoded US builder made every EU board look dead, and
+    # `validate --prune` deletes boards that look dead.
+    #
+    # A second registry entry rather than a token convention ("eu:seb") because
+    # the registry keys on URL shape, and a different API host IS a different
+    # URL shape: it needs its own url_re for `detect` and its own `build`. A
+    # convention would have had to smuggle the region through the token, which
+    # is the one field `discover` reads verbatim off a careers page.
+    # `parse_lever` still stamps these jobs `platform="lever"`, because for
+    # everything downstream of the fetch they are ordinary Lever postings.
+    Platform(
+        "lever_eu",
+        r"api\.eu\.lever\.co/v0/postings",
+        platforms.parse_lever,
+        build=lambda t: f"https://api.eu.lever.co/v0/postings/{t}?mode=json",
+        verified=True,
+        note="Lever's EU deployment; identical shape, separate data. "
+             "Tokens are case-sensitive: `Expana` is 200 and `expana` is 404",
     ),
     Platform(
         "workday",
@@ -128,6 +152,56 @@ REGISTRY: list[Platform] = [
              "unknown token, like Ashby; countries are ISO alpha-2 so the UK "
              "arrives as GB; the list has no description, `enrich` reads the "
              "posting page's schema.org JSON-LD for that",
+    ),
+    Platform(
+        "jobvite",
+        r"jobs\.jobvite\.com/[^/]+/jobs",
+        platforms.parse_jobvite,
+        build=lambda t: f"https://jobs.jobvite.com/{t}/jobs",
+        verified=True,
+        note="no public JSON at all: jobs.json, /search/jobs and jobs.rss all "
+             "return the same career-site HTML. The list is server-rendered so "
+             "no browser is needed. An unknown company 302s to a page with no "
+             "rows, and the location cell says 'Hybrid Remote' for hybrid roles",
+    ),
+    Platform(
+        "bamboohr",
+        r"\.bamboohr\.com/careers/list",
+        platforms.parse_bamboohr,
+        build=lambda t: f"https://{t}.bamboohr.com/careers/list",
+        verified=True,
+        note="summary index only: no description, no date, no salary, and no "
+             "country for office or hybrid roles. `enrich` reads the advert "
+             "from /careers/<id>/detail. An unknown subdomain answers 200 with "
+             "BambooHR's marketing homepage, so status code proves nothing",
+    ),
+    Platform(
+        "pinpoint",
+        r"\.pinpointhq\.com/(?:[a-z]{2}/)?postings\.json",
+        platforms.parse_pinpoint,
+        build=lambda t: f"https://{t}.pinpointhq.com/postings.json",
+        verified=True,
+        note="/postings.json is the documented free endpoint; /jobs.json is "
+             "deprecated and /api/v1/jobs is 401 without an X-API-KEY. "
+             "Structured pay behind `compensation_visible`, and no posting "
+             "date anywhere in the payload",
+    ),
+    Platform(
+        "teamtailor",
+        r"\.teamtailor\.com/jobs\.rss",
+        platforms.parse_teamtailor,
+        # per_page is honoured; the feed's own default is the first 100 only.
+        build=lambda t: f"https://{t}.teamtailor.com/jobs.rss?per_page=200",
+        verified=True,
+        # This entry has to sit above the generic `rss` one, whose pattern
+        # `\.(?:rss|xml)(?:$|\?)` matches this URL too. `detect` returns the
+        # first match, so the order is what stops every Teamtailor board being
+        # read by the generic feed parser, which knows nothing about
+        # remoteStatus, tt:country or tt:department.
+        note="/jobs.rss, not the /jobs.json feed: only the RSS carries "
+             "remoteStatus, department and the country spelled out in full. "
+             "404s honestly for an unknown subdomain, unlike Ashby and Breezy, "
+             "but a live board with nothing open is still a 200 with no items",
     ),
     Platform(
         "personio",

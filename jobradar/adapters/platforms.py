@@ -18,7 +18,7 @@ from typing import Any, Iterator
 from urllib.parse import unquote, urljoin, urlparse
 
 from ..models import Job, Salary, Source
-from ..salary import from_ashby, from_greenhouse, parse_text
+from ..salary import from_ashby, from_greenhouse, from_pinpoint, parse_text
 
 _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
@@ -63,7 +63,12 @@ def _iso(v: Any) -> str | None:
                 # NHS Jobs writes the month in full ("18 August 2026"). Without
                 # %B every NHS role had no date, so the recency points never
                 # fired and 28 roles clumped onto three scores.
-                "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
+                "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y",
+                # RFC 822, which is what every RSS <pubDate> is:
+                # "Wed, 19 Aug 2026 16:47:00 +0100". Without it no feed-shaped
+                # source had a date at all, so the recency points never fired
+                # for any of them and every Teamtailor role scored as undated.
+                "%a, %d %b %Y %H:%M:%S %z", "%a, %d %b %Y %H:%M:%S"):
         try:
             return datetime.strptime(s.replace("Z", "+0000") if fmt.endswith("%z") else s,
                                      fmt).date().isoformat()
@@ -483,6 +488,440 @@ def parse_breezy(payload: Any, src: Source) -> Iterator[Job]:
 # --------------------------------------------------------------------------
 # Personio (XML)
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# Jobvite
+# --------------------------------------------------------------------------
+# There is no public JSON here. `/<company>/jobs.json`, `/search/jobs` and
+# `/jobs.rss` all return the same career-site HTML, and `api/v1/jobs` redirects
+# away. The board is server-rendered though, so no browser is needed: the list
+# is a plain table of links.
+#
+# The markup is employer-customisable and really does differ. NinjaOne ship
+# `<td class="jv-job-list-name">` and LHH ship `<div class="jv-job-list-name">`
+# for the same thing, so the class names are the anchor and the element name
+# is not. The location cell is closed on `</td>` or `</div>` specifically,
+# because NinjaOne put a `<span>,</span>` inside it and a lazier close would
+# cut the location off after the first word.
+_JV_ROW = re.compile(
+    r'class="[^"]*jv-job-list-name[^"]*"[^>]*>\s*<a\s+href="([^"]+)"[^>]*>(.*?)</a>'
+    r'\s*</(?:td|div)>\s*'
+    r'<(?:td|div)[^>]*class="[^"]*jv-job-list-location[^"]*"[^>]*>(.*?)</(?:td|div)>',
+    re.S | re.I,
+)
+_JV_HEAD = re.compile(r"<h3[^>]*>(.*?)</h3>", re.S | re.I)
+
+# The location cell carries the working arrangement in front of the place, and
+# "Hybrid Remote" contains the word "remote". Reading it with the usual
+# keyword check returns True, which would have marked all 31 hybrid roles on
+# NinjaOne's board as remote. This is the same failure Breezy's `is_remote`
+# caused on an office-based Bournemouth job, arriving by a different route.
+_JV_HYBRID = re.compile(r"^\s*hybrid\s+remote\b\s*,?\s*", re.I)
+_JV_REMOTE = re.compile(r"^\s*remote\b\s*,?\s*", re.I)
+
+
+def parse_jobvite(payload: Any, src: Source) -> Iterator[Job]:
+    """Jobvite. The board is `https://jobs.jobvite.com/<company>/jobs`.
+
+    A company that does not exist answers 302 and lands somewhere with no job
+    rows in it, so following redirects turns "no such board" into a perfectly
+    ordinary 200. Liveness is the job count, as everywhere else here.
+
+    The list carries no advert text, no date and no salary, so `enrich` reads
+    the posting page's schema.org JSON-LD, which Jobvite publishes on every
+    job for Google Jobs.
+    """
+    text = payload if isinstance(payload, str) else ""
+
+    # Department comes from the nearest `<h3>` above the row, which is how
+    # these boards group their tables. Checked against both live boards: it
+    # yields real department names on each and never picks up the sidebar
+    # headings, which sit above the first table rather than between tables.
+    heads = [(m.start(), _text(m.group(1))) for m in _JV_HEAD.finditer(text)]
+
+    for m in _JV_ROW.finditer(text):
+        title = _text(m.group(2))
+        if not title:
+            continue
+
+        place = _text(m.group(3))
+        if _JV_HYBRID.match(place):
+            remote: bool | None = False
+            place = _JV_HYBRID.sub("", place)
+        elif _JV_REMOTE.match(place):
+            remote = True
+            place = _JV_REMOTE.sub("", place)
+        else:
+            remote = _remote(place, title)
+        # A role whose only stated location was the word "Remote" has to keep
+        # saying so. An empty location is read as "no location given", which
+        # is a different answer and a different filter branch.
+        location = place or ("Remote" if remote else "")
+
+        dept = next((t for pos, t in reversed(heads) if pos < m.start()), "")
+
+        yield Job(
+            # Jobvite's list markup never names the employer. LHH's own <h1>
+            # is an image whose alt text is "LHH logo", so there is nothing
+            # here to check identity against and `discover` will report these
+            # boards as agreeing with whatever we already believed.
+            company=src.company,
+            title=title,
+            url=urljoin(src.url, _text(m.group(1))),
+            platform="jobvite",
+            location=location,
+            remote=remote,
+            department=dept or None,
+            # The JSON-LD on the posting page has `datePosted`, but `enrich`
+            # only ever writes the description and the pay.
+            posted_at=None,
+            description="",
+            salary=Salary(),
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
+# BambooHR
+# --------------------------------------------------------------------------
+# `/careers/list` is a summary index, not a board. It carries no description,
+# no apply URL, no date and no salary, so `enrich` grew a BambooHR fetcher
+# that reads `/careers/<id>/detail` for the advert. Without it every one of
+# these roles would arrive as a bare title that no dealbreaker and no salary
+# floor can be run against.
+#
+# `locationType` is the field that says how the job is worked, and the field
+# actually called `isRemote` is a decoy: it is null on all 155 postings across
+# the five live boards checked. The enum was pinned by comparing the JSON
+# against the labels BambooHR's own `/jobs/embed2.php` widget renders for the
+# same posting ids:
+#   "0" -> plain office location   ("Farnborough")        = in-office
+#   "1" -> "Remote"                                        = remote
+#   "2" -> "(Hybrid)" suffix       ("Farnborough (Hybrid)")= hybrid
+# Type 1 is also the only one with no company location at all, which matches
+# BambooHR's documented behaviour: picking Remote requires no location.
+_BB_OFFICE, _BB_REMOTE, _BB_HYBRID = "0", "1", "2"
+
+
+def parse_bamboohr(payload: Any, src: Source) -> Iterator[Job]:
+    """BambooHR. The board is `https://<company>.bamboohr.com/careers/list`.
+
+    A subdomain that does not exist does NOT 404 here and does not return an
+    empty list either. It answers **200 with BambooHR's own marketing
+    homepage** as HTML, so both the status code and the content type prove
+    nothing and liveness has to be the job count. That is why this tolerates a
+    payload that is not a dict at all rather than assuming JSON.
+
+    The list gives no country for office and hybrid roles, only a city and a
+    region. See the README: those roles reach the country filter unresolved.
+    """
+    rows = (payload or {}).get("result") if isinstance(payload, dict) else None
+    host = urlparse(src.url).netloc
+    for j in rows or []:
+        if not isinstance(j, dict):
+            continue
+
+        loc_type = str(j.get("locationType") or "")
+        office = j.get("location") if isinstance(j.get("location"), dict) else {}
+        ats = j.get("atsLocation") if isinstance(j.get("atsLocation"), dict) else {}
+
+        # Remote postings carry no company address, so their only location is
+        # the free-text one, which is also the only place a country ever
+        # appears in this payload.
+        parts = ([_text(ats.get("city")),
+                  _text(ats.get("state") or ats.get("province")),
+                  _text(ats.get("country"))]
+                 if loc_type == _BB_REMOTE or not _text(office.get("city"))
+                 else [_text(office.get("city")), _text(office.get("state"))])
+        seen: set[str] = set()
+        keep: list[str] = []
+        for part in parts:
+            # "OMAN, OMAN" is a real value on a live board.
+            if part and part.lower() not in seen:
+                seen.add(part.lower())
+                keep.append(part)
+        location = ", ".join(keep)
+
+        if loc_type == _BB_REMOTE:
+            remote: bool | None = True
+        elif loc_type in (_BB_OFFICE, _BB_HYBRID):
+            # Never read this off the words. Breezy's own flag was true for
+            # hybrid roles and marked an office-based Bournemouth job as
+            # remote, which is the one thing a remote filter must never do.
+            remote = False
+        else:
+            remote = _remote(location, j.get("jobOpeningName"))
+
+        jid = _text(j.get("id"))
+        if not jid:
+            continue
+
+        yield Job(
+            # The payload never names the employer, so identity has to come
+            # from the source entry and `discover` will report these boards as
+            # unchecked rather than falsely ok.
+            company=src.company,
+            title=_text(j.get("jobOpeningName")),
+            # Matches the `jobOpeningShareUrl` the detail endpoint returns,
+            # and `enrich` turns it back into the detail URL by appending
+            # /detail, so the two have to stay in this shape.
+            url=f"https://{host}/careers/{jid}" if host else "",
+            platform="bamboohr",
+            location=location or ("Remote" if remote else ""),
+            remote=remote,
+            department=_text(j.get("departmentLabel")) or None,
+            # Not in the list payload. `/careers/<id>/detail` has `datePosted`,
+            # but `enrich` only ever writes the description and the pay.
+            posted_at=None,
+            # No advert text here at all. Everything worth screening on is
+            # metadata until `enrich` has run.
+            description=". ".join(
+                x for x in (_text(j.get("employmentStatusLabel")),
+                            _text(j.get("departmentLabel"))) if x),
+            salary=Salary(),
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
+# Pinpoint
+# --------------------------------------------------------------------------
+# The documented public endpoint is `/postings.json`. `/jobs.json` answers too
+# but is the deprecated one, and `/api/v1/jobs` is 401 without an X-API-KEY, so
+# the free surface is the first of the three and only the first.
+#
+# What it does not carry is a posting date. There is none in the payload and
+# none in the documented schema; the RSS feed at `/jobs.rss` has a <pubDate>
+# but carries nothing else useful, so this trades the date for the structured
+# pay, location and workplace fields rather than fetching both. Pinpoint roles
+# therefore score flat on recency, which is a stated limitation and not a
+# parse failure.
+_PP_SECTIONS = (
+    ("key_responsibilities_header", "key_responsibilities"),
+    ("skills_knowledge_expertise_header", "skills_knowledge_expertise"),
+    ("benefits_header", "benefits"),
+)
+
+
+def _pinpoint_place(loc: Any) -> str:
+    """One Pinpoint location.
+
+    Built from `city` and `province`, deliberately not from `name`, which is
+    whatever the employer typed: real values include "Minneapolis, MN" and
+    "Anna, IL". A bare two-letter code is the worst possible thing to put in a
+    location string, because twenty US state codes are also ISO country codes.
+    `province` is spelled out ("California", "New York"), which resolves
+    unambiguously.
+
+    Pinpoint publishes no country anywhere in this payload, so the country is
+    left for screen.py to infer from the city and state. Inventing one here
+    would be guessing.
+    """
+    if not isinstance(loc, dict):
+        return _text(loc)
+    city = _text(loc.get("city"))
+    province = _text(loc.get("province"))
+    parts = [p for p in (city, province) if p]
+    # Cities that are their own region give "London, London", which reads as
+    # a bug to anyone looking at the dashboard.
+    if len(parts) == 2 and parts[0].lower() == parts[1].lower():
+        parts.pop()
+    return ", ".join(parts) or _text(loc.get("name"))
+
+
+def parse_pinpoint(payload: Any, src: Source) -> Iterator[Job]:
+    """Pinpoint. The board is `https://<company>.pinpointhq.com/postings.json`.
+
+    Like Teamtailor it 404s honestly for a subdomain that does not exist, and
+    like every other board here a live one with nothing open answers 200 with
+    an empty list, so liveness is the job count.
+
+    `workplace_type` is the field that separates remote from hybrid. Its
+    values are `remote`, `hybrid` and `onsite`.
+
+    The advert arrives in four separate fields rather than one, so a parser
+    that reads only `description` throws away the responsibilities and the
+    must-haves, which is precisely the half the dealbreakers are written
+    against.
+    """
+    rows = (payload or {}).get("data") if isinstance(payload, dict) else None
+    for j in rows or []:
+        if not isinstance(j, dict):
+            continue
+
+        loc = j.get("location") if isinstance(j.get("location"), dict) else {}
+        location = _pinpoint_place(loc)
+
+        mode = _text(j.get("workplace_type")).lower()
+        if mode == "remote":
+            remote: bool | None = True
+        elif mode in ("hybrid", "onsite"):
+            # Never read this off the advert text. Breezy's own remote flag
+            # was true for hybrid roles and marked an office-based Bournemouth
+            # job as remote, which is the one thing a remote filter must never
+            # do. Pinpoint states it outright, so use the statement.
+            remote = False
+        else:
+            remote = _remote(location, j.get("title"))
+
+        parts = [_text(j.get("description"))]
+        for head, body in _PP_SECTIONS:
+            txt = _text(j.get(body))
+            if txt:
+                parts.append(f"{_text(j.get(head))}\n{txt}".strip())
+        desc = "\n\n".join(x for x in parts if x)
+
+        sal = from_pinpoint(j)
+        if not sal.confirmed:
+            # An employer with `compensation_visible` off has not published a
+            # figure, but plenty state one in the advert body anyway.
+            sal = parse_text(desc[:1500])
+
+        job = j.get("job") if isinstance(j.get("job"), dict) else {}
+        dept = job.get("department") if isinstance(job.get("department"), dict) else {}
+
+        yield Job(
+            # Pinpoint never names the employer in this payload, not even the
+            # hiring organisation, so identity has to come from the source
+            # entry. `discover` will report these boards as `unchecked`
+            # against a domain rather than falsely `ok`.
+            company=src.company,
+            title=_text(j.get("title")),
+            url=_text(j.get("url")),
+            platform="pinpoint",
+            location=location or ("Remote" if remote else ""),
+            remote=remote,
+            department=_text(dept.get("name")) or None,
+            # No date exists in this payload. See the note above the parser.
+            posted_at=None,
+            description=desc,
+            salary=sal,
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
+# Teamtailor
+# --------------------------------------------------------------------------
+# Two public feeds exist on every career site and they are not equivalent.
+# `/jobs.json` is a JSON Feed carrying a schema.org JobPosting per item, but it
+# states the country as ISO alpha-2 ("GB") and says nothing at all about
+# remote working or department. `/jobs.rss` carries the same descriptions plus
+# `<remoteStatus>`, `<tt:department>` and, decisively, `<tt:country>` spelled
+# out in full ("United Kingdom"). Reading the RSS is what keeps this adapter
+# clear of the country-code trap Breezy walked into, rather than aliasing
+# around it afterwards.
+#
+# The feed defaults to the first 100 jobs and honours `per_page` (verified:
+# per_page=2 on a 33-job board returns 2), so the builder asks for 200. A
+# board with more than that would silently lose the tail, which is why the
+# number is stated here and not left implicit.
+_TT_ITEM = re.compile(r"<item>(.*?)</item>", re.S)
+_TT_LOCATION = re.compile(r"<tt:location>(.*?)</tt:location>", re.S)
+
+
+def _tt_tag(block: str, tag: str) -> str:
+    m = re.search(rf"<{tag}[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</{tag}>",
+                  block, re.S)
+    return _text(m.group(1)) if m else ""
+
+
+def _tt_place(block: str) -> str:
+    """One `<tt:location>`, written the way screen.py reads locations.
+
+    City then country in words, never the alpha-2 code. Two-letter codes are
+    actively dangerous here: twenty US state codes are also ISO country codes,
+    so "Berlin, DE" resolves to Delaware and "Toronto, CA" to California. The
+    full name is unambiguous and is what the country matcher checks first.
+    """
+    city = _tt_tag(block, "tt:city")
+    country = _tt_tag(block, "tt:country")
+    name = _tt_tag(block, "tt:name")
+    parts = [p for p in (city or name, country) if p]
+    # An employer who named the office after the country produces "Latin
+    # America, Latin America", which reads as a parse failure to anyone
+    # looking at it.
+    if len(parts) == 2 and parts[0].lower() == parts[1].lower():
+        parts.pop()
+    return ", ".join(parts)
+
+
+def parse_teamtailor(payload: Any, src: Source) -> Iterator[Job]:
+    """Teamtailor. The board is `https://<company>.teamtailor.com/jobs.rss`.
+
+    Unlike Ashby, Breezy and SmartRecruiters this one does answer 404 for a
+    subdomain that does not exist, so a status code is meaningful. It is still
+    not sufficient: a live board with nothing open answers 200 with no items
+    (mathem and normative both do), so liveness stays a job count.
+
+    `<remoteStatus>` is the field that separates remote from hybrid. Its
+    values are `fully`, `hybrid`, `temporary` and `none`.
+    """
+    text = payload if isinstance(payload, str) else ""
+
+    # The channel names the employer. `discover` checks a board's identity
+    # against its own claim about itself, and falling back to src.company
+    # would make every board agree with whatever we already believed.
+    head = text.split("<item>", 1)[0]
+    board_company = _tt_tag(head, "title")
+
+    for item in _TT_ITEM.findall(text):
+        title = _tt_tag(item, "title")
+        if not title:
+            continue
+
+        names: list[str] = []
+        seen: set[str] = set()
+        for loc in _TT_LOCATION.findall(item):
+            txt = _tt_place(loc)
+            if txt and txt.lower() not in seen:
+                seen.add(txt.lower())
+                names.append(txt)
+        # " / " and not ", ": screen.py splits a multi-location string on the
+        # slash but reads a comma as binding a place to its qualifier, so a
+        # comma fuses "Cambridge, United States" and "Stockholm, Sweden" into
+        # one string that resolves to neither.
+        location = " / ".join(names)
+
+        status = _tt_tag(item, "remoteStatus").lower()
+        if status == "fully":
+            remote: bool | None = True
+        elif status in ("hybrid", "temporary"):
+            # Hybrid is an office job with some days at home, and "temporary"
+            # is an office job that is remote for now. Breezy's `is_remote`
+            # was true for hybrid roles and marked an office-based Bournemouth
+            # job as remote, which is the one thing a remote filter must never
+            # do. 14 of 16 roles on Teamtailor's own board are hybrid, so this
+            # is the common case here, not an edge case.
+            remote = False
+        else:
+            # `none` is a default as much as a statement, so fall back to
+            # reading the words rather than asserting the role is on-site.
+            remote = _remote(location, title)
+
+        desc = _tt_tag(item, "description")
+
+        yield Job(
+            company=board_company or src.company,
+            title=title,
+            url=_tt_tag(item, "link"),
+            platform="teamtailor",
+            location=location or ("Remote" if remote else ""),
+            remote=remote,
+            department=_tt_tag(item, "tt:department") or None,
+            posted_at=_iso(_tt_tag(item, "pubDate")),
+            description=desc,
+            # No salary field anywhere in the feed, so pay only ever comes
+            # from the employer stating it in the advert body.
+            salary=parse_text(desc[:1500]),
+            # Deliberately not set. Teamtailor names the country in words and
+            # screen.py resolves those at its highest tier; a name-to-code
+            # table in here would be a second copy of that mapping, and it
+            # would have to invent an answer for "Latin America", which
+            # Teamtailor really does return as a country.
+            source_id=src.key,
+        )
+
+
 def parse_personio(payload: Any, src: Source) -> Iterator[Job]:
     text = payload if isinstance(payload, str) else ""
     for block in re.findall(r"<position>(.*?)</position>", text, re.S):

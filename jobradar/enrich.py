@@ -158,7 +158,13 @@ _LD_BLOCK = re.compile(
     r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>', re.S | re.I)
 
 
-def _from_breezy(url: str, session=None, timeout: int = 20) -> str:
+def _from_json_ld(url: str, session=None, timeout: int = 20) -> str:
+    """The advert out of a posting page's schema.org JobPosting block.
+
+    Breezy and Jobvite both publish one so that Google Jobs can index them,
+    and neither puts the advert in its list endpoint. Same problem, same fix,
+    so they share this rather than each growing their own copy.
+    """
     get = (session or requests).get
     try:
         # The board links carry `?source=...` on some postings; the page is the
@@ -173,12 +179,41 @@ def _from_breezy(url: str, session=None, timeout: int = 20) -> str:
             node = json.loads(m.group(1))
         except ValueError:
             continue
-        # There are two blocks on the page and the first one is a WebSite, so
-        # taking the first match returned an empty description every time.
+        # There are two blocks on a Breezy page and the first one is a WebSite,
+        # so taking the first match returned an empty description every time.
         for d in (node if isinstance(node, list) else [node]):
             if isinstance(d, dict) and d.get("@type") == "JobPosting":
                 return _strip(d.get("description") or "")
     return ""
+
+
+_from_breezy = _from_json_ld
+_from_jobvite = _from_json_ld
+
+
+# BambooHR's `/careers/list` is a summary index: no advert text, no salary, no
+# date. The advert lives one request away at `/careers/<id>/detail`, which is
+# the same JSON API the board itself is built on rather than a page scrape.
+def _from_bamboohr(url: str, session=None, timeout: int = 20) -> str:
+    base = (url or "").split("?")[0].rstrip("/")
+    if not re.search(r"bamboohr\.com/careers/\d+$", base):
+        return ""
+    get = (session or requests).get
+    try:
+        r = get(f"{base}/detail", headers={"User-Agent": UA,
+                                           "Accept": "application/json"},
+                timeout=timeout)
+        if r.status_code != 200:
+            return ""
+        job = ((r.json() or {}).get("result") or {}).get("jobOpening") or {}
+    except (requests.RequestException, ValueError):
+        return ""
+    text = _strip(job.get("description") or "")
+    # The detail record has a `compensation` string the list endpoint does not.
+    # Putting it in front of the advert is what lets `run()` re-parse pay for
+    # these roles, which otherwise carry no figure from anywhere.
+    pay = (job.get("compensation") or "").strip()
+    return f"Compensation: {pay}\n\n{text}".strip() if pay else text
 
 
 # Which fetcher handles which platform. A platform absent from here is one
@@ -188,6 +223,8 @@ FETCHERS = {
     "workday": _from_workday,
     "smartrecruiters": _from_smartrecruiters,
     "breezy": _from_breezy,
+    "bamboohr": _from_bamboohr,
+    "jobvite": _from_jobvite,
 }
 
 

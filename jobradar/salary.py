@@ -188,6 +188,48 @@ def from_greenhouse(ranges: list | None) -> Salary:
     )
 
 
+def from_pinpoint(posting: dict | None) -> Salary:
+    """Pinpoint publishes pay as real numbers, not as a sentence to parse.
+
+    `compensation_visible` is the employer's own switch. When it is off the
+    minimum and maximum are still present but must not be shown or filtered
+    on, so this treats a hidden figure as no figure at all rather than as a
+    confirmed one. Getting that backwards would drop roles on a floor the
+    employer never published.
+
+    Frequencies seen live are `year`, `hour` and `week`. Salary only models
+    year, day and hour, so weekly and monthly rates are annualised here rather
+    than dropped: a rate this tool cannot express is a rate the floor cannot
+    act on, which quietly loses the role.
+    """
+    if not isinstance(posting, dict) or not posting.get("compensation_visible"):
+        return Salary()
+
+    def _amt(key):
+        v = posting.get(key)
+        return float(v) if isinstance(v, (int, float)) and v > 0 else None
+
+    lo, hi = _amt("compensation_minimum"), _amt("compensation_maximum")
+    raw = (posting.get("compensation") or "").strip()
+    if lo is None and hi is None:
+        return parse_text(raw)
+
+    freq = (posting.get("compensation_frequency") or "year").lower()
+    mult = {"week": 52.0, "month": 12.0, "annual": 1.0, "year": 1.0}.get(freq)
+    if mult is not None:
+        period = "year"
+        lo = lo * mult if lo is not None else None
+        hi = hi * mult if hi is not None else None
+    else:
+        period = freq if freq in ("day", "hour") else "year"
+
+    return Salary(
+        min=lo, max=hi if hi is not None else lo,
+        currency=(posting.get("compensation_currency") or "").upper() or None,
+        period=period, raw=raw[:120] or None, confirmed=True,
+    )
+
+
 def clears_floor(sal: Salary, floor: float | None, currency: str | None = None) -> tuple[bool, str]:
     """Apply the rule. Returns (keep, why).
 

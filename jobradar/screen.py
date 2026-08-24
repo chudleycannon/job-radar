@@ -241,9 +241,16 @@ def work_mode(job: Job) -> str:
     blob = f"{job.title} {job.location} {(job.description or '')[:2500]}"
     if _HYBRID.search(blob):
         return "hybrid"
+    # A structured flag from the platform beats prose. Pinpoint, Breezy and
+    # Teamtailor all state the arrangement in a field, and scanning the advert
+    # first threw that away: an on-site gym, on-site parking or "occasional
+    # on-site visits" anywhere in the body filed a role the ATS had marked
+    # remote as office. Prose still decides when no field was set.
+    if job.remote is True:
+        return "remote"
     if _ONSITE.search(blob):
         return "office"
-    if job.remote is True or _REMOTE_TXT.search(blob):
+    if _REMOTE_TXT.search(blob):
         return "remote"
     return "unstated"
 

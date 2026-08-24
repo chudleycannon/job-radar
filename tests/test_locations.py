@@ -64,3 +64,31 @@ def test_a_location_naming_nothing_stays_unknown():
     someone who cannot take it."""
     for loc in ("Remote", "EMEA", "Worldwide", "Anywhere", ""):
         assert _countries_in(loc) == set(), loc
+
+
+def test_a_platforms_own_remote_flag_beats_prose_in_the_advert():
+    """Pinpoint, Breezy and Teamtailor all state the arrangement in a field,
+    and the description scan ran first, so it answered first.
+
+    An advert mentioning an on-site gym, on-site parking, or occasional
+    on-site visits filed a role the ATS had marked remote as office based.
+    Prose still decides when the platform set no flag, and an explicitly
+    hybrid posting still wins over both."""
+    from jobradar.models import Job
+    from jobradar.screen import work_mode
+
+    def job(**kw):
+        return Job(company="Acme", title="Engineer", url="https://x/1",
+                   platform="pinpoint", **kw)
+
+    flagged = job(location="Remote", remote=True,
+                  description="We have an on-site gym at the London office.")
+    assert work_mode(flagged) == "remote"
+
+    # No flag set, so the advert is all there is.
+    assert work_mode(job(location="London",
+                         description="This role is office based.")) == "office"
+
+    # And an explicitly hybrid posting is hybrid whatever the flag says.
+    assert work_mode(job(location="London", remote=True,
+                         description="Hybrid, 3 days a week in the office.")) == "hybrid"
