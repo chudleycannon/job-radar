@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import subprocess
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from . import store
@@ -55,6 +56,47 @@ BATCH = 20
 # the seniority and the must-haves; the rest is benefits, values and the
 # equal-opportunities paragraph, which cost tokens and decide nothing.
 JD_CHARS = 1200
+
+# Batches in flight at once.
+#
+# The batches share nothing but the CV string, so the serial loop was waiting
+# on the network for no reason: 973 roles is 49 calls, and a measured call is
+# about 35 seconds, which is 29 minutes of a person watching a counter.
+#
+# Six because that is where measured throughput stopped improving. One call
+# alone runs at roughly 34 roles a minute; eight at once returned about 180
+# roles a minute, so the scaling is real but sublinear, and the last two slots
+# bought little. Every slot is a concurrent request against the owner's own
+# Claude subscription, and a width that trips the account limit is not an
+# optimisation: it turns a slow run into a stopped one. Six keeps roughly a
+# five-fold speedup with two slots of headroom left under the point where the
+# measurement flattened.
+#
+# `JOB_RADAR_RANK_WIDTH=1` restores the old strictly serial behaviour exactly,
+# for anyone on a plan where even this is too much.
+def _width_default() -> int:
+    raw = (os.environ.get("JOB_RADAR_RANK_WIDTH") or "").strip()
+    try:
+        return max(1, int(raw)) if raw else 6
+    except ValueError:
+        # A typo in an environment variable must not decide how much money
+        # this spends per second. Fall back to the tested default.
+        return 6
+
+
+WIDTH = _width_default()
+
+# Seconds before one call is abandoned. Serially this was 600, which was
+# harmless because a hung call only delayed itself. Concurrently a hung call
+# holds one of WIDTH slots for the whole timeout, so at 600 a single wedged
+# subprocess removes a sixth of the throughput for ten minutes while the
+# person watches a counter that is still moving and cannot tell.
+#
+# 180 is roughly five times the measured 35 second call and comfortably past
+# the slowest observed (48s). A batch that trips it is not lost: it raises,
+# the other batches carry on, and its roles keep fit -1 so the next run picks
+# them up.
+CALL_TIMEOUT = 180
 
 PROMPT = """You are triaging a job board for one person, so they know which
 roles are worth reading properly. You are not writing an application and you
@@ -103,7 +145,18 @@ using the role numbers exactly as given:
 # A posting can contain anything, including a line that looks like the
 # delimiter below. Stripped, so a description cannot start a new record and
 # claim to be another role.
-_DELIM = re.compile(r"^\s*-{2,}\s*(id|role)\s*[:#]", re.I | re.M)
+#
+# `\b` rather than `[:#]`. The punctuated forms are what an older prompt
+# emitted, but the header this file actually writes is `--- role 4`, with a
+# space and no punctuation, and the pattern did not match its own delimiter.
+# Nothing got through, because `_digest` collapses every newline in the
+# description immediately afterwards and a forged header stranded mid-line
+# opens no record. But that left the whole defence resting on the whitespace
+# collapse, one edit away from being the only thing holding, so the pattern
+# now covers the form it is named after. Broader, never narrower: it only
+# ever runs against a posting's own text, never against a header this file
+# wrote.
+_DELIM = re.compile(r"^\s*-{2,}\s*(id|role)\b", re.I | re.M)
 
 
 def _digest(row, n: int, chars: int = JD_CHARS) -> str:
@@ -119,6 +172,26 @@ def _digest(row, n: int, chars: int = JD_CHARS) -> str:
     pay = row["salary_label"] or "unconfirmed salary"
     return (f'--- role {n}\n'
             f'{row["company"]} | {row["title"]} | {loc} | {pay}\n{d}\n')
+
+
+def _prompt_parts(cv: str, wants: str) -> tuple[str, str]:
+    """The prompt either side of the roles, formatted once for the whole run.
+
+    The CV is about six thousand characters and the instructions another two,
+    and all of it is identical in every batch: only the roles between them
+    change. Formatting the whole template per call re-rendered thirty-odd
+    kilobytes 49 times for a 973-role run.
+
+    The saving in wall-clock is microseconds next to a 35 second call, so this
+    is not the speed-up. It is here because the halves are now provably built
+    once and shared by every worker, and because the bytes before the roles
+    are byte-identical across calls, which is the shape a prompt cache can
+    reuse. Splitting on the literal marker also means neither half is passed
+    through `str.format` twice, so the `{{...}}` example in the tail is
+    unescaped exactly once.
+    """
+    head, tail = PROMPT.split("{roles}")
+    return head.format(cv=cv, wants=wants), tail.format(cv=cv, wants=wants)
 
 
 def _wants(cfg) -> str:
@@ -157,11 +230,14 @@ def _cv_text(cfg) -> str:
     return " ".join(text.split())[:6000]
 
 
-def _call(prompt: str, timeout: int = 600) -> list[dict]:
+def _call(prompt: str, timeout: int | None = None) -> list[dict]:
     from .runner import claude_bin, _no_claude_msg, looks_like_limit, LimitReached
     exe = claude_bin()
     if not exe:
         raise SystemExit(_no_claude_msg())
+    # Read at call time rather than bound as a default, so a test or a caller
+    # that lowers CALL_TIMEOUT is actually obeyed.
+    timeout = CALL_TIMEOUT if timeout is None else timeout
     # stdin closed: there is no terminal behind the dashboard or the scheduled
     # jobs, so anything the CLI tried to read would block until the timeout.
     r = subprocess.run([exe, "-p", prompt, "--model", MODEL, "--allowedTools", ""],
@@ -228,68 +304,151 @@ def candidates(con, refresh: bool = False) -> list:
     return con.execute(q + " ORDER BY r.score DESC").fetchall()
 
 
-def rank(con, cfg, rows, on_batch=None, should_stop=None) -> int:
+def _apply(con, chunk, out) -> int:
+    """Write one batch's answers. Returns how many roles were scored.
+
+    Called only on the thread that opened `con`. A sqlite connection used from
+    the thread that did not open it corrupts the roles table, which is the
+    fault `enrich.py` records from making the same pass concurrent, so the
+    model calls go to the pool and every `con.execute` stays here.
+
+    The mapping is per batch and closes over nothing shared, so it does not
+    matter which order the batches come back in: `chunk` and the answers to it
+    arrive together, and position 3 means the third role of this chunk however
+    many other chunks landed first.
+    """
+    by_pos = {n: r["uid"] for n, r in enumerate(chunk, 1)}
+    seen_pos: set[int] = set()
+    applied = done = 0
+    for d in out:
+        # "role" is what the prompt asks for. "id" is accepted because a
+        # model handed the older wording still answers that way, and
+        # dropping those silently is exactly the fault this replaced.
+        raw = d.get("role", d.get("id"))
+        try:
+            pos = int(raw)
+        except (TypeError, ValueError):
+            continue
+        uid = by_pos.get(pos)
+        # One score per role. A second answer for a position already
+        # scored is a rewrite, which is what an injected posting would be
+        # trying to do, so the first stands.
+        if not uid or pos in seen_pos:
+            continue
+        seen_pos.add(pos)
+        applied += 1
+        try:
+            fit = max(0, min(100, int(float(d.get("fit", 0)))))
+        except (TypeError, ValueError):
+            continue
+        con.execute("UPDATE roles SET fit=?, fit_why=? WHERE uid=?",
+                    (fit, str(d.get("why", ""))[:400], uid))
+        done += 1
+    if out and not applied:
+        raise CallFailed(
+            f"the model answered {len(out)} role(s) and none could be "
+            f"matched to this batch. Keys seen: "
+            f"{sorted({k for d in out for k in d})}. Expected \'role\' with "
+            f"a position between 1 and {len(chunk)}.")
+    return done
+
+
+def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
     """Score `rows` and write the results back. Returns how many were scored.
 
-    `should_stop` is checked between batches, which is the only place it can
-    be: a batch is one request and there is no way to interrupt it partway.
-    Everything already scored is kept, so stopping costs the batch in flight
-    and nothing else.
+    Up to `width` batches are in flight at once. The batches share nothing but
+    the CV string, so the only thing the old serial loop bought was that the
+    counter moved in order.
+
+    What `should_stop` means now, since it can no longer mean "between two
+    calls". It is checked on this thread before any new call is started, and
+    once it is true nothing further is submitted. Calls already in flight are
+    allowed to land and their scores are written: the money for those is spent
+    the moment the subprocess starts, so throwing the answers away would waste
+    it twice. Stopping therefore costs at most `width` batches rather than
+    one, and it costs nothing that had not already been paid for. It is
+    checked here rather than in a worker because the dashboard\'s `should_stop`
+    reads `meta` through this same sqlite connection.
+
+    `LimitReached` behaves the same way and then re-raises: nothing new is
+    started, everything already scored stays written (the connection is in
+    autocommit), and every role not reached keeps fit -1 so a later run
+    resumes exactly here rather than paying for these roles twice.
+
+    One bad batch no longer ends the run. Its roles keep fit -1 and the rest
+    are still scored. The exception is a run where every single batch failed
+    and nothing was scored, which is re-raised: reporting "0 scored" with no
+    reason attached is the precise failure the hard error in `_call` exists to
+    prevent, and swallowing it per batch would have quietly reintroduced it.
     """
     from .runner import LimitReached
     cv, wants = _cv_text(cfg), _wants(cfg)
-    done = 0
-    for i in range(0, len(rows), BATCH):
-        if should_stop and should_stop():
-            break
-        chunk = rows[i:i + BATCH]
-        by_pos = {n: r["uid"] for n, r in enumerate(chunk, 1)}
-        seen_pos: set[int] = set()
-        try:
-            out = _call(PROMPT.format(
-                cv=cv, wants=wants,
-                roles="\n".join(_digest(r, n) for n, r in enumerate(chunk, 1))))
-        except LimitReached:
-            # Stop where we are. Everything scored so far is already written,
-            # and the roles not reached keep fit -1, so re-running later picks
-            # up exactly where this left off rather than starting again.
-            raise
-        applied = 0
-        for d in out:
-            # "role" is what the prompt asks for. "id" is accepted because a
-            # model handed the older wording still answers that way, and
-            # dropping those silently is exactly the fault this replaced.
-            raw = d.get("role", d.get("id"))
-            try:
-                pos = int(raw)
-            except (TypeError, ValueError):
-                continue
-            uid = by_pos.get(pos)
-            # One score per role. A second answer for a position already
-            # scored is a rewrite, which is what an injected posting would be
-            # trying to do, so the first stands.
-            if not uid or pos in seen_pos:
-                continue
-            seen_pos.add(pos)
-            applied += 1
-            try:
-                fit = max(0, min(100, int(float(d.get("fit", 0)))))
-            except (TypeError, ValueError):
-                continue
-            con.execute("UPDATE roles SET fit=?, fit_why=? WHERE uid=?",
-                        (fit, str(d.get("why", ""))[:400], uid))
-            done += 1
-        if out and not applied:
-            raise CallFailed(
-                f"the model answered {len(out)} role(s) and none could be "
-                f"matched to this batch. Keys seen: "
-                f"{sorted({k for d in out for k in d})}. Expected 'role' with "
-                f"a position between 1 and {len(chunk)}.")
+    head, tail = _prompt_parts(cv, wants)
+    width = max(1, int(WIDTH if width is None else width))
+    batches = [rows[i:i + BATCH] for i in range(0, len(rows), BATCH)]
 
-        if on_batch:
-            # `done`, not the batch index. Reporting the index meant a run
-            # where every call failed still counted up to "5/5 scored".
-            on_batch(done, len(rows), done)
+    done = 0
+    ok = 0                      # batches that produced at least one score
+    limit_hit: Exception | None = None
+    first_failure: Exception | None = None
+
+    def build(chunk) -> str:
+        return head + "\n".join(_digest(r, n)
+                                for n, r in enumerate(chunk, 1)) + tail
+
+    def stopping() -> bool:
+        return limit_hit is not None or bool(should_stop and should_stop())
+
+    with ThreadPoolExecutor(max_workers=width,
+                            thread_name_prefix="jobradar-rank") as ex:
+        pending: dict = {}
+        nxt = 0
+
+        def fill() -> None:
+            nonlocal nxt
+            while nxt < len(batches) and len(pending) < width and not stopping():
+                chunk = batches[nxt]
+                nxt += 1
+                pending[ex.submit(_call, build(chunk))] = chunk
+
+        fill()
+        while pending:
+            finished, _ = wait(list(pending), return_when=FIRST_COMPLETED)
+            for fut in finished:
+                chunk = pending.pop(fut)
+                try:
+                    out = fut.result()
+                except LimitReached as e:
+                    # The first one is the one worth reporting; the others in
+                    # flight are the same limit observed a second later.
+                    limit_hit = limit_hit or e
+                    continue
+                except Exception as e:
+                    # A timeout, a crashed CLI, a model id that no longer
+                    # exists. Losing 48 good batches to one of them is the
+                    # expensive failure, so it is recorded and the run goes on.
+                    first_failure = first_failure or e
+                    continue
+                try:
+                    scored = _apply(con, chunk, out)
+                except CallFailed as e:
+                    first_failure = first_failure or e
+                    continue
+                done += scored
+                ok += 1
+                if on_batch:
+                    # `done`, not the batch index. Reporting the index meant a
+                    # run where every call failed still counted up to
+                    # "5/5 scored".
+                    on_batch(done, len(rows), done)
+            # Only after applying, so `should_stop` and the limit flag are
+            # both current before anything else is paid for.
+            fill()
+
+    if limit_hit is not None:
+        raise limit_hit
+    if first_failure is not None and ok == 0:
+        raise first_failure
     return done
 
 

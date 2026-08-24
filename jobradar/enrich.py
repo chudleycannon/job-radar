@@ -161,23 +161,13 @@ _LD_BLOCK = re.compile(
     r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>', re.S | re.I)
 
 
-def _from_json_ld(url: str, session=None, timeout: int = 20) -> str:
-    """The advert out of a posting page's schema.org JobPosting block.
+def _json_ld_text(page: str) -> str:
+    """The advert out of a page's schema.org JobPosting block.
 
-    Breezy and Jobvite both publish one so that Google Jobs can index them,
-    and neither puts the advert in its list endpoint. Same problem, same fix,
-    so they share this rather than each growing their own copy.
+    Split out from `_from_json_ld` because iCIMS needs the same reader against
+    a URL it will not serve unmodified: see `_from_icims`.
     """
-    get = (session or requests).get
-    try:
-        # The board links carry `?source=...` on some postings; the page is the
-        # same without it and the shorter URL is what the seen-set is keyed on.
-        r = get((url or "").split("?")[0], headers={"User-Agent": UA}, timeout=timeout)
-    except requests.RequestException:
-        return ""
-    if r.status_code != 200:
-        return ""
-    for m in _LD_BLOCK.finditer(r.text):
+    for m in _LD_BLOCK.finditer(page or ""):
         try:
             node = json.loads(m.group(1))
         except ValueError:
@@ -188,6 +178,31 @@ def _from_json_ld(url: str, session=None, timeout: int = 20) -> str:
             if isinstance(d, dict) and d.get("@type") == "JobPosting":
                 return _strip(d.get("description") or "")
     return ""
+
+
+def _page(url: str, session=None, timeout: int = 20) -> str:
+    """A posting page's HTML, or "" for anything that is not a clean 200.
+
+    The board links carry `?source=...` on some postings; the page is the same
+    without it and the shorter URL is what the seen-set is keyed on.
+    """
+    get = (session or requests).get
+    try:
+        r = get((url or "").split("?")[0], headers={"User-Agent": UA},
+                timeout=timeout)
+    except requests.RequestException:
+        return ""
+    return r.text if r.status_code == 200 else ""
+
+
+def _from_json_ld(url: str, session=None, timeout: int = 20) -> str:
+    """The advert out of a posting page's schema.org JobPosting block.
+
+    Breezy, Jobvite and Avature all publish one so that Google Jobs can index
+    them, and none of them puts the advert in its list endpoint. Same problem,
+    same fix, so they share this rather than each growing their own copy.
+    """
+    return _json_ld_text(_page(url, session, timeout))
 
 
 _from_breezy = _from_json_ld
@@ -273,6 +288,198 @@ def _from_bamboohr(url: str, session=None, timeout: int = 20) -> str:
     return f"Compensation: {pay}\n\n{text}".strip() if pay else text
 
 
+# Oracle and SuccessFactors both write their adverts as a chain of <div>s with
+# no <p> or <li> in them at all, so `_strip`'s line breaks never fire and the
+# whole advert arrives as one unbroken line. The dealbreaker patterns read
+# best against bullet structure, and a heading welded to the sentence after it
+# ("We are Reckitt Home to the world's best loved brands") also reads as one
+# phrase to anything scanning for a job title or a seniority word.
+_BLOCK_END = re.compile(r"</(?:div|h[1-6]|tr|table|ul|ol)>", re.I)
+
+
+def _strip_blocks(markup: str) -> str:
+    return _strip(_BLOCK_END.sub("\n", markup or ""))
+
+
+def _inner_blocks(page: str, opener, tag: str):
+    """The inside of every element `opener` matches, closing tags counted.
+
+    A lazy `(.*?)</span>` is what this replaces and it is not a small
+    difference: both Avature's and SuccessFactors' advert containers nest
+    further elements of the same tag inside themselves (EA's Avature advert
+    holds 12 more divs, PSEG's SuccessFactors advert enough spans that a lazy
+    match returns 121 characters of its 15,758), so the lazy form stops at the
+    first inner close and yields a fragment. A fragment over 200 characters
+    gets stored and treated as the whole advert, which is worse than returning
+    nothing, because nothing at least leaves the role visibly unscreened.
+    """
+    pair = re.compile(rf"<{tag}\b|</{tag}>", re.I)
+    for m in opener.finditer(page or ""):
+        rest = page[m.end():]
+        depth = 1
+        for t in pair.finditer(rest):
+            depth += -1 if t.group(0).lower() == f"</{tag}>" else 1
+            if depth == 0:
+                yield rest[:t.start()]
+                break
+        else:
+            # Unbalanced markup: take what is there rather than dropping the
+            # advert entirely.
+            yield rest
+
+
+# iCIMS renders its posting into an iframe exactly the way it renders its
+# search results into one. The bare posting URL answers 200 with a ~3.8KB
+# shell that contains no advert and no JSON-LD, so the shared reader returns
+# "" on a page that looks perfectly healthy. `in_iframe=1` returns the
+# server-rendered posting, JobPosting block and all. This is the same trick
+# `parse_icims` already uses on the search endpoint.
+#
+# The query string is rebuilt rather than kept, because a stored URL that lost
+# its `in_iframe=1` somewhere (a redirect, a hand-edited source) would enrich
+# to nothing with no error to show for it.
+_ICIMS_JOB = re.compile(r"/jobs/\d+/", re.I)
+
+
+def _from_icims(url: str, session=None, timeout: int = 20) -> str:
+    base = (url or "").split("?")[0]
+    if not _ICIMS_JOB.search(base):
+        return ""
+    get = (session or requests).get
+    try:
+        r = get(f"{base}?in_iframe=1", headers={"User-Agent": UA},
+                timeout=timeout)
+    except requests.RequestException:
+        return ""
+    if r.status_code != 200:
+        return ""
+    return _json_ld_text(r.text)
+
+
+# Oracle Recruiting Cloud's posting page is a JavaScript shell: 4.4KB, no
+# JSON-LD, no advert. The text is in the same REST API `parse_oracle` already
+# reads the list from, one requisition at a time.
+#
+# The resource is `recruitingCEJobRequisitionDetails`, PLURAL. The singular
+# spelling answers 404 with an empty body, which is indistinguishable from a
+# dead board, so this is not a name to guess at.
+#
+# The site number has to come from the URL. It is CX_1 on most tenants but not
+# all, and `parse_oracle` already carries whatever the source said through
+# into the job URL, so it is read back out here rather than assumed.
+_ORACLE_JOB = re.compile(
+    r"^https?://([^/]+)/hcmUI/CandidateExperience/[^/]+/sites/([^/]+)/job/([^/?#]+)",
+    re.I)
+_ORACLE_API = ("https://{host}/hcmRestApi/resources/latest/"
+               "recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
+               "&finder=ById;Id=%22{rid}%22,siteNumber={site}")
+
+
+def _from_oracle(url: str, session=None, timeout: int = 20) -> str:
+    m = _ORACLE_JOB.match(url or "")
+    if not m:
+        return ""
+    host, site, rid = m.groups()
+    get = (session or requests).get
+    try:
+        r = get(_ORACLE_API.format(host=host, rid=rid, site=site),
+                headers={"User-Agent": UA, "Accept": "application/json"},
+                timeout=timeout)
+        if r.status_code != 200:
+            return ""
+        items = (r.json() or {}).get("items") or []
+    except (requests.RequestException, ValueError):
+        return ""
+    if not items or not isinstance(items[0], dict):
+        return ""
+    job = items[0]
+    # The advert is split across fields and which ones are filled varies by
+    # tenant: Marks and Spencer put all 8,762 characters in
+    # ExternalDescriptionStr and leave responsibilities and qualifications
+    # empty, while Mashreq's ExternalDescriptionStr is a 349 character stub
+    # with the real advert in the other two. Reading one field alone loses
+    # whole adverts either way.
+    #
+    # ShortDescriptionStr is deliberately excluded: it is a teaser cut from
+    # the description, so including it scores the same paragraph twice.
+    order = ("ExternalDescriptionStr", "ExternalResponsibilitiesStr",
+             "ExternalQualificationsStr", "CorporateDescriptionStr",
+             "OrganizationDescriptionStr")
+    parts = []
+    for k in order:
+        text = _strip_blocks(job.get(k) or "")
+        # Some tenants fill every field with the same advert. One measured
+        # board had responsibilities and qualifications byte-identical to each
+        # other and both a re-encoding of the description, so a plain join
+        # stored the advert three times: three times the tokens for `rank` to
+        # read and three times the chance of tripping the 20,000 character cap
+        # before the end of the advert is reached.
+        if not text or any(text in p for p in parts):
+            continue
+        parts = [p for p in parts if p not in text]
+        parts.append(text)
+    return "\n\n".join(parts)
+
+
+# Avature serves a JobPosting block on some tenants and none at all on others:
+# Tesco's careers site has one, EA's sandbox board has zero, and both are
+# ordinary Avature installs. So the shared reader is tried first and a second
+# reader stands behind it rather than the platform being called done on the
+# strength of one board that happened to work.
+#
+# The fallback reads Avature's own template class rather than an employer
+# theme's markup, which is why it holds across tenants: the same
+# `article__content__view__field__value` divs are on the Tesco page that did
+# not need them. Every field block is taken, not just the advert one, because
+# the header of the advert block is localised ("Descripción del puesto") and
+# keying on it would fail on exactly the non-English boards this is for. The
+# other blocks are the location, the worker type and the req id, which are
+# short and are worth screening against anyway.
+_AV_FIELD = re.compile(
+    r'<div[^>]*\bclass="[^"]*\barticle__content__view__field__value\b[^"]*"[^>]*>',
+    re.I)
+
+
+def _from_avature(url: str, session=None, timeout: int = 20) -> str:
+    page = _page(url, session, timeout)
+    if not page:
+        return ""
+    text = _json_ld_text(page)
+    if text:
+        return text
+    parts = [_strip_blocks(b) for b in _inner_blocks(page, _AV_FIELD, "div")]
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+# SuccessFactors RMK publishes no JSON-LD at all: zero blocks on Reckitt and
+# zero on Burberry, so the shared reader comes back empty on a 200. The advert
+# sits in <span class="jobdescription">, which is stable across tenants
+# because it is SuccessFactors' own markup rather than the employer's theme.
+#
+# The close is found by counting, not by a lazy `(.*?)</span>`, because most
+# adverts nest further spans inside that one. Measured on live boards: PSEG's
+# advert is 15,758 characters and a lazy match returns 121 of them, Cintas
+# 5,124 against 133, Medibank 8,354 against 153. Every one of those would be
+# under the 200-character floor and so would look like a failed fetch, but
+# Hikma's returns 1,053 of 2,375, which would be stored as the whole advert.
+#
+# The opening tag varies: some tenants serve `<span class="jobdescription">`
+# and others `<span itemprop="description" class="jobdescription">`, so the
+# class is matched as a word anywhere in the tag rather than as the whole
+# attribute.
+_RMK_DESC_OPEN = re.compile(
+    r'<span[^>]*\bclass="[^"]*\bjobdescription\b[^"]*"[^>]*>', re.I)
+
+
+def _from_rmk(url: str, session=None, timeout: int = 20) -> str:
+    page = _page(url, session, timeout)
+    if not page:
+        return ""
+    for body in _inner_blocks(page, _RMK_DESC_OPEN, "span"):
+        return _strip_blocks(body)
+    return ""
+
+
 # Which fetcher handles which platform. A platform absent from here is one
 # whose list endpoint already carries the description.
 FETCHERS = {
@@ -284,6 +491,10 @@ FETCHERS = {
     "jobvite": _from_jobvite,
     "jazzhr": _from_jazzhr,
     "taleo": _from_taleo,
+    "icims": _from_icims,
+    "oracle": _from_oracle,
+    "avature": _from_avature,
+    "rmk": _from_rmk,
 }
 
 
