@@ -65,6 +65,12 @@ def _iso(v: Any) -> str | None:
                 # %B every NHS role had no date, so the recency points never
                 # fired and 28 roles clumped onto three scores.
                 "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y",
+                # Taleo lets each career section pick its own date format, and
+                # they really do differ: TTEC and D.R. Horton send
+                # "Aug 24, 2026", Transport for London sends "13-Aug-26". A
+                # Taleo posting is only ever found by shape, so a format this
+                # cannot read is a posting with no date and no recency points.
+                "%d-%b-%y", "%d-%b-%Y",
                 # RFC 822, which is what every RSS <pubDate> is:
                 # "Wed, 19 Aug 2026 16:47:00 +0100". Without it no feed-shaped
                 # source had a date at all, so the recency points never fired
@@ -656,6 +662,225 @@ def parse_jazzhr(payload: Any, src: Source) -> Iterator[Job]:
             # posting page, which carries a JobPosting JSON-LD block.
             posted_at=None,
             description="",
+            salary=Salary(),
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
+# Oracle Taleo
+# --------------------------------------------------------------------------
+# 255 distinct employer hosts on taleo.net in one Common Crawl index, the
+# largest readable gap left after JazzHR. The board is
+# `https://<tenant>.taleo.net/careersection/<section>/jobsearch.ftl`, and the
+# token is composite (`tenant|section`) because a Taleo tenant runs several
+# career sections and none of them is the default: Hilton's is
+# `us_hotel_ext`, Transport for London's is `external`, TTEC's is `2`.
+#
+# Four things cost a session each here.
+#
+# The page is a JavaScript shell. A plain GET of `jobsearch.ftl` returns no
+# job rows at all, so `fetch_taleo` reads the JSON endpoint the page itself
+# calls. See the comment there for why the `tz` header is not optional.
+#
+# The columns are configured per career section and there is no header row in
+# the JSON, so nothing may be read by position. Live proof: BAE Systems ship
+# ONE column (title only, no location anywhere), Transport for London ship two
+# (title, date), TTEC and D.R. Horton ship three (title, locations, date).
+# Reading `column[1]` as the location gives BAE nothing and TfL a date. Taleo
+# does hand out pointers, `linkedColumn` and `locationsColumns`, and those are
+# what this trusts; the date is found by trying to parse the leftovers.
+#
+# The location is a JSON array serialised INTO the cell, so the raw value is
+# the eight characters `["Bath"]` plus the place. It has to be decoded, or
+# every location on every Taleo board arrives with brackets and quotes in it.
+#
+# And Taleo writes a location as a hierarchy joined by hyphens, biggest first:
+# `PH-National Capital-Quezon City, Metro Manila`. screen.py's country matcher
+# reads comma-separated locations, smallest first, and its US-state rules
+# require the comma (`,\s*nebraska`). Handed Taleo's own spelling it resolved
+# almost nothing. `_taleo_place` reverses and re-commas, which is the entire
+# fix: "Omaha, Nebraska" resolves to US, "Quezon City, Metro Manila, National
+# Capital, PH" resolves to PH on the city.
+_TL_CELL_SPLIT = 2   # country / region / everything-else, see _taleo_place
+
+# Two-letter codes that may be expanded into a country name, and the list is
+# short on purpose. It is exactly the codes screen.py's `_COUNTRY_MARKERS`
+# already knows, MINUS every code that is also a US state abbreviation.
+# Excluded for that reason and no other: CA (California, not Canada), DE
+# (Delaware, not Germany), IN (Indiana, not India), IL (Illinois, not Israel),
+# ID (Idaho, not Indonesia), AR (Arkansas, not Argentina). D.R. Horton's board
+# is the live proof this matters: it publishes `IN-Indianapolis`,
+# `AL-Spanish Fort` and `KY-Louisville` next to `Nebraska-Omaha`, all American,
+# and expanding those codes would file them in India, Albania and the Cayman
+# Islands. Codes screen.py has never heard of are left alone too, because
+# expanding one gains nothing and only invents a place name.
+_TL_COUNTRY = {
+    "GB": "United Kingdom", "US": "United States", "IE": "Ireland",
+    "FR": "France", "ES": "Spain", "NL": "Netherlands", "AU": "Australia",
+    "NZ": "New Zealand", "AE": "United Arab Emirates", "SG": "Singapore",
+    "HK": "Hong Kong", "JP": "Japan", "CN": "China", "PL": "Poland",
+    "PT": "Portugal", "SE": "Sweden", "CH": "Switzerland", "BR": "Brazil",
+    "MX": "Mexico", "ZA": "South Africa", "TH": "Thailand", "MY": "Malaysia",
+    "PH": "Philippines", "IT": "Italy", "BE": "Belgium", "AT": "Austria",
+    "DK": "Denmark", "NO": "Norway", "FI": "Finland", "CZ": "Czechia",
+    "RO": "Romania", "TR": "Turkey", "VN": "Vietnam", "KR": "South Korea",
+}
+
+
+def _taleo_place(cell: Any) -> list[str]:
+    """One Taleo location cell, rewritten so screen.py can read it.
+
+    Three deliberate rules, each of which cost real roles when it was not
+    there.
+
+    It splits at most twice, because Taleo's hierarchy is country, region,
+    place and the place itself may be hyphenated. Splitting on every hyphen
+    turns `GB-England-Stoke-on-Trent` into five fragments; splitting twice
+    keeps the town whole.
+
+    It reverses, so the string reads smallest-first and comma-separated, which
+    is the shape screen.py's country matcher was built for. Its US-state rules
+    require the comma (`,\\s*nebraska`), so Taleo's own `Nebraska-Omaha`
+    matched nothing at all and every D.R. Horton role reached the country
+    filter unresolved. Reversed it is "Omaha, Nebraska", which resolves.
+
+    It expands a leading two-letter country code only from `_TL_COUNTRY`,
+    which deliberately excludes every code that is also a US state. A bare
+    `PH` resolves to nothing (screen.py looks for the word "philippines"), so
+    leaving it alone loses TTEC's whole Philippine operation from the country
+    facet; expanding `IN` would move D.R. Horton's Indianapolis jobs to India.
+    Both of those are on live boards, which is why the answer is a list rather
+    than a rule.
+    """
+    raw = cell if isinstance(cell, str) else _text(cell)
+    if not raw:
+        return []
+    try:
+        entries = json.loads(raw)
+    except ValueError:
+        # Not every tenant serialises the cell as an array. A bare string is
+        # still a location and must not be thrown away.
+        entries = [raw]
+    if not isinstance(entries, list):
+        entries = [entries]
+
+    out: list[str] = []
+    for e in entries:
+        s = _text(e)
+        if not s:
+            continue
+        parts = [p.strip() for p in s.split("-", _TL_CELL_SPLIT) if p.strip()]
+        # Only the leading segment, which is the one Taleo puts the country
+        # in. A two-letter code further down is a region, and "TX" is not
+        # Texas-the-country.
+        if len(parts) > 1 and parts[0] in _TL_COUNTRY:
+            parts[0] = _TL_COUNTRY[parts[0]]
+        out.append(", ".join(reversed(parts)))
+    return out
+
+
+def _taleo_date(cells: list[str], used: set[int]) -> str | None:
+    """The posting date, found by shape rather than by position.
+
+    There is no header row in the JSON and the columns differ per career
+    section, so the only honest way to find the date is to try to parse the
+    cells nothing else claimed. Live formats seen: "Aug 24, 2026" (TTEC,
+    D.R. Horton) and "13-Aug-26" (Transport for London), which is why `_iso`
+    grew the second one.
+    """
+    for i, c in enumerate(cells):
+        if i in used or not isinstance(c, str):
+            continue
+        got = _iso(c)
+        if got:
+            return got
+    return None
+
+
+# Taleo publishes no working-arrangement field of any kind: not in the row,
+# not in the facets. Remote is stated in the job title when it is stated at
+# all ("Data Engineer (Remote)" on TTEC). That means the keyword check is the
+# only signal, and it walks straight into the Jobvite trap, where "Hybrid
+# Remote" contains the word "remote" and reads as true. A title or location
+# that says hybrid is answered False, which is what it is: a hybrid role is
+# not open to someone who cannot reach the office.
+_TL_HYBRID = re.compile(r"\bhybrid\b", re.I)
+
+
+def parse_taleo(payload: Any, src: Source) -> Iterator[Job]:
+    """Oracle Taleo, from the JSON search endpoint `fetch_taleo` collects.
+
+    The payload is what `fetch_taleo` assembles: every page's rows merged
+    under `requisitionList`, plus `employerName` read from the RSS channel
+    title, which is the only place on the whole platform where Taleo states
+    who the employer is. See `fetch_taleo` for why that is worth a request.
+
+    A career section that does not exist answers **HTTP 200** with
+    `careerSectionUnAvailable: true` and every field null, so liveness here is
+    the parsed job count and never the status code.
+    """
+    rows = (payload or {}).get("requisitionList") if isinstance(payload, dict) else None
+    employer = _text((payload or {}).get("employerName")) if isinstance(payload, dict) else ""
+
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        cells = [c if isinstance(c, str) else _text(c)
+                 for c in (row.get("column") or [])]
+        if not cells:
+            continue
+
+        ti = row.get("linkedColumn")
+        ti = ti if isinstance(ti, int) and 0 <= ti < len(cells) else 0
+        title = _text(cells[ti])
+        if not title:
+            continue
+
+        loc_idx = [i for i in (row.get("locationsColumns") or [])
+                   if isinstance(i, int) and 0 <= i < len(cells)]
+        places: list[str] = []
+        for i in loc_idx:
+            places.extend(_taleo_place(cells[i]))
+        # A pipe, because screen.py splits genuinely distinct locations on
+        # `[;|/]` and deliberately does not split on a comma: a comma binds a
+        # place to the qualifier that identifies its country.
+        place = " | ".join(dict.fromkeys(p for p in places if p))
+
+        posted = _taleo_date(cells, {ti, *loc_idx})
+
+        blob = f"{title} {place}"
+        remote = False if _TL_HYBRID.search(blob) else _remote(place, title)
+
+        contest = _text(row.get("contestNo") or row.get("jobId"))
+        if not contest:
+            continue
+
+        yield Job(
+            # `employerName` comes from the feed, not from the label we were
+            # handed, so identity here is evidence. It is also the ONLY place
+            # it is available: both <title> tags on an unbranded Taleo board
+            # read "Job Search", which is the shape that collapsed 252 Jobvite
+            # employers into one row.
+            company=employer or src.company,
+            title=title,
+            # jobdetail.ftl lives beside jobsearch.ftl in the same career
+            # section, and `job=` takes the contest number rather than the
+            # internal requisition id.
+            url=urljoin(src.url, f"jobdetail.ftl?lang=en&job={contest}"),
+            platform="taleo",
+            location=place or ("Remote" if remote else ""),
+            remote=remote,
+            # The row carries no department. Taleo has a JOB_FIELD facet, but
+            # it is a summary of the whole board rather than a value per
+            # posting, so there is nothing honest to put here.
+            department=None,
+            posted_at=posted,
+            description="",
+            # No pay in any of the seven live career sections checked. The
+            # advert sometimes states one, and `enrich` re-parses it from
+            # there, where the period is written down: a bare figure with no
+            # period is the Reed trap, where 650 a day read as 650 a year.
             salary=Salary(),
             source_id=src.key,
         )

@@ -116,6 +116,28 @@ def build_rmk(token: str) -> str:
             f"/search/?q=&sortColumn=referencedate&sortDirection=desc")
 
 
+def build_taleo(token: str) -> str:
+    """`tenant|section` -> the career section's job search page.
+
+    Both halves are needed and neither can be guessed. A Taleo tenant runs
+    several career sections and there is no default one: Hilton's is
+    `us_hotel_ext`, Transport for London's is `external`, D.R. Horton's and
+    TTEC's are both `2`, The College of New Jersey's is `00_ex_staff`. A
+    section that does not exist answers 200 with "Career Section Unavailable"
+    rather than 404, so guessing produces a page that looks fine and holds no
+    jobs.
+
+    This deliberately builds the human page rather than the JSON endpoint the
+    page calls. The endpoint is addressed by a `portal` number that appears
+    nowhere except inside the page, so no pure function could produce it, and
+    `discover` reads its tokens off careers pages where only this form
+    appears. `fetch_taleo` does the two-step.
+    """
+    tenant, section = _parts(token, 2, "", "")
+    return (f"https://{_host(tenant, 'taleo.net')}"
+            f"/careersection/{section.strip('/')}/jobsearch.ftl?lang=en")
+
+
 def build_phenom(token: str) -> str:
     """`host|locale` -> the search-results page.
 
@@ -338,6 +360,28 @@ REGISTRY: list[Platform] = [
              "a single response is not a truncation bug. It states the "
              "employer's own name in a schema.org Organization block, so "
              "identity here is evidence rather than an echo of our label",
+    ),
+    Platform(
+        "taleo",
+        # The host AND the path, because `taleo.net` alone would also match
+        # Taleo's own marketing pages and the `/careersection/` path is what
+        # says this is a board.
+        r"taleo\.net/careersection/",
+        platforms.parse_taleo,
+        build=build_taleo,
+        verified=True,
+        note="255 employer hosts in one Common Crawl index. The board page is "
+             "a JavaScript shell with no rows in it: `fetch_taleo` reads the "
+             "JSON endpoint the page calls, which needs a `tz` request header "
+             "or it answers 500, and no cookie, token or session of any kind. "
+             "Token is `tenant|section`; a section that does not exist "
+             "answers 200 with careerSectionUnAvailable. Pages in 25s on "
+             "`pageNo`, ignores a pageSize we send while echoing it back, and "
+             "serves the last page again forever past the end, so the stop "
+             "condition is 'no new contest numbers' and there is a hard cap. "
+             "The row columns are configured per career section and carry no "
+             "headers, so nothing is read by position. Taleo states the "
+             "employer's name in one place only, the RSS channel title",
     ),
     Platform(
         "bamboohr",

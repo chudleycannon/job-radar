@@ -24,7 +24,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 import requests
 
@@ -62,9 +62,16 @@ def fetch_one(
     retries: int = 2,
     user_agent: str = "job-radar/0.1",
     session: requests.Session | None = None,
+    # One platform needs a header nothing else does, and it is not optional:
+    # Taleo's search endpoint answers 500 "An Error Occurred in TEE" without a
+    # `tz` header and 200 with one, whatever the value. Passing it per call
+    # rather than adding it to the defaults, so no other platform is sent a
+    # header it never asked for.
+    extra_headers: dict[str, str] | None = None,
 ) -> Result:
     s = session or requests.Session()
-    headers = {"User-Agent": user_agent, "Accept": "application/json"}
+    headers = {"User-Agent": user_agent, "Accept": "application/json",
+               **(extra_headers or {})}
     t0 = time.time()
     last = "unknown error"
     status = None
@@ -599,6 +606,198 @@ def fetch_rmk(
     return Result(src, payload="".join(pages))
 
 
+# Taleo's career section page is a JavaScript shell. It carries the search
+# form, the facet panel and nothing else: zero job rows, on every one of the
+# seven live boards checked. The rows come from a JSON endpoint the page
+# calls, and three things about that endpoint are worth writing down.
+#
+# It needs a `tz` request header. Without one it answers **HTTP 500** with the
+# body "An Error Occurred in TEE"; with one it answers 200. The value is not
+# validated at all, `tz: x` works, so this is a required-field check rather
+# than anything meaningful. Nothing else is required: no cookie, no session,
+# no CSRF token, no referer, no browser user agent. That last point is what
+# separates Taleo from Cornerstone OnDemand, whose equivalent endpoint answers
+# 401 "no Authorization header found" and can only be reached by lifting a
+# token out of the page. See the README.
+#
+# It is addressed by a `portal` number that appears nowhere but inside the
+# page, which is why this is a two-step: read the page, then call the API.
+# The number is per-tenant and not unique across them. BAE Systems and
+# D.R. Horton both sit on portal 101430233 and return 159 and 578 different
+# postings respectively, so the number identifies nothing on its own.
+#
+# And it pages badly, in two separate ways that both read as success:
+#
+#   * `pageSize` in the request is ignored, but echoed back in the response.
+#     Asking for 100 returns 25 rows under a `pagingData.pageSize` of 100. A
+#     stop condition that believed the echo would think it had the lot.
+#   * Asking for a page past the end does not return an empty list. Requesting
+#     page 100 of D.R. Horton's 24 pages returns the last page again, and TfL
+#     returns its single row for every page number. A loop that stopped on an
+#     empty page would never stop.
+#
+# `totalCount` is not a safe bound either: TfL reports 3 and serves 1. So the
+# stop condition is the one Avature and RMK already use, no new contest
+# numbers, with a hard cap behind it.
+TALEO_PAGE = 25
+
+# Six pages is 150 postings per search term, 450 across the three terms, which
+# covers every board checked except D.R. Horton's 578. Walking that one whole
+# would be 24 requests per scan for one employer whose roles are then almost
+# all discarded by the title filter, so the same shape as Workday, Avature and
+# RMK applies: KEYWORD is a real server-side filter (D.R. Horton 578 unfiltered,
+# 118 for "manager"), so search per wanted title rather than crawl the board.
+TALEO_MAX_PAGES = 6
+
+_TL_PORTAL = re.compile(r"portalNo\s*:\s*'(\d+)'")
+# Taleo appends this to the career section's name in the feed. Left on, every
+# employer would be stored as "Acme - Custom Job List".
+_TL_FEED_SUFFIX = re.compile(r"\s*-\s*Custom Job List\s*$", re.I)
+_TL_FEED_TITLE = re.compile(r"<channel>\s*<title>(.*?)</title>", re.S | re.I)
+
+
+def _taleo_body(term: str, page: int) -> dict:
+    """The search request the career section's own JavaScript sends.
+
+    `sortBySelectionParam` "1" is POSTING_DATE and `ascendingSortingOrder`
+    "false" is newest first. That pairing matters precisely because the page
+    cap above exists: if only the first 150 of a board are ever read, they
+    should be the 150 newest rather than whatever Taleo's relevancy score
+    puts first for an empty keyword.
+    """
+    return {
+        "multilineEnabled": False,
+        "sortingSelection": {"sortBySelectionParam": "1",
+                             "ascendingSortingOrder": "false"},
+        "fieldData": {"fields": {"KEYWORD": term, "LOCATION": ""}, "valid": True},
+        "filterSelectionParam": {"searchFilterSelections": []},
+        "advancedSearchFiltersSelectionParam": {"searchFilterSelections": []},
+        "pageNo": page,
+    }
+
+
+def _taleo_employer(host: str, portal: str, session: requests.Session,
+                    timeout: int, user_agent: str) -> str:
+    """The employer's own name, from the RSS channel title.
+
+    This is one extra request per board per scan and it is worth it, because
+    it is the ONLY place on the platform where Taleo says who the employer is.
+    Both `<title>` tags on an unbranded career section read "Job Search": The
+    College of New Jersey's board says "Job Search" twice and does not contain
+    the words "College of New Jersey" anywhere in its markup. Filling the
+    company field from the label we were handed instead would make every
+    identity check circular, and taking the page title would give 255 boards
+    the same name, which is exactly how 252 Jobvite employers merged into one
+    row and Ookla, Enphase Energy and Barracuda Networks vanished.
+    Checked live, the channel title is the employer and it is distinct on
+    every board: "TTEC", "Baesystems", "D.R. Horton, Inc.", "TFL", "Hilton",
+    "Texas Comptroller of Public Accounts", "THE COLLEGE OF NEW JERSEY".
+    The feed's ITEMS are useless, which is the trap: it serves at most 11 of
+    them whatever the board holds (11 of TTEC's 116, 11 of D.R. Horton's 578)
+    and answers a board with nothing open with one placeholder item titled
+    "Unable to Create an RSS Feed". Only the channel title is read here.
+    """
+    url = (f"https://{host}/careersection/feed/joblist.rss"
+           f"?lang=en&portal={portal}&searchtype=3")
+    try:
+        r = session.get(url, headers={"User-Agent": user_agent}, timeout=timeout)
+    except requests.RequestException:
+        return ""
+    if r.status_code != 200:
+        return ""
+    m = _TL_FEED_TITLE.search(r.text or "")
+    if not m:
+        return ""
+    return _TL_FEED_SUFFIX.sub("", m.group(1)).strip()
+
+
+def fetch_taleo(
+    src: Source,
+    terms: list[str],
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = TALEO_MAX_PAGES,
+) -> Result:
+    """Oracle Taleo: resolve the portal number, then page the JSON endpoint.
+
+    Returns the merged rows under `requisitionList` plus the employer's own
+    name under `employerName`, which is the shape `parse_taleo` reads.
+    """
+    session = requests.Session()
+    host = urlparse(src.url).netloc
+
+    page_res = fetch_one(
+        Source(company=src.company, url=src.url, platform="taleo",
+               sector=src.sector, country=src.country),
+        timeout=timeout, retries=retries, user_agent=user_agent, session=session)
+    if not page_res.ok or not isinstance(page_res.payload, str):
+        # Carry the failure on the ORIGINAL source: the state file and
+        # `detect_throttling` key on `source.key`.
+        return Result(src, error=page_res.error or "bad payload",
+                      status=page_res.status, throttled=page_res.throttled)
+
+    m = _TL_PORTAL.search(page_res.payload)
+    if not m:
+        # Two different real cases land here and neither is a transport
+        # failure, so neither may be reported as one. A career section that
+        # does not exist answers 200 with "Career Section Unavailable", and an
+        # older, pre-faceted career section (Cook County, EFSA) has no portal
+        # number at all because it renders its own rows server side. Both are
+        # "we could not read this", which is what `validate` needs to hear so
+        # that `--prune` leaves the board alone.
+        return Result(src, error="no portal number on the career section page",
+                      status=page_res.status)
+    portal = m.group(1)
+
+    employer = _taleo_employer(host, portal, session, timeout, user_agent)
+
+    api = f"https://{host}/careersection/rest/jobboard/searchjobs?lang=en&portal={portal}"
+    rows: list[dict] = []
+    seen: set[str] = set()
+    first_error: Result | None = None
+
+    # An empty term means the unfiltered board, which is right for the small
+    # tenants: Transport for London publish three roles and a keyword search
+    # would hide two of them.
+    for term in (terms or [""])[:3]:
+        for page in range(1, max_pages + 1):
+            probe = Source(company=src.company, url=api, platform="taleo",
+                           sector=src.sector, country=src.country,
+                           method="POST", body=_taleo_body(term, page))
+            res = fetch_one(probe, timeout=timeout, retries=retries,
+                            user_agent=user_agent, session=session,
+                            extra_headers={"tz": "GMT+00:00"})
+            if not res.ok or not isinstance(res.payload, dict):
+                first_error = first_error or Result(
+                    src, error=res.error or "bad payload", status=res.status,
+                    throttled=res.throttled)
+                break
+            got = res.payload.get("requisitionList") or []
+            fresh = [r for r in got
+                     if isinstance(r, dict)
+                     and str(r.get("contestNo") or r.get("jobId") or "") not in seen]
+            # Stop on nothing new, never on a short page and never on the
+            # stated total. Past the end Taleo repeats the last page rather
+            # than returning nothing, so this is the only condition that
+            # actually fires.
+            if not fresh:
+                break
+            for r in fresh:
+                seen.add(str(r.get("contestNo") or r.get("jobId") or ""))
+            rows.extend(fresh)
+
+    if not rows and first_error:
+        return first_error
+    # A board with nothing open is a real answer and is not an error: Hilton's
+    # `us_hotel_ext` returns totalCount 0 for an empty keyword and for
+    # "manager" alike. It reaches `parse_taleo` as zero jobs, which is what
+    # liveness is measured on everywhere in this tool.
+    return Result(src, payload={"employerName": employer,
+                                "requisitionList": rows})
+
+
 # What one page looks like on the platforms that cap one. A source whose whole
 # result is exactly one of these numbers is the signature of a paging bug: the
 # board answered, the parser worked, and everything past row N was silently
@@ -607,6 +806,7 @@ def fetch_rmk(
 PAGE_SIZES = {
     "avature": 10, "rmk": RMK_PAGE, "phenom": 50, "workday": 20,
     "nhs": 10, "reed": REED_PAGE, "adzuna": ADZUNA_PAGE,
+    "taleo": TALEO_PAGE,
     # The Teamtailor builder asks for per_page=200; the feed's own default is
     # the first 100, so a board sitting on either number is worth a look.
     "teamtailor": 200,
@@ -687,6 +887,9 @@ def _delayed_fetch(src, delay, timeout, retries, ua, terms, keys=None) -> Result
     if src.platform == "rmk":
         return fetch_rmk(src, terms, timeout=timeout, retries=retries,
                          user_agent=ua)
+    if src.platform == "taleo":
+        return fetch_taleo(src, terms, timeout=timeout, retries=retries,
+                           user_agent=ua)
     return fetch_one(src, timeout=timeout, retries=retries, user_agent=ua,
                      session=requests.Session())
 

@@ -4297,3 +4297,390 @@ def test_jazzhr_is_wired_into_discovery_and_enrichment():
     assert any(p == "jazzhr" for p, _ in SIGNATURES)
     assert (adapters.by_name("jazzhr").build("acme")
             == "https://acme.applytojob.com/apply")
+
+
+# --------------------------------------------------------------------------
+# Oracle Taleo
+#
+# Every row below is trimmed from a payload actually recorded from the live
+# board named in the test. The four boards are deliberately different shapes,
+# because that is the whole difficulty of this platform.
+# --------------------------------------------------------------------------
+
+# TTEC, careersection 2: three columns, locations pointed at column 1.
+TALEO_TTEC = {
+    "employerName": "TTEC",
+    "requisitionList": [
+        {"hotJob": True, "jobId": "2447955", "contestNo": "04E2P",
+         "column": ["Associate Recruiter - Novaliches",
+                    '["PH-National Capital-Quezon City, Metro Manila"]',
+                    "Aug 24, 2026"],
+         "linkedColumn": 0, "locationsColumns": [1]},
+        {"hotJob": False, "jobId": "2447777", "contestNo": "04DZM",
+         "column": ["Data Engineer (Remote)", '["US-TX-Austin"]',
+                    "Aug 22, 2026"],
+         "linkedColumn": 0, "locationsColumns": [1]},
+    ],
+}
+
+# BAE Systems, careersection 2: ONE column. No location anywhere, no date.
+TALEO_BAE = {
+    "employerName": "Baesystems",
+    "requisitionList": [
+        {"hotJob": True, "jobId": "1014544", "contestNo": "00110645",
+         "column": ["Metrology Engineer (Calibration)"],
+         "linkedColumn": 0, "locationsColumns": []},
+    ],
+}
+
+# Transport for London, careersection external: two columns, and the second
+# is a date in a format no other board here uses.
+TALEO_TFL = {
+    "employerName": "TFL",
+    "requisitionList": [
+        {"hotJob": False, "jobId": "568450", "contestNo": "048006",
+         "column": ["Support Technician - Signals (Nights)", "13-Aug-26"],
+         "linkedColumn": 0, "locationsColumns": []},
+    ],
+}
+
+# D.R. Horton, careersection 2: American jobs whose location codes are also
+# ISO country codes, mixed with spelled-out states on the same board.
+TALEO_DRHORTON = {
+    "employerName": "D.R. Horton, Inc.",
+    "requisitionList": [
+        {"jobId": "2603925", "contestNo": "2603925",
+         "column": ["Foundation Heavy Eq. Operator", '["Nebraska-Omaha"]',
+                    "Aug 24, 2026"],
+         "linkedColumn": 0, "locationsColumns": [1]},
+        {"jobId": "2602488", "contestNo": "2602488",
+         "column": ["Sales Representative", '["AL-Spanish Fort"]',
+                    "Aug 21, 2026"],
+         "linkedColumn": 0, "locationsColumns": [1]},
+        {"jobId": "2601111", "contestNo": "2601111",
+         "column": ["Construction Manager", '["IN-Indianapolis"]',
+                    "Aug 20, 2026"],
+         "linkedColumn": 0, "locationsColumns": [1]},
+        {"jobId": "2600222", "contestNo": "2600222",
+         "column": ["Warranty Technician", '["KY-Louisville"]',
+                    "Aug 19, 2026"],
+         "linkedColumn": 0, "locationsColumns": [1]},
+    ],
+}
+
+
+def _taleo_source(tenant="ttec", section="2", company="whatever-we-called-it"):
+    from jobradar.models import Source
+    return Source(company=company, platform="taleo",
+                  url=f"https://{tenant}.taleo.net/careersection/{section}"
+                      f"/jobsearch.ftl?lang=en")
+
+
+def test_taleo_reads_its_columns_by_taleo_s_own_pointers_never_by_position():
+    """The row columns are configured per career section and the JSON carries
+    no header row. BAE Systems ship one column, Transport for London two and
+    TTEC three, all under the same key. Reading `column[1]` as the location
+    gives BAE an IndexError, TfL a date filed as a place, and only TTEC the
+    right answer, which is how a platform-wide parser passes its own tests and
+    then ruins two boards in three."""
+    from jobradar.adapters import platforms
+
+    ttec = list(platforms.parse_taleo(TALEO_TTEC, _taleo_source()))
+    bae = list(platforms.parse_taleo(
+        TALEO_BAE, _taleo_source("baesystems", "2")))
+    tfl = list(platforms.parse_taleo(
+        TALEO_TFL, _taleo_source("tfl", "external")))
+
+    assert [j.title for j in ttec] == ["Associate Recruiter - Novaliches",
+                                       "Data Engineer (Remote)"]
+    assert ttec[0].posted_at == "2026-08-24"
+
+    # One column means a title and honestly nothing else, not a crash and not
+    # a date read as a location.
+    assert bae[0].title == "Metrology Engineer (Calibration)"
+    assert bae[0].location == ""
+    assert bae[0].posted_at is None
+
+    # Two columns, and the date is the one Taleo writes as "13-Aug-26". Before
+    # `_iso` learned that format every TfL role arrived undated and scored as
+    # though it had been sitting there for ever.
+    assert tfl[0].location == ""
+    assert tfl[0].posted_at == "2026-08-13"
+
+
+def test_a_taleo_location_is_reversed_and_recommaed_so_the_country_resolves():
+    """Taleo writes a location as a hyphen-joined hierarchy, biggest first
+    ("Nebraska-Omaha"). screen.py's country rules want commas and
+    smallest-first, and its US-state patterns require the comma outright, so
+    handed Taleo's own spelling they matched nothing and every D.R. Horton
+    role reached a country filter unresolved."""
+    from jobradar.adapters import platforms
+    from jobradar.screen import _country_of
+
+    jobs = list(platforms.parse_taleo(TALEO_TTEC, _taleo_source()))
+
+    assert jobs[0].location == ("Quezon City, Metro Manila, "
+                                "National Capital, Philippines")
+    assert _country_of(jobs[0].location) == "PH"
+    assert _country_of(jobs[1].location) == "US"
+
+    # The town keeps its own hyphens. Splitting on every hyphen instead turns
+    # a Staffordshire job into "Trent, on, Stoke, England, United Kingdom".
+    assert platforms._taleo_place('["GB-England-Stoke-on-Trent"]') == [
+        "Stoke-on-Trent, England, United Kingdom"]
+    assert _country_of("Stoke-on-Trent, England, United Kingdom") == "UK"
+
+    # The cell is a JSON array serialised into a string. Left undecoded, every
+    # location on the platform arrives with brackets and quotes in it.
+    assert platforms._taleo_place('["Multiple Locations"]') == [
+        "Multiple Locations"]
+
+
+def test_a_taleo_code_that_is_also_a_us_state_is_never_expanded_to_a_country():
+    """D.R. Horton publish `AL-Spanish Fort`, `IN-Indianapolis` and
+    `KY-Louisville` next to `Nebraska-Omaha` on one American board. Expanding
+    a leading two-letter code as ISO would move those three to Albania, India
+    and the Cayman Islands, which is worse than not resolving them: a wrong
+    country passes a country filter it should fail."""
+    from jobradar.adapters import platforms
+    from jobradar.screen import _country_of
+
+    jobs = list(platforms.parse_taleo(
+        TALEO_DRHORTON, _taleo_source("drhorton", "2")))
+
+    assert [j.location for j in jobs] == [
+        "Omaha, Nebraska", "Spanish Fort, AL",
+        "Indianapolis, IN", "Louisville, KY"]
+    assert [_country_of(j.location) for j in jobs] == ["US", "US", "US", "US"]
+
+    # The guard is the list itself, so it has to stay true as screen.py moves.
+    # Every code we are willing to expand must be one screen.py can match on
+    # its own, and none of them may be a US state abbreviation.
+    from jobradar import screen
+    for code, name in platforms._TL_COUNTRY.items():
+        assert not screen._US_STATE.search(f", {code}"), code
+        assert screen._country_of(f"Somewhere, {name}"), (code, name)
+
+
+def test_a_taleo_hybrid_role_is_not_reported_as_remote():
+    """Taleo publishes no working-arrangement field at all, in the row or in
+    the facets, so remote can only be read out of the words. That walks into
+    the Jobvite trap, where "Hybrid Remote" contains "remote" and answered
+    true for all 31 hybrid roles on one board."""
+    from jobradar.adapters import platforms
+
+    payload = {"employerName": "Acme", "requisitionList": [
+        {"contestNo": "A1", "column": ["Data Engineer (Remote)",
+                                       '["US-TX-Austin"]'],
+         "linkedColumn": 0, "locationsColumns": [1]},
+        {"contestNo": "A2", "column": ["Platform Engineer (Hybrid Remote)",
+                                       '["GB-England-London"]'],
+         "linkedColumn": 0, "locationsColumns": [1]},
+        {"contestNo": "A3", "column": ["Finance Manager", '["GB-England-Bath"]'],
+         "linkedColumn": 0, "locationsColumns": [1]},
+    ]}
+    jobs = list(platforms.parse_taleo(payload, _taleo_source()))
+
+    assert jobs[0].remote is True
+    assert jobs[1].remote is False, "hybrid is not remote"
+    # Nothing said either way, which is a different answer from "no".
+    assert jobs[2].remote is None
+
+
+def test_a_taleo_career_section_that_does_not_exist_is_not_a_board():
+    """Taleo answers a portal number that does not exist with **HTTP 200** and
+    `careerSectionUnAvailable: true`, every other field null. The status code
+    proves nothing, so liveness is the parsed job count, as everywhere here."""
+    from jobradar.adapters import platforms
+
+    unavailable = {"requisitionList": None, "facetResults": None,
+                   "pagingData": None, "queryString": None,
+                   "careerSectionUnAvailable": True, "supportedLanguages": None}
+    assert list(platforms.parse_taleo(unavailable, _taleo_source())) == []
+    assert list(platforms.parse_taleo({}, _taleo_source())) == []
+
+
+def test_taleo_names_the_employer_from_the_feed_not_from_our_own_label():
+    """Every Taleo board titles its page "Job Search", and an unbranded one
+    does it twice: The College of New Jersey's markup does not contain the
+    words "College of New Jersey" anywhere. That is the shape that gave 253
+    Jobvite boards the same name and collapsed 252 real employers into one
+    row. The RSS channel title is the only place Taleo states who it is."""
+    from jobradar.adapters import platforms
+
+    jobs = list(platforms.parse_taleo(
+        TALEO_DRHORTON, _taleo_source("drhorton", "2", company="Some Label")))
+    assert all(j.company == "D.R. Horton, Inc." for j in jobs)
+
+    # And when the feed could not be read, it falls back to the label rather
+    # than filing the board under an empty string.
+    nameless = dict(TALEO_DRHORTON, employerName="")
+    fallback = list(platforms.parse_taleo(
+        nameless, _taleo_source("drhorton", "2", company="Some Label")))
+    assert all(j.company == "Some Label" for j in fallback)
+
+
+def test_taleo_pages_until_it_stops_seeing_new_jobs_never_on_an_empty_page():
+    """Past the end of a board Taleo serves the last page AGAIN rather than an
+    empty list: page 100 of D.R. Horton's 24 pages returns the last two rows,
+    and TfL returns its single row for every page number asked for. A loop
+    that stopped on an empty page would never stop. `pagingData.pageSize` is
+    no help either, because a request for 100 is echoed back as 100 and served
+    as 25. And the `tz` header is not optional: without it the endpoint
+    answers 500, so a fetcher that forgot it would report every board dead."""
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    calls = []
+
+    class R:
+        def __init__(self, payload=None, text=""):
+            self.status_code = 200
+            self.headers = {"Content-Type": ("application/json" if payload
+                                             is not None else "text/html")}
+            self.text = text
+            self._p = payload
+
+        def json(self):
+            return self._p
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            calls.append(("GET", url, headers))
+            if "joblist.rss" in url:
+                return R(text="<rss><channel><title>Acme Ltd - Custom Job "
+                              "List</title><item></item></channel></rss>")
+            return R(text="var x = { portalNo: '160131726', };")
+
+        def post(self, url, json=None, headers=None, timeout=None):
+            calls.append(("POST", url, headers, json["pageNo"]))
+            # Three real pages, then the same last page for ever after.
+            page = min(json["pageNo"], 3)
+            rows = [{"contestNo": f"C{page}-{i}", "column": [f"Role {page}-{i}"],
+                     "linkedColumn": 0, "locationsColumns": []}
+                    for i in range(2)]
+            return R({"requisitionList": rows,
+                      # Deliberately the lie: we never asked for 100 and it
+                      # would not matter if we had.
+                      "pagingData": {"currentPageNo": json["pageNo"],
+                                     "pageSize": 100, "totalCount": 999},
+                      "careerSectionUnAvailable": False})
+
+    src = Source(company="Acme", platform="taleo",
+                 url="https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en")
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_taleo(src, [], max_pages=8)
+    finally:
+        fetch_mod.requests.Session = old
+
+    posts = [c for c in calls if c[0] == "POST"]
+    # Pages 1, 2, 3 are new; page 4 repeats page 3 and stops the walk. Without
+    # the repeat check this would have run to the cap of 8.
+    assert [c[3] for c in posts] == [1, 2, 3, 4]
+    assert all(c[2].get("tz") for c in posts), "tz header is required"
+    assert len(res.payload["requisitionList"]) == 6
+    assert res.payload["employerName"] == "Acme Ltd"
+
+    # The endpoint is addressed by the portal number lifted out of the page,
+    # which is why this is a two-step rather than one builder.
+    assert "portal=160131726" in posts[0][1]
+
+
+def test_a_taleo_board_that_hides_its_portal_number_is_unreadable_not_dead():
+    """Two real cases have no portal number in the page: a career section that
+    does not exist, and the older pre-faceted generation that renders its own
+    rows (Cook County, EFSA). Neither is a transport failure and neither is an
+    empty board, and the difference matters because `validate --prune` deletes
+    a source that reads as dead."""
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    class R:
+        status_code = 200
+        headers = {"Content-Type": "text/html"}
+        text = "<html><title>Career Section Unavailable</title></html>"
+
+    class FakeSession:
+        def get(self, url, headers=None, timeout=None):
+            return R()
+
+        def post(self, *a, **k):  # pragma: no cover - must never be reached
+            raise AssertionError("should not call the API without a portal")
+
+    src = Source(company="Nope", platform="taleo",
+                 url="https://nope.taleo.net/careersection/9/jobsearch.ftl?lang=en")
+    old, fetch_mod.requests.Session = fetch_mod.requests.Session, FakeSession
+    try:
+        res = fetch_mod.fetch_taleo(src, [], max_pages=2)
+    finally:
+        fetch_mod.requests.Session = old
+
+    assert not res.ok
+    assert "portal number" in (res.error or "")
+
+
+def test_a_taleo_advert_is_the_longest_element_because_its_index_moves():
+    """The posting page has no JSON-LD and no description element: the advert
+    is one entry in a URL-encoded array, and which entry moves per career
+    section. It is element 10 on TTEC and element 11 on BAE Systems, because
+    BAE's section adds a job-field pair TTEC's does not. Reading by position
+    returns the string "false" for half the platform."""
+    from jobradar import enrich
+
+    advert = ("<p>" + "You will run the calibration lab. " * 12 + "</p>")
+    quoted = advert.replace(" ", "%20").replace("<", "%3C").replace(">", "%3E")
+    page = (
+        "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
+        "'1014544','true','false',"
+        "'Metrology Engineer (Calibration)','00110645',"
+        f"'!*!{quoted}',"
+        "'Engineering','Engineering','SA-04-Ad Damman-Dhahran','Ongoing'"
+        "]);"
+    )
+
+    class R:
+        status_code = 200
+        text = page
+
+    class FakeSession:
+        @staticmethod
+        def get(url, headers=None, timeout=None):
+            return R()
+
+    got = enrich._from_taleo("https://bae.taleo.net/careersection/2/jobdetail.ftl",
+                             session=FakeSession())
+
+    assert got.startswith("You will run the calibration lab.")
+    # `!*!` is Taleo's own "this is rich text" marker, not part of the advert.
+    assert "!*!" not in got
+    assert "%20" not in got
+
+
+def test_taleo_is_wired_into_discovery_paging_and_enrichment():
+    """A parser nobody can reach is not an adapter. Taleo needs all four: a
+    registry entry, a composite `tenant|section` builder, a discovery
+    signature, and an enricher, because the list carries no advert text at all
+    and a role without one is a bare title no dealbreaker can act on."""
+    from jobradar import adapters
+    from jobradar.discover import SIGNATURES, UNSUPPORTED
+    from jobradar.enrich import FETCHERS
+    from jobradar.fetch import PAGE_SIZES
+
+    assert adapters.by_name("taleo") is not None
+    assert "taleo" in FETCHERS
+    assert any(p == "taleo" for p, _ in SIGNATURES)
+    # Taleo has a reader now, so it must not still be reported as a platform
+    # this tool merely recognises.
+    assert not any("taleo" in name.lower() for name, _ in UNSUPPORTED)
+    # 25 a page, so a board returning exactly 25 is worth a second look.
+    assert PAGE_SIZES["taleo"] == 25
+
+    assert (adapters.by_name("taleo").build("hilton|us_hotel_ext")
+            == "https://hilton.taleo.net/careersection/us_hotel_ext"
+               "/jobsearch.ftl?lang=en")
+    # The URL a discovery scan finds must come back to this platform, or the
+    # board is stored and then read by the generic fallback parser.
+    assert adapters.detect(
+        "https://tfl.taleo.net/careersection/external/jobsearch.ftl"
+    ).name == "taleo"

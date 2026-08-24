@@ -86,6 +86,14 @@ SIGNATURES: list[tuple[str, str]] = [
      r"(?:https?://)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)"
      r"/([a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)?)/SearchJobs"),
     ("rmk", r"([a-z0-9-]+\.jobs2web\.com)/([a-zA-Z0-9_-]+)"),
+    # Taleo is composite for a different reason to Avature and RMK: the second
+    # group is not a vendor path prefix, it is which of the tenant's career
+    # sections this is, and a tenant runs several with no default among them.
+    # Hilton's is `us_hotel_ext`, Transport for London's is `external`,
+    # D.R. Horton's and TTEC's are both `2`. Guessing the section does not
+    # fail loudly either: a section that does not exist answers 200 with
+    # "Career Section Unavailable", which reads as an empty board.
+    ("taleo", r"([a-z0-9-]+)\.taleo\.net/careersection/([a-zA-Z0-9_-]+)"),
     ("icims", r"([a-z0-9-]+)\.icims\.com"),
 ]
 
@@ -126,7 +134,19 @@ UNSUPPORTED = [
     ("Networx", r"networxrecruitment\.com"),
     ("Oracle EBS iRecruitment", r"/OA_HTML/"),
     ("Oleeo", r"oleeo\.com|\.tal\.net"),
-    ("Taleo", r"taleo\.net"),
+    # 589 employer hosts and not one of them readable. The careers page is an
+    # empty SPA shell and the job data comes from `services/x/career-site/v1/`,
+    # which answers 401 "no Authorization header found" to everything. The
+    # page mints that token at runtime, so the only way in is lifting it back
+    # out, which is not a published API and is not something this tool does.
+    # Named here so an employer on it gets a diagnosis rather than a shrug.
+    ("Cornerstone OnDemand", r"\.csod\.com"),
+    # Taleo used to sit here. It has an adapter now, so it is in SIGNATURES
+    # instead. The older, pre-faceted career sections still cannot be read,
+    # but they are indistinguishable from the readable ones by URL shape, so
+    # naming them here would mean labelling every readable Taleo board
+    # unsupported. `fetch_taleo` reports the difference instead, by name, once
+    # it has actually looked at the page.
     ("iCIMS portal", r"icims\.com/jobs/search(?!.*in_iframe)"),
     ("Workday (site unknown)", r"myworkdayjobs\.com(?!.*/wday/cxs)"),
     ("Civil Service Jobs", r"civilservicejobs\.service\.gov\.uk"),
@@ -310,8 +330,17 @@ def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
     and `validate --prune` would then delete a real employer. Callers that
     only want the count can ignore it, but nothing may treat it as zero.
     """
-    from .fetch import fetch_one
-    res = fetch_one(src, timeout=timeout, retries=1, user_agent=UA)
+    from .fetch import fetch_one, fetch_taleo
+    if src.platform == "taleo":
+        # Taleo's board URL is a JavaScript shell: a plain GET of it returns a
+        # page with no job rows in it at all, on every live board checked. So
+        # `fetch_one` would report every Taleo source as zero jobs, `validate`
+        # would call that dead, and `validate --prune` deletes dead sources.
+        # One page is enough to answer "is this board alive".
+        res = fetch_taleo(src, [], timeout=timeout, retries=1, user_agent=UA,
+                          max_pages=1)
+    else:
+        res = fetch_one(src, timeout=timeout, retries=1, user_agent=UA)
     if not res.ok:
         why = res.error or (f"HTTP {res.status}" if res.status else "no answer")
         if res.status in (429, 503) or res.throttled:

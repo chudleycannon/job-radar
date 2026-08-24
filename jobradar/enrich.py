@@ -27,6 +27,7 @@ import html as _h
 import json
 import re
 import time
+from urllib.parse import unquote
 
 import requests
 
@@ -210,6 +211,41 @@ def _from_jazzhr(url: str, session=None, timeout: int = 20) -> str:
     return _strip(m.group(1)) if m else ""
 
 
+# Taleo's posting page renders itself from JavaScript too, so there is no
+# JobPosting JSON-LD and no description element to read. The advert is in a
+# `api.fillList(... 'descRequisition', [...])` array, URL-encoded, and the
+# INDEX of it moves: it is element 10 on TTEC and element 11 on BAE Systems,
+# because BAE's career section adds a job-field pair that TTEC's does not.
+# Every other element in the array is a requisition id, a boolean, a location
+# or a one-line label, so the advert is simply the longest one. Reading it by
+# position instead would return the string "false" for half the platform.
+_TL_DESC_LIST = re.compile(
+    r"api\.fillList\(\s*'requisitionDescriptionInterface'\s*,\s*"
+    r"'descRequisition'\s*,\s*\[(.*?)\]\s*\)\s*;", re.S)
+_TL_DESC_ITEM = re.compile(r"'((?:[^'\\]|\\.)*)'", re.S)
+
+
+def _from_taleo(url: str, session=None, timeout: int = 20) -> str:
+    get = (session or requests).get
+    try:
+        r = get(url or "", headers={"User-Agent": UA}, timeout=timeout)
+    except requests.RequestException:
+        return ""
+    if r.status_code != 200:
+        return ""
+    m = _TL_DESC_LIST.search(r.text)
+    if not m:
+        return ""
+    best = ""
+    for item in _TL_DESC_ITEM.findall(m.group(1)):
+        # `!*!` is Taleo's own marker for "this element is rich text", not part
+        # of the advert, and it lands at the front of the description.
+        text = _strip(unquote(item.replace("!*!", "")))
+        if len(text) > len(best):
+            best = text
+    return best
+
+
 # BambooHR's `/careers/list` is a summary index: no advert text, no salary, no
 # date. The advert lives one request away at `/careers/<id>/detail`, which is
 # the same JSON API the board itself is built on rather than a page scrape.
@@ -245,6 +281,7 @@ FETCHERS = {
     "bamboohr": _from_bamboohr,
     "jobvite": _from_jobvite,
     "jazzhr": _from_jazzhr,
+    "taleo": _from_taleo,
 }
 
 
