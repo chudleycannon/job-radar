@@ -185,7 +185,7 @@ output:
 
 fetch:
   # Other people's servers. Keep this low.
-  concurrency: {answers.get('concurrency', 4)}
+  concurrency: {answers.get('concurrency', 16)}
   timeout: 20
   retries: 2
 """
@@ -216,7 +216,7 @@ DEFAULTS = {
     "source_countries": [],
     "use_bundled": True,
     "extra_sources": [],
-    "concurrency": 4,
+    "concurrency": 16,
     "cv_path": "",
 }
 
@@ -435,7 +435,9 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
 
     # 7. politeness
     print("\n7. Fetch settings")
-    a["concurrency"] = int(_ask("   Parallel requests (be kind, 4 is plenty)", "4") or 4)
+    a["concurrency"] = int(
+        _ask("   How many different boards to read at once "
+             "(each host is paced separately, so 16 is kind)", "16") or 16)
 
     write_config(path, a)
     print(f"\nWrote {path}")

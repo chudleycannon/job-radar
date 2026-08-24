@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import random
 import re
+import threading
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
@@ -45,13 +47,225 @@ class Result:
         return self.error is None and self.payload is not None
 
 
+_local = threading.local()
+
+
+# How many requests a second one host will take without answering 429. The
+# number is per host and not per scan, because the work is bimodal: 10,017 of
+# the 17,625 bundled sources sit on eight API hosts and the remaining ~7,584
+# hosts carry one board each. A single global concurrency number cannot serve
+# both. Set low enough for eight hosts it wastes an hour on the long tail; set
+# high enough for the long tail it turns into a burst against Greenhouse.
+DEFAULT_PER_HOST_RPS = 3.0
+
+# Hosts that need less than the default. Workable is the strict one and this
+# is not a politeness preference, it is data loss: it answers 429 readily, and
+# a 429 that reaches the adapter is parsed as a board with no jobs, which is
+# indistinguishable from a board that really has none. That is how 250 live
+# employers, Contentful and Ecosia among them, were once thrown away in one
+# run. 0.7 is the rate the maintainer's enumerator has sustained overnight
+# against this host without a 429.
+PER_HOST_RPS = {"apply.workable.com": 0.7}
+
+# Workers, not requests per second. Politeness is the limiter's job now, so
+# this number only decides how many DIFFERENT hosts are in flight at once, and
+# on a list where 7,584 hosts hold one board each, four at a time is most of an
+# hour spent waiting on other people's latency. Sixteen is chosen so the pool
+# still has workers free while some are parked waiting for a Workable slot: at
+# 12% of the list on a 0.7/s host, roughly two workers are parked at any moment.
+DEFAULT_CONCURRENCY = 16
+
+# The ceiling a config can ask for. Not a politeness limit any more, a
+# resources one: the sockets, file descriptors and DNS lookups belong to
+# whoever is running this, and a four-figure worker count only exhausts them.
+MAX_CONCURRENCY = 64
+
+
+class HostLimiter:
+    """A minimum gap between requests to the same host, across all workers.
+
+    Global concurrency is the wrong dial for this list. Raising it speeds up
+    the 7,584 hosts that hold one board each, and at the same time aims the
+    whole pool at `boards-api.greenhouse.io` for the 4,079 consecutive entries
+    that live there, because the bundled source list is sorted into contiguous
+    per-platform blocks. This decouples the two: the pool can be wide because
+    each host is still paced on its own clock.
+
+    An rps of 0 or less disables pacing entirely. That exists so a benchmark
+    can measure what the pacing costs; it is not a mode to scan in.
+    """
+
+    def __init__(self, rps: float = DEFAULT_PER_HOST_RPS,
+                 overrides: dict[str, float] | None = None) -> None:
+        self.rps = rps
+        self.overrides = dict(PER_HOST_RPS if overrides is None else overrides)
+        self._next_ok: dict[str, float] = defaultdict(float)
+        self._blocked_until: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def gap_for(self, host: str) -> float:
+        """Seconds between requests to `host`. The stricter of the two rules.
+
+        `min` rather than the override alone: turning the global rate down for
+        a slow connection must not silently turn Workable's rate back UP to
+        0.7 when the caller asked for 0.2.
+        """
+        if self.rps <= 0:
+            return 0.0
+        rps = min(self.rps, self.overrides.get(host, self.rps))
+        return 1.0 / rps if rps > 0 else 0.0
+
+    def block(self, url: str, seconds: float) -> None:
+        """Record that this host has shut the door, and for how long.
+
+        Measured on this machine: apply.workable.com answered every request
+        with 429 and `Retry-After: 57841`, a sixteen hour block, after a scan
+        had aimed all four of its workers at that one host for an hour. The
+        old code capped the wait at 30 seconds and retried twice, so each of
+        the 2,095 Workable sources cost 60 seconds of sleeping and returned
+        nothing: 8.7 hours of a four worker pool spent asking a host that had
+        already said no for the rest of the day.
+        """
+        host = urlparse(url).netloc
+        with self._lock:
+            until = time.monotonic() + seconds
+            if until > self._blocked_until.get(host, 0.0):
+                self._blocked_until[host] = until
+
+    def blocked_for(self, url: str) -> float:
+        """Seconds left on this host's block, or 0 if it is not blocked."""
+        host = urlparse(url).netloc
+        with self._lock:
+            until = self._blocked_until.get(host)
+        return max(0.0, until - time.monotonic()) if until else 0.0
+
+    def wait(self, url: str) -> None:
+        """Block until this host's next slot is due, then claim it.
+
+        The slot is claimed under the lock and the sleep happens outside it, so
+        a worker waiting four seconds for Workable does not also hold up the
+        worker that wants Greenhouse.
+        """
+        host = urlparse(url).netloc
+        while True:
+            gap = self.gap_for(host)
+            if gap <= 0:
+                return
+            with self._lock:
+                now = time.monotonic()
+                if now >= self._next_ok[host]:
+                    self._next_ok[host] = now + gap
+                    return
+                delay = self._next_ok[host] - now
+            time.sleep(delay)
+
+
+def pace_this_thread(limiter: "HostLimiter | None") -> None:
+    """Put a limiter where `fetch_one` will find it, for work on this thread.
+
+    Anything that fetches from a pool of its own needs this, not just `scan`.
+    `validate` is the one that matters most: it reads every source, and with
+    `--prune` it DELETES the ones it read as dead. Its own docstring records a
+    429 from a busy platform being reported as a dead board, so an unpaced
+    validate is a route to deleting live employers from the list.
+    """
+    _local.limiter = limiter
+
+
+def _limiter() -> "HostLimiter | None":
+    """The pacing in force on this worker thread, if any.
+
+    Carried on the thread rather than threaded through the signature of all
+    eight platform fetchers. Pacing is a property of the run, not of any one
+    call, and every one of those fetchers already funnels its requests through
+    `fetch_one`, so there is exactly one place that has to consult it.
+    """
+    return getattr(_local, "limiter", None)
+
+
+
+def _thread_session() -> requests.Session:
+    """One connection pool per worker thread, reused for every source it handles.
+
+    The pool used to be thrown away after every single request. `fetch_one`
+    fell back to a fresh `requests.Session()` whenever a caller passed none,
+    and the ordinary dispatch path passed none, so a full scan paid
+    a TCP connect and a TLS handshake 17,625 times over. Measured on this
+    machine against boards-api.greenhouse.io: six requests took 13.72s with a
+    new Session each and 1.08s with one reused Session, which is 2.29s per
+    request against 0.18s. It lands hardest exactly where the volume is,
+    because 56% of the sources sit on eight API hosts.
+
+    Thread-local rather than one Session shared by every worker: a Session
+    mutates its cookie jar and its header dict per request, and sharing that
+    across threads is a data race. Per thread it is private, and a pool of
+    N workers opens N connections per host at worst rather than one per
+    request.
+
+    pool_connections is far above urllib3's default of 10 because the host mix
+    is bimodal: eight hosts carry 10,017 of the sources and roughly 7,584
+    hosts carry one each. At the default, one stretch of long-tail hosts
+    evicts the keep-alive connection to Greenhouse, and the next Greenhouse
+    board pays for a fresh handshake anyway, which is the entire cost this
+    exists to avoid. max_retries stays 0 so urllib3 never retries behind the
+    back of the loop in `fetch_one`, which is the one that honours Retry-After.
+    """
+    # Keyed on the class, not just on "is there one cached". A cached session
+    # built from a previous class would outlive a test that substitutes its own
+    # Session and the substitute would never be called, so the test would pass
+    # while asserting nothing about the code under test.
+    cls = requests.Session
+    cached = getattr(_local, "session", None)
+    if cached is not None and type(cached) is cls:
+        return cached
+    s = cls()
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=64, pool_maxsize=8, max_retries=0)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    _local.session = s
+    return s
+
+
+# The longest this is willing to sit and wait for one source. Past it, the
+# host has not asked for a pause, it has said no for the rest of the day, and
+# the right answer is to stop asking rather than to sleep in 30 second slices.
+MAX_RETRY_AFTER = 60.0
+
+
+def retry_after_seconds(value: str | None) -> float | None:
+    """`Retry-After` as a number of seconds, whichever of the two forms it is in.
+
+    RFC 9110 allows a count of seconds or an HTTP date, and both are used in
+    the wild. Reading only the number meant a date-shaped header fell through
+    to plain exponential backoff, so a host that had said "not until 3am" got
+    asked again two seconds later.
+    """
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        from email.utils import parsedate_to_datetime
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_dt.timezone.utc)
+    return max(0.0, (when - now).total_seconds())
+
+
 def _sleep_backoff(attempt: int, retry_after: str | None) -> None:
-    if retry_after:
-        try:
-            time.sleep(min(float(retry_after), 30.0))
-            return
-        except ValueError:
-            pass
+    secs = retry_after_seconds(retry_after)
+    if secs is not None:
+        time.sleep(min(secs, 30.0))
+        return
     time.sleep(min(2 ** attempt, 20) + random.uniform(0, 0.75))
 
 
@@ -62,6 +276,9 @@ def fetch_one(
     retries: int = 2,
     user_agent: str = "job-radar/0.1",
     session: requests.Session | None = None,
+    # Explicit for a single direct call or a test; left None inside a scan,
+    # where `fetch_all` puts the run's shared limiter on the worker thread.
+    limiter: "HostLimiter | None" = None,
     # One platform needs a header nothing else does, and it is not optional:
     # Taleo's search endpoint answers 500 "An Error Occurred in TEE" without a
     # `tz` header and 200 with one, whatever the value. Passing it per call
@@ -69,15 +286,34 @@ def fetch_one(
     # header it never asked for.
     extra_headers: dict[str, str] | None = None,
 ) -> Result:
-    s = session or requests.Session()
+    s = session or _thread_session()
     headers = {"User-Agent": user_agent, "Accept": "application/json",
                **(extra_headers or {})}
     t0 = time.time()
     last = "unknown error"
     status = None
 
+    lim = limiter or _limiter()
     for attempt in range(retries + 1):
         try:
+            # A host that has already said no for the rest of the day is not
+            # asked again. Reported as throttled rather than as an error, so
+            # `detect_throttling` names it and the reader is told the board is
+            # UNKNOWN today. The alternative is what it replaces: 2,095 sources
+            # each sleeping 60 seconds into the same closed door and every one
+            # of them coming back looking like a board with nothing on it.
+            if lim is not None:
+                left = lim.blocked_for(src.url)
+                if left > 0:
+                    return Result(
+                        src, error=f"HTTP 429, host blocked for another "
+                                   f"{int(left)}s", status=429,
+                        elapsed=time.time() - t0, throttled=True)
+            # Inside the retry loop, so a retry is paced like a first attempt.
+            # A source that just answered 429 is the last one that should be
+            # allowed to skip the queue on its way back in.
+            if lim is not None:
+                lim.wait(src.url)
             if src.method.upper() == "POST":
                 r = s.post(src.url, json=src.body or {}, headers=headers, timeout=timeout)
             else:
@@ -87,6 +323,17 @@ def fetch_one(
 
             if r.status_code == 429 or 500 <= r.status_code < 600:
                 last = f"HTTP {r.status_code}"
+                wait = retry_after_seconds(r.headers.get("Retry-After"))
+                # A Retry-After measured in hours is not a pause, it is a
+                # refusal, and retrying it can only fail more slowly. Record it
+                # against the host so the other sources on it are spared the
+                # same wait, and give up on this one now.
+                if r.status_code == 429 and wait is not None and wait > MAX_RETRY_AFTER:
+                    if lim is not None:
+                        lim.block(src.url, wait)
+                    return Result(src, error=f"HTTP 429, retry after "
+                                             f"{int(wait)}s", status=status,
+                                  elapsed=time.time() - t0, throttled=True)
                 if attempt < retries:
                     _sleep_backoff(attempt, r.headers.get("Retry-After"))
                     continue
@@ -132,7 +379,7 @@ def fetch_workday(
     shallowly paged. That turns a thousand postings into the handful that
     matter, in two or three requests rather than fifty.
     """
-    session = requests.Session()
+    session = _thread_session()
     merged: dict[str, dict] = {}
     total = 0
     errors = []
@@ -179,7 +426,7 @@ def fetch_nhs(
     of pages is plenty; walking all 10,000 results would be both slow and
     pointless when the title filter discards almost all of them.
     """
-    session = requests.Session()
+    session = _thread_session()
     parts: list[str] = []
     sep = "&" if "?" in src.url else "?"
 
@@ -236,7 +483,7 @@ def fetch_reed(
                                  "variable. Free key: "
                                  "https://www.reed.co.uk/developers/jobseeker")
 
-    session = requests.Session()
+    session = _thread_session()
     # (key, "") is Basic auth with an empty password, which is what Reed asks
     # for. requests base64-encodes it into the Authorization header.
     session.auth = (api_key, "")
@@ -322,7 +569,7 @@ def fetch_adzuna(
                                  "variables. Free: "
                                  "https://developer.adzuna.com/signup")
 
-    session = requests.Session()
+    session = _thread_session()
     # The shipped URL already asks for a page size, so drop any that is there
     # before adding ours. Sending the same parameter twice leaves Adzuna to
     # choose between two values and makes the paging arithmetic below a guess.
@@ -386,7 +633,7 @@ def fetch_phenom(
     """
     from urllib.parse import urlparse
 
-    session = requests.Session()
+    session = _thread_session()
     host = urlparse(src.url).netloc
     # Prefer the country in the URL, then the one the source is tagged with.
     # "gb" is only the last resort: a UK default baked in below the config
@@ -505,7 +752,7 @@ def fetch_avature(
     we have not already seen", and a cap is the only thing standing between a
     broken stop condition and a loop that never ends.
     """
-    session = requests.Session()
+    session = _thread_session()
     pages: list[str] = []
     seen: set[str] = set()
     first_error: Result | None = None
@@ -573,7 +820,7 @@ def fetch_rmk(
     same shape as Workday and Avature applies: search per wanted title rather
     than walk the whole board.
     """
-    session = requests.Session()
+    session = _thread_session()
     pages: list[str] = []
     seen: set[str] = set()
     first_error: Result | None = None
@@ -699,6 +946,11 @@ def _taleo_employer(host: str, portal: str, session: requests.Session,
     """
     url = (f"https://{host}/careersection/feed/joblist.rss"
            f"?lang=en&portal={portal}&searchtype=3")
+    lim = _limiter()
+    if lim is not None:
+        # The only request in this module that does not go through `fetch_one`,
+        # so it is the only one that has to ask the limiter for itself.
+        lim.wait(url)
     try:
         r = session.get(url, headers={"User-Agent": user_agent}, timeout=timeout)
     except requests.RequestException:
@@ -725,7 +977,7 @@ def fetch_taleo(
     Returns the merged rows under `requisitionList` plus the employer's own
     name under `employerName`, which is the shape `parse_taleo` reads.
     """
-    session = requests.Session()
+    session = _thread_session()
     host = urlparse(src.url).netloc
 
     page_res = fetch_one(
@@ -829,10 +1081,45 @@ def pinned_to_one_page(counts: dict[str, int], sources: Iterable[Source]) -> lis
     return sorted(set(out))
 
 
+def interleave_by_host(sources: list[Source]) -> list[Source]:
+    """Spread each host's sources evenly across the queue.
+
+    The bundled list is sorted into contiguous per-platform blocks: all 2,095
+    Workable boards are one unbroken run, all 4,079 Greenhouse boards another.
+    Submitted in that order, every worker in the pool is on the same host at
+    the same time, and once each host is paced separately the run costs the SUM
+    of the per-host times instead of the longest one. Observed on the unpaced
+    code: a scan spent over an hour with all four workers pointed at
+    apply.workable.com and nothing else progressing at all.
+
+    Each source is keyed by its fractional position within its own host, so a
+    host with 2,095 entries lands one every ~8 slots. Each host also gets its
+    own starting offset, which is the part that is easy to leave out and wrong
+    to: without it every host holding a single board keys to exactly 0.5, and
+    7,584 of them do, so they would all pile into the middle of the queue and
+    leave both ends as solid blocks of the busy hosts. The offset is drawn from
+    a fixed seed over the sorted host names, so the order is the same on every
+    run and a scan is reproducible.
+    """
+    by_host: dict[str, list[Source]] = defaultdict(list)
+    for src in sources:
+        by_host[urlparse(src.url).netloc].append(src)
+    rng = random.Random(0)
+    phase = {host: rng.random() for host in sorted(by_host)}
+    keyed: list[tuple[float, str, int, Source]] = []
+    for host, group in by_host.items():
+        n = len(group)
+        for i, src in enumerate(group):
+            keyed.append(((i + phase[host]) / n, host, i, src))
+    keyed.sort(key=lambda t: (t[0], t[1], t[2]))
+    return [t[3] for t in keyed]
+
+
 def fetch_all(
     sources: Iterable[Source],
     *,
-    concurrency: int = 4,
+    concurrency: int = DEFAULT_CONCURRENCY,
+    per_host_rps: float = DEFAULT_PER_HOST_RPS,
     timeout: int = 20,
     retries: int = 2,
     user_agent: str = "job-radar/0.1",
@@ -843,18 +1130,21 @@ def fetch_all(
     api_keys: dict[str, str] | None = None,
     on_result: Callable[[Result], None] | None = None,
 ) -> list[Result]:
-    sources = list(sources)
     out: list[Result] = []
-    # One session per worker; requests.Session is not thread-safe to share.
+    # Queued so that consecutive tasks land on different hosts. Without this,
+    # per-host pacing and a contiguous 4,079-entry Greenhouse block combine
+    # into a pool where every worker is asleep waiting for the same host.
+    queue = interleave_by_host(list(sources))
+    limiter = HostLimiter(per_host_rps)
+    # The old opening stagger, `(i % concurrency) * 0.05`, is gone. It only
+    # ever delayed the first `concurrency` tasks, so at four workers it was
+    # 0.15 seconds once and nothing at all for the other 17,621 sources. The
+    # burst it was meant to prevent is now prevented per host, for the whole
+    # run, rather than for the first 200 milliseconds of it.
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
-        futs = {}
-        for i, src in enumerate(sources):
-            # Stagger the opening burst so we do not hit 200 hosts in the
-            # same 50ms and look like something worth blocking.
-            delay = (i % max(1, concurrency)) * 0.05
-            futs[ex.submit(_delayed_fetch, src, delay, timeout, retries,
-                           user_agent, search_terms or [],
-                           api_keys or {})] = src
+        futs = {ex.submit(_fetch_dispatch, src, limiter, timeout, retries,
+                          user_agent, search_terms or [],
+                          api_keys or {}): src for src in queue}
         for f in as_completed(futs):
             res = f.result()
             out.append(res)
@@ -863,9 +1153,11 @@ def fetch_all(
     return out
 
 
-def _delayed_fetch(src, delay, timeout, retries, ua, terms, keys=None) -> Result:
-    if delay:
-        time.sleep(delay)
+def _fetch_dispatch(src, limiter, timeout, retries, ua, terms, keys=None) -> Result:
+    # Runs on the pool worker, which is the only place that can put the run's
+    # limiter where `fetch_one` will find it without every platform fetcher
+    # having to carry it through its signature.
+    pace_this_thread(limiter)
     if src.platform == "reed":
         return fetch_reed(src, (keys or {}).get("reed", ""), timeout=timeout,
                           retries=retries, user_agent=ua)
@@ -890,8 +1182,7 @@ def _delayed_fetch(src, delay, timeout, retries, ua, terms, keys=None) -> Result
     if src.platform == "taleo":
         return fetch_taleo(src, terms, timeout=timeout, retries=retries,
                            user_agent=ua)
-    return fetch_one(src, timeout=timeout, retries=retries, user_agent=ua,
-                     session=requests.Session())
+    return fetch_one(src, timeout=timeout, retries=retries, user_agent=ua)
 
 
 def detect_throttling(

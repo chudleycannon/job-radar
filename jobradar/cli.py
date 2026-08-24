@@ -8,11 +8,15 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from . import adapters, output, sources as src_mod
 from .config import Config, ConfigError, load as load_cfg
 from .discover import discover as run_discover, validate_source
-from .fetch import detect_throttling, fetch_all, pinned_to_one_page
+from . import fetch as fetch_defaults
+from .fetch import (HostLimiter, detect_throttling, fetch_all,
+                    interleave_by_host, pace_this_thread,
+                    pinned_to_one_page)
 from .models import Source
 from .screen import run as screen_run
 from .state import State
@@ -34,6 +38,18 @@ def cmd_scan(args) -> int:
 
     state = State(Path(args.state) if args.state else None)
     _say(f"Fetching {len(srcs)} sources at concurrency {cfg.concurrency}...")
+    # A config written before per-host pacing existed will still be carrying
+    # the old advice to keep this number tiny, and nothing else would ever tell
+    # its owner that the advice changed. At four workers against seventeen
+    # thousand sources that setting is worth more than an hour a scan, and it
+    # buys no politeness now that each host is paced on its own clock.
+    if cfg.concurrency < fetch_defaults.DEFAULT_CONCURRENCY and len(srcs) > 500:
+        _say(f"  ! concurrency is {cfg.concurrency}. Each host is now paced "
+             f"separately, so this number only sets how many DIFFERENT boards "
+             f"are read at once, and {len(srcs):,} sources at "
+             f"{cfg.concurrency} is mostly waiting. "
+             f"`fetch.concurrency: {fetch_defaults.DEFAULT_CONCURRENCY}` in "
+             f"{cfg.path or 'your config'} is the new default.")
 
     done = {"n": 0}
 
@@ -104,6 +120,27 @@ def cmd_scan(args) -> int:
     if throttled:
         _say(f"  ! {len(throttled)} sources look throttled (returned nothing "
              f"but have before): {', '.join(throttled[:6])}")
+    # Name the host, not just the boards. "2,095 sources look throttled" is a
+    # list of employers to squint at; "apply.workable.com has blocked you for
+    # another 15h" is the actual fact, and it is the one that tells you the
+    # boards are unknown today rather than empty. Measured live: Workable
+    # answered 429 with Retry-After 57841 after a scan aimed every worker at
+    # it, and 2,095 boards came back with nothing for the rest of the run.
+    blocks: dict[str, int] = {}
+    for res in results:
+        if not res.throttled:
+            continue
+        host = urlparse(res.source.url).netloc
+        m = re.search(r"(\d+)s", res.error or "")
+        if m:
+            blocks[host] = max(blocks.get(host, 0), int(m.group(1)))
+    for host, secs in sorted(blocks.items(), key=lambda kv: -kv[1]):
+        n = sum(1 for r in results
+                if r.throttled and urlparse(r.source.url).netloc == host)
+        _say(f"  ! {host} is rate-limiting this connection and asked for "
+             f"{secs // 3600}h {secs % 3600 // 60}m before the next request. "
+             f"{n} source(s) there are UNKNOWN today, not empty. They are "
+             f"left alone rather than recorded as having no jobs.")
     # The other silent failure, and the harder one to see. A throttled source
     # returns nothing and at least looks wrong; a source that returns exactly
     # one page looks perfectly healthy. Tesco's Avature board returned 10 of
@@ -576,8 +613,20 @@ def cmd_validate(args) -> int:
 
     rows, dead, mismatch, unread = [], [], [], []
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=min(6, cfg.concurrency)) as ex:
-        for i, row in enumerate(ex.map(validate_source, srcs), 1):
+
+    # Paced per host, and the six-worker cap is gone with it. The cap was the
+    # only brake this command had, and it was the wrong one: it slowed the
+    # ~7,777 hosts holding a single board each without doing anything about the
+    # four thousand consecutive Greenhouse boards. Unpaced, a burst here reads
+    # as a dead board, and `--prune` then deletes a live employer.
+    limiter = HostLimiter()
+
+    def paced(src):
+        pace_this_thread(limiter)
+        return validate_source(src)
+
+    with ThreadPoolExecutor(max_workers=max(1, cfg.concurrency)) as ex:
+        for i, row in enumerate(ex.map(paced, interleave_by_host(srcs)), 1):
             rows.append(row)
             if row["verdict"] == "dead":
                 dead.append(row)
@@ -834,8 +883,12 @@ def cmd_enrich(args) -> int:
             _say("Nothing to fetch. Every role on the board already has its "
                  "description.")
             return 0
-        _say(f"{len(rows)} roles to fetch, one at a time with a "
-             f"{args.pause}s pause. No tokens are spent.")
+        serial = args.pause is not None
+        workers = 1 if serial else (args.concurrency
+                                    or fetch_defaults.DEFAULT_CONCURRENCY)
+        how = (f"one at a time with a {args.pause}s pause" if serial
+               else f"{workers} at a time, each host paced separately")
+        _say(f"{len(rows)} roles to fetch, {how}. No tokens are spent.")
         if args.dry_run:
             return 0
 
@@ -843,8 +896,8 @@ def cmd_enrich(args) -> int:
             if i % 10 == 0 or i == total:
                 _say(f"  {i}/{total}, {got} filled in")
 
-        got, tried = enrich.run(con, cfg, rows, pause=args.pause,
-                                on_each=progress)
+        got, tried = enrich.run(con, cfg, rows, pause=args.pause or 0.0,
+                                on_each=progress, concurrency=workers)
         _say(f"\nFilled in {got} of {tried}.")
         if got:
             _say("They can now be screened, ranked and compared to your "
@@ -1074,8 +1127,16 @@ def build_parser() -> argparse.ArgumentParser:
     en = sub.add_parser("enrich",
                         help="fetch full postings for headline-only sources")
     en.add_argument("--limit", type=int, default=0)
-    en.add_argument("--pause", type=float, default=1.0,
-                    help="seconds between requests; these are other people's servers")
+    # Defaults to None, not to a number, so "the user asked for a pause" can
+    # be told apart from "nobody said". A pause is now a request to go one at
+    # a time: each host is paced on its own clock, so a blanket delay between
+    # unrelated servers only costs time.
+    en.add_argument("--pause", type=float, default=None,
+                    help="seconds between requests, which also forces them to "
+                         "run one at a time. Without it each host is paced "
+                         "separately and different hosts run in parallel.")
+    en.add_argument("--concurrency", type=int, default=None,
+                    help="how many postings to fetch at once (ignored with --pause)")
     en.add_argument("--dry-run", action="store_true")
     en.add_argument("--db", default=None)
     en.set_defaults(func=cmd_enrich)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -3409,6 +3410,9 @@ def test_a_reed_key_never_travels_in_the_url():
     seen = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         auth = None
         def get(self, url, headers=None, timeout=None):
             seen.append((url, self.auth))
@@ -3761,6 +3765,9 @@ def test_an_adzuna_key_never_reaches_the_stored_source():
     seen = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         auth = None
         def get(self, url, headers=None, timeout=None):
             seen.append(url)
@@ -3798,6 +3805,9 @@ def test_adzuna_paging_does_not_stop_on_a_short_page():
     seen = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             seen.append(url)
             page = int(re.search(r"/search/(\d+)", url).group(1))
@@ -4045,6 +4055,9 @@ def test_an_avature_board_is_read_past_its_first_page():
     asked = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             asked.append(url)
             class R:
@@ -4079,6 +4092,9 @@ def test_an_avature_pager_stops_when_the_next_page_repeats_the_last_one():
     asked = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             asked.append(url)
             class R:
@@ -4109,6 +4125,9 @@ def test_an_avature_keyword_search_replaces_the_parameter_it_already_carries():
     asked = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             asked.append(url)
             class R:
@@ -4142,6 +4161,9 @@ def test_an_rmk_board_is_read_past_its_first_twenty_five_rows():
     asked = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             asked.append(url)
             start = int(re.search(r"startrow=(\d+)", url).group(1))
@@ -4205,6 +4227,9 @@ def test_a_phenom_board_is_narrowed_by_title_and_stops_on_its_own_total():
     bodies = []
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def post(self, url, json=None, headers=None, timeout=None):
             bodies.append(json)
             start = json["from"]
@@ -4545,6 +4570,9 @@ def test_taleo_pages_until_it_stops_seeing_new_jobs_never_on_an_empty_page():
             return self._p
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             calls.append(("GET", url, headers))
             if "joblist.rss" in url:
@@ -4602,6 +4630,9 @@ def test_a_taleo_board_that_hides_its_portal_number_is_unreadable_not_dead():
         text = "<html><title>Career Section Unavailable</title></html>"
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         def get(self, url, headers=None, timeout=None):
             return R()
 
@@ -4644,6 +4675,9 @@ def test_a_taleo_advert_is_the_longest_element_because_its_index_moves():
         text = page
 
     class FakeSession:
+        # The real Session gets a pooling adapter mounted on it, so a
+        # stand-in has to accept one or the fetcher cannot use it.
+        def mount(self, prefix, adapter): pass
         @staticmethod
         def get(url, headers=None, timeout=None):
             return R()
@@ -4684,3 +4718,448 @@ def test_taleo_is_wired_into_discovery_paging_and_enrichment():
     assert adapters.detect(
         "https://tfl.taleo.net/careersection/external/jobsearch.ftl"
     ).name == "taleo"
+
+
+# ---------------------------------------------------------------- pacing
+
+
+def test_two_requests_to_the_same_host_are_spaced_by_the_configured_gap():
+    """Ten thousand of the bundled sources sit on eight API hosts, so raising
+    the worker count without pacing each host separately turns the scan into a
+    burst against Greenhouse and Workable. Workable answers 429 to a burst, and
+    a 429 reaches the adapter as a board with no jobs, which is how 250 live
+    employers were once discarded as empty. The gap is what stops that."""
+    import time
+    from jobradar.fetch import HostLimiter
+
+    lim = HostLimiter(rps=20.0)          # 50ms apart, fast enough to test
+    t0 = time.monotonic()
+    for _ in range(4):
+        lim.wait("https://boards-api.greenhouse.io/v1/boards/x/jobs")
+    spent = time.monotonic() - t0
+
+    # Four slots, three gaps. The first is free; only the waits count.
+    assert spent >= 0.15 - 0.01, f"four requests took only {spent:.3f}s"
+    assert spent < 1.0, "pacing should cost the gap, not a second per request"
+
+
+def test_two_requests_to_different_hosts_do_not_wait_for_each_other():
+    """The whole point of pacing per host rather than globally: about 7,584 of
+    the bundled hosts carry one board each and must not be slowed down to the
+    rate the eight busy hosts need. If one host's gap blocked another host's
+    request, a wide pool would be no faster than a narrow one."""
+    import time
+    from jobradar.fetch import HostLimiter
+
+    lim = HostLimiter(rps=2.0)           # half a second apart on any one host
+    t0 = time.monotonic()
+    for i in range(10):
+        lim.wait(f"https://careers.company{i}.example/jobs")
+    spent = time.monotonic() - t0
+
+    assert spent < 0.1, (
+        f"ten different hosts took {spent:.3f}s; they were queued behind each "
+        f"other instead of being paced independently")
+
+
+def test_a_hot_host_is_paced_slower_than_the_default_without_slowing_the_rest():
+    """Workable is the strict one and needs about 0.7 requests a second where
+    the others take three. An override that is not actually consulted is the
+    same failure as having none, and it is invisible: the run looks healthy and
+    the boards come back empty."""
+    from jobradar.fetch import PER_HOST_RPS, HostLimiter
+
+    assert PER_HOST_RPS["apply.workable.com"] == 0.7
+
+    lim = HostLimiter(rps=3.0)
+    assert lim.gap_for("apply.workable.com") > lim.gap_for("boards-api.greenhouse.io")
+    assert abs(lim.gap_for("apply.workable.com") - 1 / 0.7) < 1e-9
+    assert abs(lim.gap_for("boards-api.greenhouse.io") - 1 / 3.0) < 1e-9
+
+    # And turning the global rate DOWN must not turn an override back up. A
+    # user on a slow line asking for 0.2/s everywhere must not have Workable
+    # quietly restored to 0.7.
+    slow = HostLimiter(rps=0.2)
+    assert abs(slow.gap_for("apply.workable.com") - 1 / 0.2) < 1e-9
+
+
+def test_the_concurrency_config_key_still_caps_the_worker_count():
+    """`sources.concurrency` is the documented dial and people have it set in
+    config files that already exist. Raising the default must not quietly stop
+    honouring the value they wrote, in either direction."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    seen: list[int] = []
+    peak = {"n": 0}
+    lock = threading.Lock()
+
+    class CountingPool:
+        def __init__(self, max_workers=None):
+            seen.append(max_workers)
+            self.inner = ThreadPoolExecutor(max_workers=max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.inner.shutdown()
+
+        def submit(self, fn, *a, **kw):
+            def wrapped(*aa, **kk):
+                with lock:
+                    peak["n"] += 1
+                    now = peak["n"]
+                time.sleep(0.02)
+                with lock:
+                    peak["n"] -= 1
+                assert now <= seen[0], f"{now} in flight for max_workers {seen[0]}"
+                return fetch_mod.Result(aa[0], payload=[])
+            return self.inner.submit(wrapped, *a, **kw)
+
+    srcs = [Source(company=f"c{i}", url=f"https://h{i}.example/jobs",
+                   platform="greenhouse") for i in range(24)]
+    old = fetch_mod.ThreadPoolExecutor
+    fetch_mod.ThreadPoolExecutor = CountingPool
+    try:
+        fetch_mod.fetch_all(srcs, concurrency=3, per_host_rps=0)
+    finally:
+        fetch_mod.ThreadPoolExecutor = old
+
+    assert seen == [3], f"asked for 3 workers, pool was built with {seen}"
+
+
+def test_the_default_worker_count_is_well_above_the_old_four():
+    """Four workers against 17,625 sources was most of an hour of waiting on
+    other people's latency, and it bought no politeness that per-host pacing
+    does not now buy properly. A default that drifts back down undoes the whole
+    change silently, because nothing else in the tool would report it."""
+    from jobradar.config import DEFAULT_CONCURRENCY, MAX_CONCURRENCY
+
+    assert DEFAULT_CONCURRENCY >= 12
+    assert MAX_CONCURRENCY >= DEFAULT_CONCURRENCY
+
+
+def test_a_config_asking_for_more_workers_than_the_cap_is_clamped_not_obeyed():
+    """The cap is about the user's own sockets and file descriptors, not about
+    the boards. A four-figure concurrency in a config file should be reported
+    and clamped rather than attempted."""
+    import tempfile
+
+    import yaml
+
+    from jobradar.config import MAX_CONCURRENCY, load
+
+    d = Path(tempfile.mkdtemp())
+    p = d / "c.yaml"
+    p.write_text(yaml.safe_dump({
+        "titles": {"include": ["engineering manager"]},
+        "fetch": {"concurrency": MAX_CONCURRENCY * 10},
+    }))
+    assert load(p).concurrency == MAX_CONCURRENCY
+
+
+def test_the_queue_interleaves_hosts_so_one_block_cannot_own_the_pool():
+    """The bundled source list is sorted into contiguous per-platform blocks:
+    all 2,095 Workable boards are one unbroken run. Submitted in file order,
+    every worker is on the same host at once, so per-host pacing would cost the
+    sum of the per-host times instead of the longest. A real scan was observed
+    spending over an hour with all four workers pointed at apply.workable.com
+    and nothing else moving at all."""
+    from jobradar.fetch import interleave_by_host
+    from jobradar.models import Source
+
+    block = ([Source(company=f"w{i}", url=f"https://apply.workable.com/{i}",
+                     platform="workable") for i in range(200)]
+             + [Source(company=f"t{i}", url=f"https://tail{i}.example/jobs",
+                       platform="greenhouse") for i in range(200)])
+    out = interleave_by_host(block)
+
+    # Nothing may be dropped or duplicated on the way through. A reordering
+    # that also loses sources is the worst possible outcome here: it would
+    # look exactly like a set of boards that had gone quiet.
+    assert len(out) == len(block)
+    assert {s.company for s in out} == {s.company for s in block}
+
+    hosts = [s.url.split("/")[2] for s in out]
+    longest = best = 1
+    for a, b in zip(hosts, hosts[1:]):
+        best = best + 1 if a == b else 1
+        longest = max(longest, best)
+    assert longest <= 8, (
+        f"a run of {longest} consecutive requests to one host; in file order "
+        f"this input is a block of 200 and the pool would sit on it")
+
+    # Every host holding exactly one board keys to the same fractional
+    # position, so without a per-host offset all 200 of them pile into the
+    # middle of the queue and both ends stay solid Workable.
+    assert len(set(hosts[:40])) > 1, f"queue still opens on one host: {hosts[:8]}"
+    assert len(set(hosts[-40:])) > 1, "queue still ends on one host"
+
+
+def test_a_worker_reuses_one_connection_pool_instead_of_handshaking_each_time():
+    """`fetch_one` used to fall back to a brand new `requests.Session` on every
+    call, so a full scan paid a TLS handshake 17,625 times. Measured against
+    boards-api.greenhouse.io that was 2.29s a request against 0.18s reused, and
+    it costs most on the eight hosts that carry 56% of the list."""
+    import threading
+
+    from jobradar import fetch as fetch_mod
+
+    fetch_mod._local.__dict__.pop("session", None)
+    a = fetch_mod._thread_session()
+    b = fetch_mod._thread_session()
+    assert a is b, "each call built a new Session, so each request re-handshakes"
+
+    other: list = []
+    t = threading.Thread(target=lambda: other.append(fetch_mod._thread_session()))
+    t.start()
+    t.join()
+    assert other[0] is not a, (
+        "one Session shared across worker threads races on its cookie jar and "
+        "header dict; it must be per thread")
+
+    # The pool has to hold more hosts than urllib3's default of ten, or a
+    # stretch of long-tail hosts evicts the keep-alive connection to Greenhouse
+    # and the next Greenhouse board re-handshakes anyway.
+    assert a.get_adapter("https://boards-api.greenhouse.io")._pool_connections >= 32
+
+
+def test_a_host_that_says_come_back_tomorrow_is_not_asked_again_this_run():
+    """Measured live: apply.workable.com answered every request 429 with
+    `Retry-After: 57841`, a sixteen hour block. The old code capped the wait at
+    30 seconds and retried twice, so each of the 2,095 Workable sources spent
+    60 seconds asleep and returned nothing. That is 8.7 hours of a four worker
+    pool spent knocking on a door that had been bolted for the day."""
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    calls = {"n": 0}
+
+    class Blocked:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            calls["n"] += 1
+
+            class R:
+                status_code = 429
+                headers = {"Retry-After": "57841"}
+                text = ""
+            return R()
+
+    lim = fetch_mod.HostLimiter(rps=0)
+    srcs = [Source(company=f"c{i}",
+                   url=f"https://apply.workable.com/api/v1/widget/accounts/c{i}",
+                   platform="workable") for i in range(5)]
+    results = [fetch_mod.fetch_one(x, session=Blocked(), limiter=lim) for x in srcs]
+
+    assert calls["n"] == 1, (
+        f"{calls['n']} requests sent to a host that had already answered with "
+        f"a sixteen hour Retry-After; one is enough to learn that")
+    # And every one of them must read as throttled, not as a board with no
+    # jobs on it. An empty board and a blocked board look identical to the
+    # reader, and only one of them means "look again tomorrow".
+    assert all(r.throttled for r in results)
+    assert all(not r.ok for r in results)
+    assert all(r.status == 429 for r in results)
+
+
+def test_a_short_retry_after_is_still_waited_out_rather_than_treated_as_a_block():
+    """The circuit breaker must not swallow ordinary backpressure. A host
+    asking for two seconds is asking for two seconds, and giving up on the
+    whole host at that point would throw away boards that were about to answer
+    perfectly well."""
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    seen = {"n": 0}
+
+    class Busy:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            seen["n"] += 1
+
+            class R:
+                status_code = 429 if seen["n"] == 1 else 200
+                headers = ({"Retry-After": "0"} if seen["n"] == 1
+                           else {"Content-Type": "application/json"})
+                text = "[]"
+
+                @staticmethod
+                def json():
+                    return [{"id": 1}]
+            return R()
+
+    lim = fetch_mod.HostLimiter(rps=0)
+    res = fetch_mod.fetch_one(
+        Source(company="c", url="https://boards-api.greenhouse.io/v1/boards/c/jobs",
+               platform="greenhouse"), session=Busy(), limiter=lim)
+
+    assert seen["n"] == 2, "a two second Retry-After should be waited out, not abandoned"
+    assert res.ok and res.payload == [{"id": 1}]
+    assert lim.blocked_for("https://boards-api.greenhouse.io/x") == 0
+
+
+def test_retry_after_is_read_whether_it_is_seconds_or_a_date():
+    """RFC 9110 allows either and both turn up. Reading only the number meant a
+    date-shaped header fell through to plain exponential backoff, so a host
+    that had said "not until tomorrow" was asked again two seconds later."""
+    import datetime as dt
+    from email.utils import format_datetime
+
+    from jobradar.fetch import retry_after_seconds
+
+    assert retry_after_seconds("120") == 120.0
+    assert retry_after_seconds(None) is None
+    assert retry_after_seconds("not a header") is None
+
+    soon = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=600)
+    got = retry_after_seconds(format_datetime(soon))
+    assert got is not None and 570 < got <= 600, got
+
+    # A date already in the past is zero seconds, not a negative sleep.
+    past = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
+    assert retry_after_seconds(format_datetime(past)) == 0.0
+
+
+def test_enrichment_fetches_in_parallel_but_writes_from_one_thread():
+    """The enrichment pass was strictly serial with a fixed one second sleep
+    between every row, which is the scan's old mistake in a second place: one
+    global delay standing in for politeness towards each host. These are one
+    posting page per role spread over employer domains, so consecutive pairs
+    are almost always different servers and never needed to queue. The writes
+    must stay on the calling thread: a sqlite connection used from a thread
+    that did not open it is a corrupt roles table, which is a far worse outcome
+    than a slow scan."""
+    import threading
+    import time
+
+    from jobradar import enrich, store
+
+    con = store.connect(":memory:")
+    for i in range(12):
+        con.execute(
+            "INSERT INTO roles (uid,company,title,url,location,platform,"
+            "description,first_seen,last_seen) VALUES "
+            "(?,?,?,?,?,?,'','2026-08-21','2026-08-21')",
+            (f"u{i}", f"C{i}", "Engineering Manager",
+             f"https://c{i}.wd1.myworkdayjobs.com/ext/job/{i}",
+             "London", "workday"))
+    rows = enrich.candidates(con)
+    assert len(rows) == 12, f"expected 12 candidates, got {len(rows)}"
+
+    write_threads: set[int] = set()
+    fetch_threads: set[int] = set()
+
+    class WatchedConnection:
+        """Records which thread each statement is executed from.
+
+        A proxy rather than a monkeypatch: sqlite3.Connection.execute is
+        read-only and cannot be replaced on the instance.
+        """
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def execute(self, *a, **kw):
+            write_threads.add(threading.get_ident())
+            return self._inner.execute(*a, **kw)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    watched_con = WatchedConnection(con)
+
+    def slow(url, session=None, timeout: int = 20):
+        fetch_threads.add(threading.get_ident())
+        time.sleep(0.1)
+        return "x" * 400
+
+    old = dict(enrich.FETCHERS)
+    enrich.FETCHERS["workday"] = slow
+    try:
+        t0 = time.time()
+        got, tried = enrich.run(watched_con, None, rows, pause=0.0,
+                                concurrency=6)
+        spent = time.time() - t0
+    finally:
+        enrich.FETCHERS.clear()
+        enrich.FETCHERS.update(old)
+
+    assert (got, tried) == (12, 12)
+    assert len(fetch_threads) > 1, "the fetches all ran on one thread"
+    assert write_threads == {threading.get_ident()}, (
+        "a database write happened on a worker thread; sqlite connections are "
+        "not shareable and this is how the roles table gets corrupted")
+    # Serial with the old code this is 12 x 0.1s of fetching plus 11 seconds
+    # of fixed pause. Twelve tenant hosts, one posting each, is the shape this
+    # pass actually has, and none of them ever needed to queue behind another.
+    assert spent < 0.9, f"{spent:.2f}s for 12 fetches of 0.1s at 6 at a time"
+
+
+def test_enrichment_at_concurrency_one_still_honours_the_pause():
+    """`--pause` is a documented flag and someone on a slow line will have set
+    it. Making the pass parallel must not quietly stop obeying it."""
+    import time
+
+    from jobradar import enrich, store
+
+    con = store.connect(":memory:")
+    for i in range(3):
+        con.execute(
+            "INSERT INTO roles (uid,company,title,url,location,platform,"
+            "description,first_seen,last_seen) VALUES "
+            "(?,?,?,?,?,?,'','2026-08-21','2026-08-21')",
+            (f"u{i}", f"C{i}", "Engineering Manager",
+             f"https://api.smartrecruiters.com/v1/companies/c{i}/postings/{i}",
+             "London", "smartrecruiters"))
+    rows = enrich.candidates(con)
+    assert len(rows) == 3
+
+    old = dict(enrich.FETCHERS)
+    enrich.FETCHERS["smartrecruiters"] = (
+        lambda url, session=None, timeout=20: "y" * 400)
+    try:
+        t0 = time.time()
+        got, tried = enrich.run(con, None, rows, pause=0.2, concurrency=1)
+        spent = time.time() - t0
+    finally:
+        enrich.FETCHERS.clear()
+        enrich.FETCHERS.update(old)
+
+    assert (got, tried) == (3, 3)
+    assert spent >= 0.4 - 0.01, f"three rows at a 0.2s pause took {spent:.2f}s"
+
+
+def test_validate_paces_each_host_because_it_is_the_command_that_deletes():
+    """`validate --prune` removes sources it read as dead, and `count_jobs`
+    already records a 429 from a busy platform being reported as a dead board.
+    So the command with the destructive flag on it is the one that least of all
+    can afford an unpaced burst: the failure is not a slow run, it is a live
+    employer deleted from the bundled list."""
+    from jobradar import cli, fetch as fetch_mod
+
+    src = inspect.getsource(cli.cmd_validate)
+    assert "pace_this_thread" in src, (
+        "validate fetches through fetch_one with no limiter on the thread, so "
+        "every host is unpaced")
+    assert "interleave_by_host" in src, (
+        "validate walks the source list in file order, so the whole pool sits "
+        "on one host for four thousand consecutive Greenhouse boards")
+    assert "min(6, cfg.concurrency)" not in src, (
+        "the six-worker cap was the wrong brake and is not needed now that "
+        "each host is paced")
+
+    # And the mechanism it relies on has to actually reach fetch_one.
+    lim = fetch_mod.HostLimiter(rps=1.0)
+    try:
+        fetch_mod.pace_this_thread(lim)
+        assert fetch_mod._limiter() is lim
+    finally:
+        fetch_mod.pace_this_thread(None)

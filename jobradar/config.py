@@ -10,6 +10,9 @@ from typing import Any
 
 import yaml
 
+# The fetcher owns these: it is what has to live with them.
+from .fetch import DEFAULT_CONCURRENCY, MAX_CONCURRENCY
+
 # config.local.yaml wins if present. That is how you keep your own settings off
 # a public fork: config.yaml is committed so GitHub Actions can read it, and
 # config.local.yaml is gitignored for anything you would rather not publish.
@@ -75,7 +78,7 @@ class Config:
     formats: list[str] = field(default_factory=lambda: ["html", "json"])
     out_dir: Path = Path("out")
 
-    concurrency: int = 4
+    concurrency: int = DEFAULT_CONCURRENCY
     timeout: int = 20
     retries: int = 2
     user_agent: str = (
@@ -440,7 +443,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         cv_path=str((raw.get("cv") or {}).get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
         out_dir=Path(out.get("dir") or "out"),
-        concurrency=int(fet.get("concurrency", 4)),
+        concurrency=int(fet.get("concurrency", DEFAULT_CONCURRENCY)),
         timeout=int(fet.get("timeout", 20)),
         retries=int(fet.get("retries", 2)),
         path=p,
@@ -471,9 +474,23 @@ def load(path: str | os.PathLike | None = None) -> Config:
             )
         cfg.cv_path = str(cv.resolve())
 
-    # A concurrency of 40 against other people's job boards is how a useful
-    # tool becomes an abusive one. Cap it and say so.
-    if cfg.concurrency > 12:
-        print(f"  ! concurrency {cfg.concurrency} capped to 12 (be polite to other people's servers)")
-        cfg.concurrency = 12
+    # This used to be capped at 12 because it was the only thing standing
+    # between the tool and a burst against somebody's job board. It is not any
+    # more: `fetch` paces each host on its own clock, so this number decides
+    # how many DIFFERENT hosts are in flight, not how hard any one of them is
+    # hit. On a list where roughly 7,584 hosts hold a single board each, a low
+    # cap here bought no politeness at all and cost most of an hour.
+    #
+    # There is still a ceiling, because the sockets, file descriptors and DNS
+    # lookups are the user's own and a four-figure number here just exhausts
+    # them. 64 is high enough that the per-host limits are what bounds a scan
+    # and low enough to stay inside a default macOS descriptor limit.
+    if cfg.concurrency > MAX_CONCURRENCY:
+        print(f"  ! concurrency {cfg.concurrency} capped to {MAX_CONCURRENCY} "
+              f"(per-host pacing is what keeps this polite, but the sockets "
+              f"are still yours)")
+        cfg.concurrency = MAX_CONCURRENCY
+    if cfg.concurrency < 1:
+        print(f"  ! concurrency {cfg.concurrency} raised to 1")
+        cfg.concurrency = 1
     return cfg

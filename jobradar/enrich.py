@@ -26,12 +26,14 @@ from __future__ import annotations
 import html as _h
 import json
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote
 
 import requests
 
-from . import salary as sal_mod, store
+from . import fetch as fetch_mod, salary as sal_mod, store
 
 # One posting, by id. The same guest surface the search endpoint lives on.
 JOB_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
@@ -302,7 +304,8 @@ def candidates(con, limit: int = 0) -> list:
     return rows[:limit] if limit else rows
 
 
-def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None) -> tuple[int, int]:
+def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None,
+        concurrency: int = fetch_mod.DEFAULT_CONCURRENCY) -> tuple[int, int]:
     """Fill in descriptions. Returns (fetched, attempted).
 
     Re-parses pay while it is there: a posting that states a salary in its body
@@ -310,11 +313,8 @@ def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None) -> tuple[int
     read, which meant the floor could not act on it either.
     """
     rows = candidates(con) if rows is None else rows
-    session = requests.Session()
     got = 0
-    for i, r in enumerate(rows, 1):
-        fetcher = FETCHERS.get(r["platform"])
-        text = fetcher(r["url"], session) if fetcher else ""
+    for i, r, text in _texts(rows, pause, concurrency):
         if text and len(text) >= 200:
             got += 1
             fields = {"description": text[:20000]}
@@ -330,7 +330,61 @@ def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None) -> tuple[int
                 + " WHERE uid=?", (*fields.values(), r["uid"]))
         if on_each:
             on_each(i, len(rows), got)
-        # Other people's servers, and a lot of requests in a row.
-        if i < len(rows):
-            time.sleep(pause)
     return got, len(rows)
+
+
+def _texts(rows, pause: float, concurrency: int):
+    """Yield (position, row, advert text) with the fetching done in parallel.
+
+    This pass used to be strictly serial with a fixed one second sleep between
+    every row, which is the same mistake the scan itself made: a single global
+    delay standing in for politeness towards each individual host. It costs
+    whole minutes for nothing. These are one posting page per role, spread
+    across employer domains and ATS hosts, so almost every consecutive pair is
+    a different server and there was never a reason for them to queue.
+
+    The database writes stay on the caller's thread. A sqlite connection may
+    not be used from the thread that did not open it, and a scan that fetched
+    faster but corrupted the roles table would not be an improvement.
+
+    `pause` still works and still means what it said, for anyone who set it,
+    and passing concurrency=1 restores the old behaviour exactly.
+    """
+    fetchers = [(i, r, FETCHERS.get(r["platform"]))
+                for i, r in enumerate(rows, 1)]
+    if concurrency <= 1:
+        session = requests.Session()
+        for i, r, fetcher in fetchers:
+            yield i, r, (fetcher(r["url"], session) if fetcher else "")
+            if pause and i < len(rows):
+                time.sleep(pause)
+        return
+
+    limiter = fetch_mod.HostLimiter()
+    local = threading.local()
+
+    def one(item):
+        i, r, fetcher = item
+        if not fetcher:
+            return i, r, ""
+        session = getattr(local, "session", None)
+        if session is None:
+            session = local.session = requests.Session()
+        # Same pacing object the scan uses, so a posting page on
+        # boards-api.greenhouse.io is queued behind the board listings rather
+        # than racing them, and a host that has blocked us is not asked again.
+        if limiter.blocked_for(r["url"]) > 0:
+            return i, r, ""
+        limiter.wait(r["url"])
+        try:
+            return i, r, fetcher(r["url"], session)
+        except Exception:
+            # One unreadable posting must not end the pass. Before this ran in
+            # a pool the loop had the same exposure, and a role with no text
+            # passes every dealbreaker by default, so losing the rest of the
+            # batch to one bad page is the expensive failure here.
+            return i, r, ""
+
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+        for i, r, text in ex.map(one, fetchers):
+            yield i, r, text
