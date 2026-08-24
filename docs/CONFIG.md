@@ -62,36 +62,45 @@ absent.
 ## sectors
 
 Which employers to watch. Empty means all of them. These are the tags that
-actually exist in the bundled list:
+actually exist in the bundled list, out of 17,627 sources:
 
 | sector | sources |
 |---|---|
-| `technology` | 229 |
-| `finance` | 75 |
-| `healthcare` | 45 |
-| `industry` | 43 |
+| `untagged` | 16,981 |
+| `technology` | 228 |
+| `finance` | 74 |
+| `healthcare` | 44 |
+| `industry` | 42 |
 | `professional-services` | 34 |
 | `security` | 33 |
 | `media` | 31 |
-| `telecoms` | 26 |
-| `public-sector` | 25 |
-| `retail` | 24 |
-| `education` | 24 |
+| `retail` | 26 |
+| `telecoms` | 25 |
+| `education` | 23 |
+| `public-sector` | 23 |
 | `legal` | 17 |
 | `travel` | 16 |
 | `hospitality` | 15 |
 | `charity` | 15 |
-| `untagged` | 1 |
 
-A sector that is not in this table matches nothing, so you are left with only
-the untagged sources. Check with `job-radar coverage`.
+**Read the first row before setting this.** Only 646 sources carry a tag at
+all. The rest arrived from a crawl-index harvest that knows a board's address
+and not the employer's industry, so `technology` being 228 is a count of
+labels, not of technology companies.
+
+Setting `sectors` **keeps every untagged source as well** as the ones tagged
+with what you asked for. So it removes the labelled sources you did not ask
+for and leaves the other 16,981 in place, which is why it narrows the list far
+less than the numbers above suggest. A tag that is not in this table is
+refused at load rather than quietly matching nothing. Check yours with
+`job-radar coverage`, which counts the file rather than this table.
 
 ## sources
 
 | key | type | notes |
 |---|---|---|
 | `use_bundled` | true / false | |
-| `countries` | list of codes | Only filters sources that carry a country tag; most do not. |
+| `countries` | list of codes | Only filters sources that carry a country tag, and 386 of 17,627 do. The rest are always fetched, and `job-radar coverage` says so when this is set. |
 | `extra` | list | Either a bare URL string, or `{company, url, platform}`. `job-radar discover <name> --add` writes these for you. |
 | `reed_api_key` | string | Free key from <https://www.reed.co.uk/developers/jobseeker>, needed only if you add the Reed source. Falls back to the `REED_API_KEY` environment variable when blank, which is the route for GitHub Actions. **Put a real key in `config.local.yaml`, never in `config.yaml`**: the second one is committed. Blank means the Reed source is skipped, with a message naming it. |
 | `adzuna_app_id`, `adzuna_app_key` | string | Free pair from <https://developer.adzuna.com/signup>, needed only if you add the Adzuna source. Both fall back to `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` in the environment when blank, which is the route for GitHub Actions. **Real values go in `config.local.yaml`, never in `config.yaml`.** Either one missing means no credentials, and the Adzuna source is skipped with a message naming it. Adzuna's free limits are 25 calls a minute, 250 a day, 1,000 a week and 2,500 a month; one scan is one call per job title per page. |
@@ -107,7 +116,7 @@ the untagged sources. Check with `job-radar coverage`.
 
 | key | type | notes |
 |---|---|---|
-| `concurrency` | number | Default 4, capped at 12 with a warning. These are other people's servers. |
+| `concurrency` | number | Default 4, capped at 12 with a warning. These are other people's servers. It is also what sets how long a scan takes: 4 measured 6.8 boards a second, so about 43 minutes for the whole 17,600-board bundled list. |
 | `timeout` | seconds | Default 20. |
 | `retries` | number | Default 2. |
 | `user_agent` | string | Identifies the tool. Leave it identifying. |
@@ -120,7 +129,11 @@ the untagged sources. Check with `job-radar coverage`.
 | `--db` | scan, list, applied, generate, serve | Database path. Default `data/job-radar.db`. |
 | `--docs` | generate, serve | Where generated documents go. Default `~/job-applications`. |
 | `--limit` | scan, list | Cap the sources fetched, or the rows listed. |
-| `--dry-run` | scan | Do not record what was seen. |
+| `--dry-run` | scan, rank, enrich | Do not record what was seen. On `rank`, show what it would cost and send nothing. |
 | `--json` | list | Machine-readable output. |
-| `--all` | list | Include settled roles. |
+| `--all` | list | Include settled roles, and roles no longer on a board. |
+| `--new` | list | Only roles first seen on the most recent scan. |
+| `--no-enrich` | scan | Skip fetching full postings for headline-only sources. They stay unscreenable. |
+| `--prune`, `--force-prune` | validate | Rewrite `--file` without the dead sources. |
+| `--refresh`, `--top` | rank | Re-score roles that already have a fit; how many to print. |
 | `--port`, `--host`, `--no-browser` | serve | |

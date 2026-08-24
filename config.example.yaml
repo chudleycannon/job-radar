@@ -73,11 +73,12 @@ sources:
   # Limit the bundled list by country. Empty means all.
   countries: []
 
-  # Reed (reed.co.uk) is the one source that needs a credential, and the only
-  # aggregator here besides LinkedIn. Everything else in the bundled list is
-  # one employer's own job board, which only reaches employers somebody has
-  # added; Reed is searched by keyword and reaches its whole UK market at
-  # once, which is where the mid-size employers are.
+  # Reed (reed.co.uk) is one of the two sources that need a credential, Adzuna
+  # below being the other, and one of the three aggregators here alongside
+  # Adzuna and LinkedIn. Everything else in the bundled list is one employer's
+  # own job board, which only reaches employers somebody has added; Reed is
+  # searched by keyword and reaches its whole UK market at once, which is
+  # where the mid-size employers are.
   #
   # The key is free: fill in the short form at
   # https://www.reed.co.uk/developers/jobseeker and it is emailed to you.

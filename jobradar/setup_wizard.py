@@ -236,8 +236,12 @@ def first_scan(config_path: Path) -> int:
     """
     from . import cli
 
-    print("\nRunning your first scan now. It reads about three hundred job")
-    print("boards at four requests at a time, so give it two or three minutes.")
+    # The bundled list went from a few hundred boards to about 17,600, so the
+    # old "two or three minutes" promise was out by a factor of twenty and it
+    # was the first thing a new user was told.
+    print("\nRunning your first scan now. It reads about 17,600 job boards at")
+    print("four requests at a time, so it takes roughly 40 minutes. Leave it")
+    print("running. `job-radar scan --limit 200` is the quick look instead.")
     print("Nothing is generated and nothing is sent anywhere; this only reads.\n")
 
     # Paths follow the config, not the working directory.

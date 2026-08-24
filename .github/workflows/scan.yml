@@ -1,6 +1,9 @@
 name: scan
 
-# Fork this repo, edit config.yaml, and this runs on its own.
+# Fork this repo, edit config.yaml, then uncomment the `schedule:` block
+# below. It does NOT run on its own until you do: a fork inherits the
+# workflow with its cron disabled, which is deliberate so a fork does not
+# start hitting job boards the moment somebody clicks Fork.
 #
 # Two things worth knowing before you rely on it:
 #
