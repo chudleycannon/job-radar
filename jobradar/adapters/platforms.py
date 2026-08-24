@@ -1589,7 +1589,29 @@ def parse_rmk(payload: Any, src: Source) -> Iterator[Job]:
 # icon rather than text and the empty title is dropped, which is luck rather
 # than a rule: the moment one carries a label the board reports three rows per
 # job.
-_AV_LINK = re.compile(r'href="(https?://[^"?]*?/JobDetail/[^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S)
+# Two record types, not one. A pipeline is Avature's evergreen requisition and
+# it is a real vacancy: HSBC's board carries 96 PipelineDetail links and zero
+# JobDetail ones, so reading only the latter reported it as empty. Six large
+# boards were invisible this way, 1,028 postings between them (Macquarie 563,
+# Coca-Cola HBC 351, HSBC 48). Those boards also take `pipelineRecordsPerPage`
+# rather than `jobRecordsPerPage`, so the page size has to match the kind.
+# Two href shapes as well as two record types. Tesco and Metro Bank serve
+# `/JobDetail/Some-Slug`; Macquarie and Ross Stores serve
+# `/JobDetail?jobId=23921` with the id in the query and no slug at all.
+# The `[^"?]` prefix guard stays: every card also carries share links whose
+# QUERY STRING contains the job's own URL (`?text=<title> https://.../JobDetail/...`),
+# and allowing a question mark anywhere before the match reports three rows
+# per job. So the query form is admitted only as exactly `?jobId=<digits>`,
+# which a share link never is.
+_AV_LINK = re.compile(
+    r'href="(https?://[^"?]*?/(?:Job|Pipeline)Detail'
+    r'(?:/[^"?]+|\?jobId=\d+))"[^>]*>\s*(.*?)\s*</a>',
+    re.S)
+_AV_KIND = re.compile(r"/((?:Job|Pipeline)Detail)/")
+# A card links the same record twice, once on the title and once on a "View
+# Job" button. Keeping the first would be luck; the labelled one is the title.
+_AV_NOT_A_TITLE = re.compile(
+    r"^(?:view|apply|details?|read more|learn more|see)\b", re.I)
 
 
 def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
@@ -1597,14 +1619,27 @@ def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
     with the location usually in the slug rather than a separate field.
     """
     text = payload if isinstance(payload, str) else ""
-    seen = set()
-    for url, title in _AV_LINK.findall(text):
-        title = _text(title)
-        if not title or url in seen:
+    best: dict[str, str] = {}
+    order: list[str] = []
+    for url, raw in _AV_LINK.findall(text):
+        title = _text(raw)
+        if not title or _AV_NOT_A_TITLE.match(title):
             continue
-        seen.add(url)
+        if url not in best:
+            order.append(url)
+        # Longest wins: a card sometimes labels the same link twice and the
+        # fuller one is the job title rather than a truncated repeat.
+        if len(title) > len(best.get(url, "")):
+            best[url] = title
+    for url in order:
+        title = best[url]
         # The slug carries the location when the markup does not.
-        slug = url.rsplit("/JobDetail/", 1)[-1].replace("-", " ")
+        m = _AV_KIND.search(url)
+        kind = m.group(1) if m else "JobDetail"
+        tail = url.rsplit(f"/{kind}", 1)[-1]
+        # The slug carries the location on the path form. The `?jobId=` form
+        # carries nothing, so there is no pseudo-description to invent.
+        slug = "" if tail.startswith("?") else tail.lstrip("/").replace("-", " ")
         yield Job(
             company=src.company,
             title=title,

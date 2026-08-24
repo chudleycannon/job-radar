@@ -204,3 +204,50 @@ def test_a_postings_own_location_beats_the_boards_country_tag():
     # Several countries named: the tag is usable only if it is one of them.
     assert resolve("London / New York", "UK") == "UK"
     assert resolve("Berlin / Paris", "UK") == ""
+
+
+# ------------------------------------------------------------ avature links
+def test_avature_reads_pipelines_and_query_string_ids_not_just_slugs():
+    """Reading only `/JobDetail/<slug>` reported whole boards as empty.
+
+    A pipeline is Avature's evergreen requisition and it is a real vacancy:
+    HSBC's board carries 96 `/PipelineDetail/` links and zero `/JobDetail/`
+    ones. Separately, Macquarie and Ross Stores put the id in the query
+    (`/JobDetail?jobId=23921`) with no slug at all."""
+    from jobradar.adapters.platforms import _AV_LINK
+
+    for html, want in (
+            ('<a href="https://x/careers/JobDetail?jobId=23921">Automation Engineer</a>',
+             "https://x/careers/JobDetail?jobId=23921"),
+            ('<a href="https://x/external/PipelineDetail/GSC-Manager">GSC: Manager</a>',
+             "https://x/external/PipelineDetail/GSC-Manager"),
+            ('<a href="https://x/careers/JobDetail/Some-Role">Some Role</a>',
+             "https://x/careers/JobDetail/Some-Role")):
+        got = _AV_LINK.findall(html)
+        assert got and got[0][0] == want, html
+
+
+def test_an_avature_share_link_is_still_not_a_job():
+    """Every card carries share links whose QUERY STRING holds the job's own
+    URL, so admitting a question mark anywhere before the match reports three
+    rows per job. The query form is allowed only as `?jobId=<digits>`."""
+    from jobradar.adapters.platforms import _AV_LINK
+
+    tweet = ('<a href="https://twitter.com/share?text=Some Role '
+             'https://x/careers/JobDetail/Some-Role">Share</a>')
+    assert _AV_LINK.findall(tweet) == []
+
+
+def test_the_same_avature_job_linked_twice_is_one_row():
+    """A card links the record on its title and again on a View Job button.
+    Keeping whichever came first would be luck; the labelled one is real."""
+    from jobradar.adapters.platforms import parse_avature
+    from jobradar.models import Source
+
+    page = ('<a href="https://x/external/PipelineDetail/GSC-Manager">'
+            'GSC: Senior Control Manager (Cyber)</a>'
+            '<a href="https://x/external/PipelineDetail/GSC-Manager">View Job</a>')
+    jobs = list(parse_avature(page, Source(company="HSBC", platform="avature",
+                                           url="https://x/external/SearchJobs/")))
+    assert len(jobs) == 1
+    assert jobs[0].title == "GSC: Senior Control Manager (Cyber)"
