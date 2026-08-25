@@ -751,3 +751,24 @@ def test_discover_add_writes_through_the_same_guard_as_setup():
     add = src[src.index("if args.add and good:"):][:600]
     assert "_cfg_write_path(args.config)" in add
     assert "_cfg_path(args.config)" not in add
+
+
+def test_a_named_state_beats_a_city_that_exists_in_two_countries():
+    """"Newcastle, New South Wales" was a British job.
+
+    Stopping "New South Wales" from matching the Wales marker was necessary
+    and not sufficient: Newcastle is a UK city hint, nothing named Australia,
+    and the city won by default. A city name is the weaker signal of the two
+    because plenty of them exist twice, while a state or province belongs to
+    exactly one country. Perth is the pair that proves it has to cut both
+    ways.
+    """
+    assert _countries_in("Newcastle, New South Wales") == {"AU"}
+    assert _countries_in("Brisbane, Queensland") == {"AU"}
+    assert _countries_in("Perth, Western Australia") == {"AU"}
+    assert _countries_in("Perth, Scotland") == {"UK"}
+    assert _countries_in("Victoria, British Columbia") == {"CA"}
+    # Not broken on the way past.
+    assert _countries_in("Cardiff, South Wales") == {"UK"}
+    assert _countries_in("London, England") == {"UK"}
+    assert _countries_in("London, New York") == {"UK", "US"}

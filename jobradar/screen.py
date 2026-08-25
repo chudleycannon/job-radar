@@ -150,9 +150,9 @@ _NOWHERE = (r"remote|anywhere|global(?:ly)?|worldwide|distributed|hybrid|"
             r"flexible|tbc|tba|n/?a|hq|head office|headquarters|office|"
             r"virtual|unspecified|locations?")
 _GENERIC_REMOTE = re.compile(
-    rf"^\s*(?:(?:fully|100%|mostly|primarily)\s+)?(?:{_NOWHERE})"
-    rf"(?:(?:\s*[,\-–—/&]\s*|\s+(?:or|and)\s+|\s+)(?:{_NOWHERE}))*"
-    r"[\s,\-–—/]*$",
+    rf"^[\s(]*(?:(?:fully|100%|mostly|primarily)\s+)?(?:{_NOWHERE})"
+    rf"(?:(?:\s*[,\-–—/&()]\s*|\s+(?:or|and)\s+|\s+)(?:{_NOWHERE}))*"
+    r"[\s,\-–—/()]*$",
     re.I,
 )
 
@@ -475,6 +475,14 @@ _SUBNATIONAL = {
     "IN": (r"\b(?:AP|AS|BR|CG|GJ|HR|HP|JH|KA|KL|MP|MH|OD|PB|RJ|TN|TG|UP|WB|DL)\b",
            r"\b(?:maharashtra|karnataka|tamil nadu|telangana|kerala|gujarat|"
            r"haryana|punjab|rajasthan|west bengal|uttar pradesh|odisha)\b"),
+    # Australia was missing, which is why "Newcastle, New South Wales" was a
+    # British job: the state was invisible and the city hint was not.
+    # Deliberately no "victoria" or "tasmania" in the spelled-out list:
+    # Victoria is a city in British Columbia and a district in London.
+    "AU": (r"\b(?:NSW|QLD|VIC|WA|SA|TAS|ACT|NT)\b",
+           r"\b(?:new south wales|queensland|western australia|"
+           r"south australia|northern territory|"
+           r"australian capital territory)\b"),
 }
 
 # Canadian provinces as a signal in their own right, not only as
@@ -845,6 +853,16 @@ def _country_of(location: str, *, cities: bool = True) -> str | None:
             if city and hit(city):
                 return code
 
+    # A named foreign subdivision beats a bare city name, because a city name
+    # is the weaker signal of the two: plenty of them exist twice. "Newcastle,
+    # New South Wales" resolved to the UK even after "New South Wales" stopped
+    # matching the Wales marker, because Newcastle is a UK city hint and
+    # nothing said Australia. A state or province is named by exactly one
+    # country, so when one is present it decides.
+    for code, sub in _SUBNATIONAL.items():
+        if re.search(sub[1], fold):
+            return code
+
     for code, pat in _COUNTRY_MARKERS.items():
         if hit(pat):
             return code
@@ -975,9 +993,22 @@ def _looks_like_one_place(segs: list[str]) -> bool:
     """
     if not 2 <= len(segs) <= 3:
         return False
-    last = segs[-1]
-    return bool(_SUBDIVISION_ONLY.match(last)
-                or _country_of(last, cities=False))
+    return _SUBDIVISION_ONLY.match(segs[-1]) is not None \
+        or _is_country_name(segs[-1])
+
+
+def _is_country_name(seg: str) -> bool:
+    """Is this whole segment the name of a country?
+
+    Narrower than `_country_of(..., cities=False)` on purpose. That answers
+    yes for "New York", because a spelled-out US state names the US, and using
+    it here made "London, New York" look like an address and swallowed the
+    London.
+    """
+    low = _fold(_repair(seg or "").lower().strip(" .()"))
+    if low in _COUNTRY_NAME:
+        return True
+    return any(re.fullmatch(pat, low, re.I) for pat in _COUNTRY_MARKERS.values())
 
 
 def _countries_in(location: str) -> set[str]:
@@ -1210,8 +1241,11 @@ def title_matches_loosely(title: str, terms) -> str | None:
             if last - first + 1 > len(core) + _TITLE_GAP:
                 continue
             near = {words[i] for i in range(first, last + 1)} - set(core)
-            if first:
-                near.add(words[first - 1])
+            # Two words of lead-in, not one. "Business Development Manager,
+            # Engineering Services" puts "development" next to the phrase and
+            # "business" one step further out, and "business" is the word that
+            # says this is a sales job.
+            near |= set(words[max(0, first - 2):first])
             if near & _ROLE_SHIFT:
                 continue
             return term
@@ -1331,7 +1365,11 @@ def work_rights(job: Job) -> str:
     d = job.description or ""
     if not d:
         return ""
-    if _NO_SPONSOR.search(d):
+    if _NO_SPONSOR.search(d) and not _all_mentions_incidental(_NO_SPONSOR, d):
+        # Omnea's adverts carry a paragraph naming "UNABLE TO PROVIDE VISAS"
+        # as an EXAMPLE of the kind of hard requirement a posting might have.
+        # It is not this posting's policy, and it hid 13 of the 77 US roles a
+        # sponsorship filter dropped in a 13,588-posting sample.
         return "no sponsorship"
     # Checked before the willing case: a role that sponsors and is also export
     # controlled is still one you may not be allowed to do, and reporting
@@ -1381,6 +1419,48 @@ def sponsorship_gate(job: Job, cfg: Config) -> tuple[bool, str]:
     return True, ""
 
 
+# A dealbreaker is a statement about THIS job. The regex is not: it fires on
+# any occurrence anywhere in the description, including the teams you would
+# work alongside and the certifications they would like you to hold.
+#
+# Measured on the 157 engineering-leadership postings in a 13,588-posting
+# sample: the shipped "pre-sales" dealbreaker hid 4 of them, and 3 were
+# nothing to do with the job. A "Cloud Platform Engineering Manager" was
+# deleted because a PREFERRED CERTIFICATION is called "Azure Solutions
+# Architect Expert", and an "Engineering Manager, Agent Oversight" because it
+# said it works "cross-functionally with customers, forward deployed teams".
+#
+# So a hard dealbreaker whose every occurrence is one of these is downgraded
+# to a warning rather than acted on. The role is still shown with the phrase
+# named, which is the answer the reader can argue with; deleting it is not.
+_INCIDENTAL = re.compile(
+    r"(?:work|works|working|partner|partners|partnering|collaborate|"
+    r"collaborates|collaborating|liaise|engage|engages|align|aligns|"
+    r"coordinate|coordinates|interface|interfaces|pair|pairs)\s+"
+    r"(?:closely\s+|cross[- ]functionally\s+|effectively\s+|directly\s+)?"
+    r"(?:with|alongside|across)\b[^.]{0,80}$"
+    r"|\balongside\b[^.]{0,60}$"
+    r"|\bin concert with\b[^.]{0,60}$"
+    r"|\b(?:pulling in|hand(?:ing)? off to|escalat\w+ to|supported by)\b[^.]{0,60}$"
+    r"|\b(?:certified|certification|certifications|certificate|accreditation)\b"
+    r"[^.]{0,60}$"
+    r"|\((?:e\.?g\.?|for example|such as|including|i\.?e\.?)[^).]{0,120}$",
+    re.I)
+_INCIDENTAL_LEAD = 140
+
+
+def _mention_is_incidental(text: str, start: int) -> bool:
+    """Is this occurrence about somebody else's job, or a hypothetical?"""
+    return bool(_INCIDENTAL.search(text[max(0, start - _INCIDENTAL_LEAD):start]))
+
+
+def _all_mentions_incidental(pattern, text: str, title: str = "") -> bool:
+    if pattern.search(title or ""):
+        return False
+    hits = list(pattern.finditer(text))
+    return bool(hits) and all(_mention_is_incidental(text, m.start()) for m in hits)
+
+
 def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
     """Dealbreaker scan over the description. Returns (keep, hits)."""
     # Warn on a posting too thin to have been screened properly, but still run
@@ -1398,17 +1478,20 @@ def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
     if not text:
         return True, []
 
-    hits = []
+    hits, hard = [], []
     for db in cfg.dealbreakers:
-        if db.compiled().search(job.description):
-            hits.append(db.name)
-            if not db.hard:
-                job.flags.append(f"soft flag: {db.name}")
-
-    hard = [
-        db.name for db in cfg.dealbreakers
-        if db.hard and db.compiled().search(job.description)
-    ]
+        pat = db.compiled()
+        if not pat.search(job.description):
+            continue
+        hits.append(db.name)
+        if not db.hard:
+            job.flags.append(f"soft flag: {db.name}")
+        elif _all_mentions_incidental(pat, job.description, job.title):
+            job.flags.append(
+                f"soft flag: {db.name} mentioned, but only in passing "
+                f"(another team, or an example) -- shown rather than hidden")
+        else:
+            hard.append(db.name)
     return (not hard), hits
 
 
