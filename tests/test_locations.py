@@ -739,3 +739,15 @@ def test_the_data_the_tool_reads_at_runtime_is_declared_for_the_wheel():
         assert f"../{d}/" in decl, (
             f"{d}/ is read at runtime but not in package-data, so it will be "
             f"missing from a built wheel")
+
+
+def test_discover_add_writes_through_the_same_guard_as_setup():
+    """`--add` edits a config, so it is subject to setup's rule: never write
+    the file the repo distributes. When the read and write paths were split,
+    this caller was left on the read one, which is precisely the half of the
+    bug that fb6cc68 already failed to fix once."""
+    src = (Path(__file__).resolve().parent.parent / "jobradar" / "cli.py"
+           ).read_text(encoding="utf-8")
+    add = src[src.index("if args.add and good:"):][:600]
+    assert "_cfg_write_path(args.config)" in add
+    assert "_cfg_path(args.config)" not in add

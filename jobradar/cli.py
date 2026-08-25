@@ -365,7 +365,13 @@ def cmd_discover(args) -> int:
     good = [f for f in results if f.live_jobs > 0
             and f.identity not in ("mismatch", "unreadable")]
     if args.add and good:
-        cfg_path = _cfg_path(args.config)
+        # The write path, not the read path. `--add` edits a config, so it is
+        # subject to the same rule as `setup`: it must never land on a file
+        # the repo distributes. The two were split when setup was found
+        # writing the tracked config.yaml on a fresh clone, and this caller
+        # was left on the old one, which is the half of that bug fb6cc68
+        # already failed to fix once.
+        cfg_path = _cfg_write_path(args.config)
         if not cfg_path.exists():
             # Writing a file containing only a sources block produced a config
             # that then failed to load with "titles.include is empty", which
