@@ -42,6 +42,12 @@ class Result:
     status: int | None = None
     elapsed: float = 0.0
     throttled: bool = False
+    # Set when the failure happened below HTTP: the TLS handshake never
+    # completed, so there is no status code and never was one. See
+    # `handshake_failure`. Kept separate from `error` because the string is for
+    # a human and this is for code: `validate --prune` has to be able to ask
+    # "was this the board's answer or this machine's?" without parsing prose.
+    transport: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -327,6 +333,89 @@ def retry_after_seconds(value: str | None) -> float | None:
     return max(0.0, (when - now).total_seconds())
 
 
+# --------------------------------------------------------------------------
+# Transport failures that are facts about THIS machine, not about the board
+# --------------------------------------------------------------------------
+# The alert names OpenSSL and LibreSSL put in `SSLError.reason` when the two
+# ends cannot agree on a protocol version or a cipher suite. Every one of them
+# happens before a single byte of HTTP is exchanged, so there is no status
+# code, no body, and no evidence whatsoever about whether the board still
+# exists. `www.roke.co.uk` is the worked example on the maintainer's Mac:
+# /usr/bin/python3 is linked against LibreSSL 2.8.3, which cannot complete the
+# handshake that host requires and raises TLSV1_ALERT_PROTOCOL_VERSION, while
+# `curl` on the same machine links a modern OpenSSL, gets HTTP 200, and the
+# payload parses to 34 correct roles.
+#
+# These are listed by name rather than treating every SSLError alike on
+# purpose. CERTIFICATE_VERIFY_FAILED is deliberately NOT here: an expired or
+# mis-issued certificate is a fact about the host, is what a browser would
+# refuse too, and should keep reading as a broken source.
+_HANDSHAKE_REASONS = frozenset({
+    "TLSV1_ALERT_PROTOCOL_VERSION",
+    "UNSUPPORTED_PROTOCOL",
+    "VERSION_TOO_LOW",
+    "UNSUPPORTED_PROTOCOL_OR_VERSION",
+    "WRONG_VERSION_NUMBER",
+    "WRONG_SSL_VERSION",
+    "SSLV3_ALERT_HANDSHAKE_FAILURE",
+    "TLSV1_ALERT_INTERNAL_ERROR",
+    "NO_PROTOCOLS_AVAILABLE",
+    "NO_CIPHERS_AVAILABLE",
+    "NO_SHARED_CIPHER",
+    "SSLV3_ALERT_ILLEGAL_PARAMETER",
+    "TLSV1_ALERT_INSUFFICIENT_SECURITY",
+    "LEGACY_SIGALG_DISALLOWED_OR_NOT_SUPPORTED",
+    "EE_KEY_TOO_SMALL",
+    "DH_KEY_TOO_SMALL",
+    "UNEXPECTED_EOF_WHILE_READING",
+})
+# Same alerts as they appear in the exception's text, for the builds that
+# leave `reason` as None. LibreSSL 2.8.3 fills `reason` in for the case that
+# matters here, but this is cheap and the failure mode of missing one is a
+# live board being deleted.
+_HANDSHAKE_TEXT = re.compile(
+    "|".join(sorted(_HANDSHAKE_REASONS)) + r"|sslv3 alert handshake failure"
+    r"|unsupported protocol|wrong version number|no shared cipher",
+    re.I)
+
+
+def ssl_backend() -> str:
+    """What this interpreter's `ssl` module is actually linked against.
+
+    Named in the error text because the whole point is to tell the reader the
+    problem is on their side of the wire and which library to blame.
+    """
+    try:
+        import ssl as _ssl
+        return _ssl.OPENSSL_VERSION
+    except Exception:      # pragma: no cover - ssl is always importable
+        return "unknown TLS library"
+
+
+def handshake_failure(exc: BaseException) -> str | None:
+    """The name of the TLS alert, if this exception is one; otherwise None.
+
+    A true return value means: nothing was ever heard from the board. It is
+    not a 404, it is not an empty board, and `validate --prune` must never
+    read it as one.
+    """
+    seen = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        reason = getattr(cur, "reason", None)
+        if isinstance(reason, str) and reason.upper() in _HANDSHAKE_REASONS:
+            return reason.upper()
+        name = type(cur).__name__
+        if name in ("SSLError", "SSLEOFError", "SSLZeroReturnError",
+                    "SSLSyscallError") or "SSLError" in name:
+            m = _HANDSHAKE_TEXT.search(str(cur))
+            if m:
+                return m.group(0).upper().replace(" ", "_")
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
 def _sleep_backoff(attempt: int, retry_after: str | None) -> None:
     secs = retry_after_seconds(retry_after)
     if secs is not None:
@@ -467,6 +556,22 @@ def fetch_one(
             return Result(src, payload=r.text, status=status, elapsed=time.time() - t0)
 
         except requests.RequestException as e:
+            alert = handshake_failure(e)
+            if alert:
+                # Deterministic, and nothing to do with the board. Retrying it
+                # cannot change the answer: it costs three connections and two
+                # backoff sleeps per source, every scan, to arrive at the same
+                # alert. Report it at once, and say whose fault it is, because
+                # the bare "SSLError" this used to return is the string that
+                # made a live employer indistinguishable from a dead one.
+                return Result(
+                    src,
+                    error=f"TLS handshake failed ({alert}): this machine's "
+                          f"Python is linked against {ssl_backend()}, which "
+                          f"cannot complete the handshake {urlparse(src.url).hostname} "
+                          f"requires. The board was never reached, so this is "
+                          f"not evidence it is gone.",
+                    status=None, transport=alert, elapsed=time.time() - t0)
             last = type(e).__name__
             if attempt < retries:
                 _sleep_backoff(attempt, None)
@@ -520,7 +625,8 @@ def fetch_workday(
                 if first_error is None:
                     first_error = Result(src, error=res.error or "bad payload",
                                          status=res.status,
-                                         throttled=res.throttled)
+                                         throttled=res.throttled,
+                                         transport=res.transport)
                 break
             posts = res.payload.get("jobPostings") or []
             total = max(total, int(res.payload.get("total") or 0))
@@ -582,7 +688,8 @@ def fetch_workable_search(
             # a broken search or `detect_throttling` will not count it.
             if first_error is None:
                 first_error = Result(src, error=res.error or "bad payload",
-                                     status=res.status, throttled=res.throttled)
+                                     status=res.status, throttled=res.throttled,
+                                     transport=res.transport)
             break
         jobs = res.payload.get("jobs") or []
         total = max(total, int(res.payload.get("totalSize") or 0))
@@ -632,7 +739,8 @@ def fetch_nhs(
             # came back as "no pages returned" and `discover` was once
             # scheduled to prune it as dead.
             first_error = Result(src, error=res.error or "bad payload",
-                                 status=res.status, throttled=res.throttled)
+                                 status=res.status, throttled=res.throttled,
+                                 transport=res.transport)
             break
         if "search-result" not in res.payload:
             break
@@ -715,7 +823,8 @@ def fetch_reed(
                 # `source.key`, and a URL with resultsToSkip in it is a
                 # different key every page.
                 first_error = Result(src, error=res.error or "bad payload",
-                                     status=res.status, throttled=res.throttled)
+                                     status=res.status, throttled=res.throttled,
+                                     transport=res.transport)
                 break
             rows = res.payload.get("results") or []
             total = max(total, int(res.payload.get("totalResults") or 0))
@@ -807,7 +916,8 @@ def fetch_adzuna(
                         user_agent=user_agent, session=session)
         if not res.ok or not isinstance(res.payload, dict):
             first_error = Result(src, error=res.error or "bad payload",
-                                 status=res.status, throttled=res.throttled)
+                                 status=res.status, throttled=res.throttled,
+                                 transport=res.transport)
             break
         rows = res.payload.get("results") or []
         total = max(total, int(res.payload.get("count") or 0))
@@ -983,7 +1093,8 @@ def fetch_avature(
                 # offset in it is a different key on every page.
                 first_error = first_error or Result(
                     src, error=res.error or "bad payload", status=res.status,
-                    throttled=res.throttled)
+                    throttled=res.throttled,
+                    transport=res.transport)
                 break
             fresh = {u for u in _AV_JOB.findall(res.payload)} - seen
             if not fresh:
@@ -1045,7 +1156,8 @@ def fetch_rmk(
             if not res.ok or not isinstance(res.payload, str):
                 first_error = first_error or Result(
                     src, error=res.error or "bad payload", status=res.status,
-                    throttled=res.throttled)
+                    throttled=res.throttled,
+                    transport=res.transport)
                 break
             fresh = set(re.findall(r'href="([^"]*?/job/[^"?]+)"',
                                    res.payload)) - seen
@@ -1234,7 +1346,8 @@ def fetch_taleo(
             if not res.ok or not isinstance(res.payload, dict):
                 first_error = first_error or Result(
                     src, error=res.error or "bad payload", status=res.status,
-                    throttled=res.throttled)
+                    throttled=res.throttled,
+                    transport=res.transport)
                 break
             got = res.payload.get("requisitionList") or []
             fresh = [r for r in got

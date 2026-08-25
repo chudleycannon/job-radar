@@ -539,7 +539,8 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
 KEYED_PLATFORMS = {"reed", "adzuna"}
 
 
-def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
+def count_jobs(src: Source, timeout: int = 25,
+               *, transport: list | None = None) -> tuple[int, list, str | None]:
     """Fetch and parse. Job count is the only reliable liveness signal:
     several of these platforms answer 200 with an empty array for tokens that
     do not exist, so status codes prove nothing.
@@ -549,6 +550,10 @@ def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
     every time: a 429 from a busy platform was being reported as a dead board,
     and `validate --prune` would then delete a real employer. Callers that
     only want the count can ignore it, but nothing may treat it as zero.
+
+    `transport` is an out-parameter: pass a list and the name of the TLS alert
+    is appended to it when the request never got as far as HTTP. Callers that
+    delete things need that as a flag rather than as prose in the third value.
     """
     from .fetch import fetch_one, fetch_taleo
     if src.platform == "taleo":
@@ -575,6 +580,11 @@ def count_jobs(src: Source, timeout: int = 25) -> tuple[int, list, str | None]:
             why = (f"needs an API key, which `validate` does not send; "
                    f"this says nothing about whether {src.platform.title()} "
                    f"is working")
+        if res.transport and transport is not None:
+            # Below HTTP. `fetch_one` already wrote the whole explanation into
+            # `res.error`; what the caller needs from here is the machine-
+            # readable fact, so a prune can refuse on it.
+            transport.append(res.transport)
         return 0, [], why
     jobs = adapters.parse(res.payload, src)
     return len(jobs), jobs, None
@@ -770,6 +780,23 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
 PROBE_KEYWORD = "manager"
 
 
+def _count_with_transport(src: Source, alerts: list):
+    """`count_jobs`, collecting the TLS alert when the callee accepts one.
+
+    The suite replaces `count_jobs` with two-argument stand-ins to simulate a
+    429 or an empty board, and a health check is the last thing that should
+    break because somebody stubbed its dependency. Only a TypeError that names
+    this exact parameter is swallowed; anything else is a real fault and is
+    re-raised.
+    """
+    try:
+        return count_jobs(src, transport=alerts)
+    except TypeError as e:
+        if "transport" not in str(e):
+            raise
+        return count_jobs(src)
+
+
 def validate_source(src: Source) -> dict:
     """Health check for one already-known source. Used by `validate` and by
     the weekly maintenance workflow.
@@ -787,19 +814,23 @@ def validate_source(src: Source) -> dict:
         from urllib.parse import quote_plus
         probe = replace(src, url=src.url.format(keyword=quote_plus(PROBE_KEYWORD)),
                         keyword_template=False)
-        n, _, err = count_jobs(probe)
+        alerts: list = []
+        n, _, err = _count_with_transport(probe, alerts)
         return {
             "company": src.company,
             "url": src.url,
             "platform": src.platform,
             "live_jobs": n,
             "verdict": "unreachable" if err else ("dead" if n == 0 else "live"),
+            "transport": alerts[0] if alerts else None,
+            "prunable": not err and n == 0 and not alerts,
             "note": f"could not be read: {err}" if err else
                     ("keyword search, probed with "
                      f"'{PROBE_KEYWORD}'; identity not checked"),
         }
 
-    n, jobs, err = count_jobs(src)
+    alerts: list = []
+    n, jobs, err = _count_with_transport(src, alerts)
     if err:
         # Not a verdict on the board. Something between here and it failed,
         # and calling that dead is how a live employer gets pruned.
@@ -809,11 +840,44 @@ def validate_source(src: Source) -> dict:
     else:
         verdict, note = verify_identity(jobs, src.domain, src.company,
                                         src.platform)
+    if alerts:
+        # Belt and braces, and the braces are the point. A TLS alert cannot
+        # reach the `n == 0` branch today because `count_jobs` returns a
+        # reason with it, but "dead" here is what `--prune` deletes on, and
+        # the cost of one future refactor dropping that reason is a live
+        # employer removed from the shipped list. Pin it.
+        verdict = "unreachable"
     return {
         "company": src.company,
         "url": src.url,
         "platform": src.platform,
         "live_jobs": n,
         "verdict": verdict,
+        # The TLS alert name when the handshake never completed, else None.
+        "transport": alerts[0] if alerts else None,
+        "prunable": prunable_row_verdict(verdict, alerts),
         "note": note,
     }
+
+
+def prunable_row_verdict(verdict: str, alerts: list) -> bool:
+    """May a row with this verdict be deleted from a source list?
+
+    Only "dead" means the board answered and had nothing, and only a row that
+    reached HTTP at all can be "dead". A handshake failure is a fact about the
+    machine running `validate`, so it is never prunable however many Sundays
+    in a row it reports.
+    """
+    return verdict == "dead" and not alerts
+
+
+def prunable(row: dict) -> bool:
+    """Whether `validate --prune` may delete the source this row describes.
+
+    Rows from older reports have no `prunable` key; fall back to the same rule
+    rather than defaulting to True, because the default here is a deletion.
+    """
+    if "prunable" in row:
+        return bool(row["prunable"])
+    return prunable_row_verdict(row.get("verdict", ""),
+                                [row["transport"]] if row.get("transport") else [])

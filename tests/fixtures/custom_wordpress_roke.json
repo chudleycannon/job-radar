@@ -1,0 +1,57 @@
+[
+ {
+  "id": 6687,
+  "date": "2026-08-21T15:00:23",
+  "slug": "402",
+  "status": "publish",
+  "type": "job",
+  "link": "https://www.roke.co.uk/careers/current-roles/402/",
+  "title": {
+   "rendered": "Security Advisor"
+  },
+  "content": {
+   "rendered": "<p style=\"margin-top: 0px;margin-bottom: 1em;color: #1c1c1e;font-family: 'Twemoji Country Flags', __Inter_d876f3, __Inter_Fallback_d876f3, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';font-size: 16px;white-space: normal;background-color: #ffffff\"><span style=\"font-size: "
+  },
+  "job-location": [
+   89
+  ],
+  "acf": []
+ },
+ {
+  "id": 6686,
+  "date": "2026-08-21T12:00:33",
+  "slug": "401",
+  "status": "publish",
+  "type": "job",
+  "link": "https://www.roke.co.uk/careers/current-roles/401/",
+  "title": {
+   "rendered": "Commercial Manager"
+  },
+  "content": {
+   "rendered": "<p style=\"margin: 0cm;font-size: 12pt;font-family: Aptos, sans-serif\"><span style=\"font-size: 12pt;font-family: verdana, geneva\">Great ideas come from different minds. That&rsquo;s why we bring together engineers, scientists, analysts, and creatives from every background &mdash; and give them the trust, tools, and freedom to make a difference. What connects us is the mission: solving meaningful pr"
+  },
+  "job-location": [
+   92,
+   89
+  ],
+  "acf": []
+ },
+ {
+  "id": 6682,
+  "date": "2026-08-14T15:00:26",
+  "slug": "396",
+  "status": "publish",
+  "type": "job",
+  "link": "https://www.roke.co.uk/careers/current-roles/396/",
+  "title": {
+   "rendered": "Technician"
+  },
+  "content": {
+   "rendered": "<p style=\"margin-top: 0px;margin-bottom: 1em;color: #1c1c1e;font-family: 'Twemoji Country Flags', __Inter_d876f3, __Inter_Fallback_d876f3, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';font-size: 16px;white-space: normal;background-color: #ffffff\"><span style=\"font-size: "
+  },
+  "job-location": [
+   89
+  ],
+  "acf": []
+ }
+]
