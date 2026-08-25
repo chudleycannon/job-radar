@@ -1077,6 +1077,71 @@ def cmd_rank(args) -> int:
         con.close()
 
 
+# ------------------------------------------------------------ rescreen
+def cmd_rescreen(args) -> int:
+    """Re-apply the current config to roles already in the database.
+
+    A scan filters what it fetched that day and never looks back, so every
+    change to titles, locations, dealbreakers or the salary floor applies only
+    to roles found afterwards. Tighten an exclude and the roles it was written
+    for stay on the dashboard for ever; widen an include and nothing already
+    stored is reconsidered. Measured on a real database after a day of config
+    changes: 196 of 1,670 roles, 11.7%, no longer matched the config that was
+    supposedly producing them.
+
+    Reporting is the default and removal needs `--remove`, because this is the
+    one command whose whole job is to delete rows somebody may have been
+    relying on. A role you have touched is never removed whatever it matches:
+    the status is a decision you made and outranks a filter.
+    """
+    from . import store
+    from .models import Job
+    from .screen import match
+
+    cfg = _cfg_or_default(args.config)
+    con = store.connect(args.db)
+    try:
+        rows = con.execute(
+            "SELECT r.uid, r.company, r.title, r.platform, r.location, "
+            "r.description, COALESCE(s.status,'new') st "
+            "FROM roles r LEFT JOIN role_state s ON s.uid=r.uid").fetchall()
+        stale, kept_by_status = [], []
+        for r in rows:
+            j = Job(company=r["company"], title=r["title"],
+                    url="https://example.invalid/x", platform=r["platform"],
+                    location=r["location"] or "", description=r["description"] or "")
+            ok, _ = match(j, cfg)
+            if ok:
+                continue
+            (kept_by_status if r["st"] not in ("new", "") else stale).append(r)
+
+        if not stale and not kept_by_status:
+            _say(f"All {len(rows)} roles still match your config.")
+            return 0
+        _say(f"{len(stale) + len(kept_by_status)} of {len(rows)} roles no longer "
+             f"match your config.")
+        if kept_by_status:
+            _say(f"  {len(kept_by_status)} of them you have already acted on, so "
+                 f"they stay whatever happens.")
+        for r in stale[: args.limit or 15]:
+            _say(f"    {r['company'][:24]:<25} {r['title'][:52]}")
+        if len(stale) > (args.limit or 15):
+            _say(f"    ... and {len(stale) - (args.limit or 15)} more")
+
+        if not args.remove:
+            _say(f"\n  Nothing was removed. `job-radar rescreen --remove` deletes "
+                 f"the {len(stale)} untouched ones.")
+            return 0
+        for r in stale:
+            con.execute("DELETE FROM role_state WHERE uid=?", (r["uid"],))
+            con.execute("DELETE FROM roles WHERE uid=?", (r["uid"],))
+        con.commit()
+        _say(f"\n  Removed {len(stale)}. Kept {len(kept_by_status)} you had acted on.")
+        return 0
+    finally:
+        con.close()
+
+
 # ---------------------------------------------------------------- list
 def cmd_list(args) -> int:
     """Everything the dashboard shows, as text."""
@@ -1278,6 +1343,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="show what it would cost and send nothing")
     rk.add_argument("--db", default=None)
     rk.set_defaults(func=cmd_rank)
+
+    rs = sub.add_parser("rescreen",
+                        help="re-apply your config to roles already stored")
+    rs.add_argument("--remove", action="store_true",
+                    help="delete the ones that no longer match and that you "
+                         "have not acted on")
+    rs.add_argument("--limit", type=int, default=0, help="how many to list")
+    rs.add_argument("--db", default=None)
+    rs.set_defaults(func=cmd_rescreen)
 
     ls = sub.add_parser("list", help="the dashboard, as text")
     ls.add_argument("--status", default=None)

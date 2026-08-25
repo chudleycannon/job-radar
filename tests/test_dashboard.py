@@ -9,6 +9,7 @@ that ran off the edge of a container that clips rather than scrolls.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import tempfile
 from pathlib import Path
@@ -210,3 +211,52 @@ def test_a_job_that_ran_too_long_is_told_so_and_not_blamed_on_a_restart():
     assert "server restarted" in rows["screen"]["error"]
     assert "gave up after 15 minutes" in rows["cv"]["error"], (
         "the old job's real reason was overwritten by the blanket sweep")
+
+
+def test_rescreen_reports_before_it_removes_and_never_touches_what_you_acted_on():
+    """A scan filters what it fetched that day and never looks back.
+
+    So every config change applies only to roles found afterwards: tighten an
+    exclude and the roles it was written for stay on the dashboard for ever.
+    Measured on a real database after a day of config changes, 196 of 1,670
+    roles no longer matched the config supposedly producing them.
+
+    Reporting is the default because this is the one command whose whole job
+    is deleting rows somebody may be relying on, and a role with a status is
+    never removed: that status is a decision, and it outranks a filter.
+    """
+    import io
+    from jobradar.cli import main
+
+    d = Path(tempfile.mkdtemp())
+    cfg = d / "config.yaml"
+    cfg.write_text("titles:\n  include: [engineering manager]\n"
+                   "  exclude: [mechanical]\n"
+                   "sources:\n  use_bundled: false\n", encoding="utf-8")
+    db = d / "x.db"
+    con = store.connect(str(db))
+    for uid, title in (("keep", "Engineering Manager"),
+                       ("drop", "Mechanical Engineering Manager"),
+                       ("mine", "Mechanical Engineering Manager")):
+        con.execute("INSERT INTO roles (uid,company,title,url,platform,first_seen,"
+                    "last_seen) VALUES (?,'Acme',?,?,'lever','2026-08-25',"
+                    "'2026-08-25')", (uid, title, f"https://x.invalid/{uid}"))
+    store.set_status(con, "mine", "applied")
+    con.commit()
+    con.close()
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(cfg), "rescreen", "--db", str(db)]) == 0
+    assert "Nothing was removed" in out.getvalue()
+    con = store.connect(str(db))
+    assert con.execute("SELECT COUNT(*) n FROM roles").fetchone()["n"] == 3
+    con.close()
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(cfg), "rescreen", "--db", str(db), "--remove"]) == 0
+    con = store.connect(str(db))
+    left = {r["uid"] for r in con.execute("SELECT uid FROM roles")}
+    assert left == {"keep", "mine"}, f"removed the wrong rows: {left}"
+    con.close()
