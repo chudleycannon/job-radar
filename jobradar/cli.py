@@ -30,8 +30,13 @@ def _say(msg: str = "") -> None:
 def cmd_scan(args) -> int:
     cfg = load_cfg(args.config)
     srcs = src_mod.load(cfg)
+    # Whether the limit actually cut anything, rather than merely whether one
+    # was asked for. `--limit 20000` against a 13,440-source config read every
+    # one of them and still announced "only 20000 sources were read".
+    all_srcs = len(srcs)
     if args.limit:
         srcs = srcs[: args.limit]
+    truncated = len(srcs) < all_srcs
     if not srcs:
         _say("No sources. Run `job-radar setup` or check sources.use_bundled.")
         return 1
@@ -256,12 +261,19 @@ def cmd_scan(args) -> int:
              f"new yet; from the next scan you will only be shown changes.")
     else:
         _say(f"  {len(kept)} match your config, {len(new)} new")
-        if args.limit:
-            # Boards 26..307 were never asked. Their roles enter the database
-            # on the next full scan and are stamped new then, which is not
-            # what new means.
-            _say(f"  (only {args.limit} sources were read; roles on the rest "
-                 f"will be marked new when a full scan first sees them)")
+    if truncated and kept and not args.dry_run:
+        # Boards 26..307 were never asked. Their roles enter the database on
+        # the next full scan and are stamped new then, which is not what new
+        # means.
+        #
+        # Outside the else, because it used to sit inside it and a FIRST run
+        # took the branch above -- so `job-radar scan --limit 200`, which is
+        # the quick look the wizard recommends by name, never once said it had
+        # read a fraction of the list to the one person who most needed to
+        # know. The number is what was really read, not what was asked for.
+        _say(f"  (only {len(srcs):,} of your {all_srcs:,} sources were read; "
+             f"roles on the rest will be marked new when a full scan first "
+             f"sees them)")
     if not args.dry_run:
         # Collapse copies of the same job that arrived from different sources
         # on different runs, and repair links built with a path that 404s.
@@ -1101,22 +1113,46 @@ def cmd_rescreen(args) -> int:
     the status is a decision you made and outranks a filter.
     """
     from . import store
-    from .models import Job
-    from .screen import match
+    from .models import Job, Salary
+    from .screen import match, apply_salary, screen as screen_one
 
     cfg = _cfg_or_default(args.config)
     con = store.connect(args.db)
     try:
+        # The salary columns and the real URL are selected because this has to
+        # run the SAME filters a scan runs. It used to call `match` alone,
+        # which is the title and location gate and nothing else, while the
+        # sentence above this promised dealbreakers and the salary floor as
+        # well. Add a hard dealbreaker matching every stored role, or raise
+        # the floor past every stated figure, and this command answered "All
+        # N roles still match your config" -- a wrong number that reads
+        # exactly like a right one, on the command whose only job is to be
+        # the second opinion.
         rows = con.execute(
-            "SELECT r.uid, r.company, r.title, r.platform, r.location, "
-            "r.description, COALESCE(s.status,'new') st "
+            "SELECT r.uid, r.company, r.title, r.url, r.platform, r.location, "
+            "r.description, r.salary_min, r.salary_max, r.salary_currency, "
+            "r.salary_period, r.salary_confirmed, r.salary_label, "
+            "COALESCE(s.status,'new') st "
             "FROM roles r LEFT JOIN role_state s ON s.uid=r.uid").fetchall()
         stale, kept_by_status = [], []
         for r in rows:
             j = Job(company=r["company"], title=r["title"],
-                    url="https://example.invalid/x", platform=r["platform"],
-                    location=r["location"] or "", description=r["description"] or "")
+                    url=r["url"] or "https://example.invalid/x",
+                    platform=r["platform"],
+                    location=r["location"] or "", description=r["description"] or "",
+                    salary=Salary(min=r["salary_min"], max=r["salary_max"],
+                                  currency=r["salary_currency"],
+                                  period=r["salary_period"] or "year",
+                                  confirmed=bool(r["salary_confirmed"]),
+                                  raw=r["salary_label"]))
             ok, _ = match(j, cfg)
+            if ok:
+                ok, _ = apply_salary(j, cfg)
+            if ok:
+                # A posting with no description cannot fail a dealbreaker, and
+                # `screen` keeps it for exactly that reason. Nothing is removed
+                # on the strength of text nobody ever fetched.
+                ok, _ = screen_one(j, cfg)
             if ok:
                 continue
             (kept_by_status if r["st"] not in ("new", "") else stale).append(r)

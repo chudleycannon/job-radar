@@ -31,6 +31,12 @@ class Handler(BaseHTTPRequestHandler):
     db_path = None
     docs_base = None
     config_path = None
+    # `salary.currency` from the config, so the salary sort groups by the
+    # currency the FLOOR is in rather than by whichever one happens to be
+    # commonest on the board. Read once at startup: it cannot change while
+    # the process runs, and re-reading it per request would put a file read
+    # on the page load.
+    home_currency = ""
 
     # ------------------------------------------------------------- helpers
     def _json(self, obj, code=200):
@@ -124,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             con = store.connect(self.db_path)
             try:
-                return self._html(interactive.render(con))
+                return self._html(
+                    interactive.render(con, self.home_currency))
             finally:
                 con.close()
         if path == "/api/rank":
@@ -624,11 +631,26 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
     # generation used whatever config.yaml happened to be in cwd rather than
     # the one passed on the command line.
     Handler.config_path = config_path
+    # A config that will not load must not stop the dashboard starting: the
+    # board and everything already on it are in the database, not the config.
+    # Losing the sort grouping is a fair price; losing the page is not.
+    try:
+        from .config import load as _load_cfg
+        Handler.home_currency = (
+            _load_cfg(config_path).salary_currency or "").upper()
+    except Exception:
+        Handler.home_currency = ""
     httpd = ThreadingHTTPServer((host, port), Handler)
     url = f"http://{host}:{port}/"
-    print(f"job-radar is at {url}")
-    print("  buttons: screen, CV, cover letter, apply, skip")
-    print("  nothing generates unless you click it. Ctrl-C to stop.")
+    print(f"job-radar is at {url}", flush=True)
+    print("  buttons: screen, CV, cover letter, apply, skip", flush=True)
+    # Flushed, all three. Python block-buffers stdout when it is not a
+    # terminal, so `job-radar serve > serve.log &` -- which is how anyone
+    # running it in the background or under a supervisor starts it -- wrote
+    # an empty file and kept it empty for the life of the process. A server
+    # that is up and silent is indistinguishable from one that hung on the
+    # bind, and the URL is the one thing the reader came for.
+    print("  nothing generates unless you click it. Ctrl-C to stop.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:

@@ -490,7 +490,7 @@ def _rows(con):
     """).fetchall()
 
 
-def render(con) -> str:
+def render(con, home_currency: str = "") -> str:
     rows = _rows(con)
     # Keyed on the scan date rather than the run number, so a second scan the
     # same day does not empty the New tab.
@@ -576,14 +576,26 @@ def render(con) -> str:
         f'data-label="{_h.escape(c, quote=True)}">{_h.escape(c)} ({n})</option>'
         for c, n in sorted(cty.items(), key=lambda x: (-x[1], x[0])))
 
-    # The currency most of the board's stated salaries are in. `bySalary`
-    # only compares figures inside one currency, because
-    # `salary.clears_floor` refuses to compare across them and the sort has
-    # no business being braver than the filter. Empty on a board with no
-    # stated pay at all, which switches the grouping off.
-    _cur = Counter(r["salary_currency"] for r in rows
-                   if r["salary_confirmed"] and r["salary_currency"])
-    home_cur = _cur.most_common(1)[0][0] if _cur else ""
+    # Your currency, the one `salary.floor` is written in. `bySalary` only
+    # compares figures inside one currency, because `salary.clears_floor`
+    # refuses to compare across them and the sort has no business being
+    # braver than the filter.
+    #
+    # This used to be the currency most of the BOARD's stated salaries were
+    # in, which is not the same thing and inverted the sort for anyone whose
+    # results are mostly foreign. On a GBP floor over a board holding 10 USD,
+    # 8 GBP and 7 EUR figures, USD won the vote, so every row already stamped
+    # "salary in USD, floor in GBP, not compared" sorted ABOVE the sterling
+    # rows that HAD been compared -- the sort contradicting the caveat printed
+    # on the same row, which is the exact fault the grouping was added to fix.
+    #
+    # The board's own modal currency stays as the fallback, for a config with
+    # no currency set at all.
+    home_cur = (home_currency or "").upper()
+    if not home_cur:
+        _cur = Counter(r["salary_currency"] for r in rows
+                       if r["salary_confirmed"] and r["salary_currency"])
+        home_cur = _cur.most_common(1)[0][0] if _cur else ""
     prelude = (f"const HOME_CUR={json.dumps(home_cur)},"
                f"PROGRESS={json.dumps(store.PROGRESS)};")
 

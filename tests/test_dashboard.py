@@ -262,6 +262,297 @@ def test_rescreen_reports_before_it_removes_and_never_touches_what_you_acted_on(
     con.close()
 
 
+def test_rescreen_re_applies_the_dealbreakers_and_the_floor_not_just_the_title():
+    """`rescreen` ran the title and location gate and called that the config.
+
+    Its own help says it re-applies "titles, locations, dealbreakers or the
+    salary floor". Two of those four never ran. On a real database a hard
+    dealbreaker matching every stored role, and a floor above every stated
+    figure, both produced "All N roles still match your config" -- the
+    sentence that means everything is fine, printed because the check that
+    would have disagreed was never made. That is the worst shape a bug can
+    take in this tool: a failure that renders identically to a success, on
+    the one command whose entire job is to be the second opinion.
+    """
+    import io
+    from jobradar.cli import main
+
+    d = Path(tempfile.mkdtemp())
+    db = d / "x.db"
+    con = store.connect(str(db))
+    # All three pass the title gate. They differ only in the things `rescreen`
+    # was not looking at.
+    con.execute(
+        "INSERT INTO roles (uid,company,title,url,platform,description,"
+        "salary_min,salary_max,salary_currency,salary_period,salary_confirmed,"
+        "first_seen,last_seen) VALUES ('clean','Acme','Engineering Manager',"
+        "'https://x.invalid/clean','lever','A perfectly ordinary advert. ' || "
+        "hex(randomblob(200)),150000,160000,'GBP','year',1,"
+        "'2026-08-25','2026-08-25')")
+    con.execute(
+        "INSERT INTO roles (uid,company,title,url,platform,description,"
+        "salary_min,salary_max,salary_currency,salary_period,salary_confirmed,"
+        "first_seen,last_seen) VALUES ('lowpay','Acme','Engineering Manager',"
+        "'https://x.invalid/lowpay','lever','A perfectly ordinary advert. ' || "
+        "hex(randomblob(200)),20000,21000,'GBP','year',1,"
+        "'2026-08-25','2026-08-25')")
+    con.execute(
+        "INSERT INTO roles (uid,company,title,url,platform,description,"
+        "first_seen,last_seen) VALUES ('breaker','Acme','Engineering Manager',"
+        "'https://x.invalid/breaker','lever',"
+        "'You will carry the pager on a 24/7 on-call rota. ' || "
+        "hex(randomblob(200)),'2026-08-25','2026-08-25')")
+    con.commit()
+    con.close()
+
+    # Titles alone: nothing has changed, and the command must say so.
+    plain = d / "plain.yaml"
+    plain.write_text("titles:\n  include: [engineering manager]\n"
+                     "sources:\n  use_bundled: false\n", encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(plain), "rescreen", "--db", str(db)]) == 0
+    assert "All 3 roles still match" in out.getvalue(), out.getvalue()
+
+    # A floor above the low-paying role. Only that one goes.
+    floor = d / "floor.yaml"
+    floor.write_text("titles:\n  include: [engineering manager]\n"
+                     "salary:\n  floor: 100000\n  currency: GBP\n"
+                     "sources:\n  use_bundled: false\n", encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(floor), "rescreen", "--db", str(db)]) == 0
+    text = out.getvalue()
+    assert "1 of 3 roles no longer match" in text, text
+    assert "Nothing was removed" in text, "reporting is still the default"
+
+    # A hard dealbreaker the description matches. Only that one goes.
+    db_cfg = d / "db.yaml"
+    db_cfg.write_text("titles:\n  include: [engineering manager]\n"
+                      "dealbreakers:\n  - name: on-call\n"
+                      "    pattern: 'on.?call rota|carry the pager'\n"
+                      "    hard: true\n"
+                      "sources:\n  use_bundled: false\n", encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(db_cfg), "rescreen", "--db", str(db)]) == 0
+    text = out.getvalue()
+    assert "1 of 3 roles no longer match" in text, text
+
+    # And --remove takes the right row, not merely the right number of rows.
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(db_cfg), "rescreen", "--db", str(db),
+                     "--remove"]) == 0
+    con = store.connect(str(db))
+    left = {r["uid"] for r in con.execute("SELECT uid FROM roles")}
+    con.close()
+    assert left == {"clean", "lowpay"}, f"removed the wrong rows: {left}"
+
+
+def test_rescreen_never_removes_a_role_whose_advert_was_never_fetched():
+    """A dealbreaker cannot match text that was never downloaded.
+
+    Headline-only sources store an empty description, and roughly a quarter
+    of a real board arrives that way. If an unmatched pattern counted as a
+    reason to delete, `rescreen --remove` would quietly bin every role whose
+    enrichment had not run yet -- deleting roles for failing a test they were
+    never given.
+    """
+    import io
+    from jobradar.cli import main
+
+    d = Path(tempfile.mkdtemp())
+    db = d / "x.db"
+    con = store.connect(str(db))
+    con.execute("INSERT INTO roles (uid,company,title,url,platform,description,"
+                "first_seen,last_seen) VALUES ('bare','Acme',"
+                "'Engineering Manager','https://x.invalid/bare','workday',''"
+                ",'2026-08-25','2026-08-25')")
+    con.commit()
+    con.close()
+
+    cfg = d / "config.yaml"
+    cfg.write_text("titles:\n  include: [engineering manager]\n"
+                   "salary:\n  floor: 500000\n  currency: GBP\n"
+                   "dealbreakers:\n  - name: on-call\n"
+                   "    pattern: 'carry the pager'\n    hard: true\n"
+                   "sources:\n  use_bundled: false\n", encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-c", str(cfg), "rescreen", "--db", str(db),
+                     "--remove"]) == 0
+    assert "All 1 roles still match" in out.getvalue(), out.getvalue()
+    con = store.connect(str(db))
+    n = con.execute("SELECT COUNT(*) n FROM roles").fetchone()["n"]
+    con.close()
+    assert n == 1, "deleted a role for failing a test it was never given"
+
+
+def test_the_salary_sort_groups_on_your_currency_not_the_boards():
+    """`bySalary` compares figures only inside one currency, because
+    `clears_floor` refuses to compare across them.
+
+    Which currency counted as "yours" was decided by a vote of the board's own
+    stated salaries. On a GBP floor over a board holding more USD figures than
+    GBP ones -- ordinary for anyone in the UK reading a list of mostly US
+    employers -- USD won, so every row already stamped "salary in USD, floor
+    in GBP, not compared" was ranked ABOVE the sterling rows that had been
+    compared. The sort contradicted the caveat printed on the same row.
+    """
+    con = _con()
+    con.execute("DELETE FROM roles")
+    rows = [("gbp", "GBP", 150000), ("usd1", "USD", 200000),
+            ("usd2", "USD", 210000), ("usd3", "USD", 220000)]
+    for uid, cur, lo in rows:
+        con.execute(
+            "INSERT INTO roles (uid,company,title,url,platform,salary_min,"
+            "salary_max,salary_currency,salary_period,salary_confirmed,"
+            "first_seen,last_seen) VALUES (?,'Acme','Engineering Manager',?,"
+            "'lever',?,?,?,'year',1,'2026-08-25','2026-08-25')",
+            (uid, f"https://x.invalid/{uid}", lo, lo + 1000, cur))
+    con.commit()
+
+    # No currency given: the board's own majority is the fallback, unchanged.
+    assert 'const HOME_CUR="USD"' in interactive.render(con)
+    # Your currency given: it wins, even though it is in the minority.
+    assert 'const HOME_CUR="GBP"' in interactive.render(con, "GBP")
+    # Case is not the reader's problem.
+    assert 'const HOME_CUR="GBP"' in interactive.render(con, "gbp")
+    con.close()
+
+
+def test_serve_hands_the_dashboard_the_currency_the_floor_is_written_in():
+    """The renderer can only group by your currency if something passes it.
+
+    `render` grew the argument and nothing filled it in, which would have left
+    the fix inert while every test of the renderer passed.
+    """
+    import inspect
+    from jobradar import serve as serve_mod
+
+    src = inspect.getsource(serve_mod)
+    assert "home_currency" in src, "serve never reads salary.currency"
+    assert "interactive.render(con, self.home_currency)" in src, (
+        "the dashboard is still rendered without the configured currency")
+    assert "salary_currency" in src, (
+        "home_currency is set from something other than the config")
+
+
+def test_the_first_scan_announces_the_number_of_sources_it_will_read():
+    """The wizard's last line said "It reads 17,807 job boards".
+
+    That literal is the size of the bundled list with no sectors and no
+    source countries chosen -- and the wizard has just walked its reader
+    through choosing both. With sectors set it announced 17,807 and then
+    `cmd_scan` printed "Fetching 13,440 sources" on the very next line: two
+    numbers four thousand apart, in consecutive sentences, in the first thing
+    anybody runs. It also went stale on its own every time the list was
+    regrown upstream.
+    """
+    from jobradar import setup_wizard
+    from jobradar import sources as src_mod
+    from jobradar.config import load as load_cfg
+
+    src = (Path(__file__).resolve().parent.parent / "jobradar"
+           / "setup_wizard.py").read_text(encoding="utf-8")
+    assert "17,807 job boards" not in src, "the count is hard-coded again"
+
+    d = Path(tempfile.mkdtemp())
+    cfg = d / "config.yaml"
+    cfg.write_text(
+        "titles:\n  include: [engineering manager]\n"
+        "sources:\n  use_bundled: false\n"
+        "  extra:\n"
+        "    - company: One\n      url: https://boards.greenhouse.io/one\n"
+        "    - company: Two\n      url: https://boards.greenhouse.io/two\n",
+        encoding="utf-8")
+    n = setup_wizard._sources_it_will_read(cfg)
+    assert n == 2, f"announced {n} sources for a two-source config"
+    # And it is the same number the scan itself will print, by construction.
+    assert n == len(src_mod.load(load_cfg(str(cfg))))
+
+    # A config it cannot read is one sentence of a progress message, not a
+    # crash before the scan that would have reported the problem properly.
+    assert setup_wizard._sources_it_will_read(d / "nope.yaml") == 0
+
+
+def test_a_limited_scan_says_so_on_the_first_run_too():
+    """`scan --limit 200` is the quick look the wizard recommends by name.
+
+    The warning that most of the list went unread lived in the `else` branch
+    of the new-roles message, and a first run takes the branch above it. So
+    the one person who would run a limited scan -- somebody trying the tool
+    for the first time -- was the one person never told that the roles on the
+    other 13,240 sources would be stamped "new" days later.
+
+    The number also has to be what was really read. `--limit 20000` against a
+    13,440-source config read all of them and still said "only 20000 sources
+    were read".
+    """
+    import io
+    from jobradar import cli
+    from jobradar.fetch import Result
+    from jobradar.models import Job
+
+    d = Path(tempfile.mkdtemp())
+    cfg = d / "config.yaml"
+    cfg.write_text(
+        "titles:\n  include: [engineering manager]\n"
+        "output:\n  formats: []\n  dir: " + str(d / "out") + "\n"
+        "sources:\n  use_bundled: false\n  extra:\n"
+        "    - company: One\n      url: https://boards.greenhouse.io/one\n"
+        "    - company: Two\n      url: https://boards.greenhouse.io/two\n"
+        "    - company: Three\n      url: https://boards.greenhouse.io/three\n",
+        encoding="utf-8")
+
+    class _Args:
+        config = str(cfg)
+        db = str(d / "x.db")
+        state = str(d / "seen.json")
+        out = str(d / "out")
+        docs = None
+        dry_run = False
+        no_enrich = True
+        limit = 0
+
+    real_fetch, real_parse = cli.fetch_all, cli.adapters.parse
+    cli.fetch_all = lambda srcs, **kw: [Result(source=s, payload=b"[]")
+                                        for s in srcs]
+    cli.adapters.parse = lambda payload, src: [
+        Job(company=src.company, title="Engineering Manager",
+            url=f"https://x.invalid/{src.company}", platform="greenhouse",
+            location="London")]
+    try:
+        # Limited: the note appears even though this is run one.
+        _Args.limit = 2
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert cli.cmd_scan(_Args) == 0
+        text = out.getvalue()
+        assert "First run" in text, text
+        assert "only 2 of your 3 sources were read" in text, text
+
+        # A limit larger than the list cut nothing, so it must say nothing.
+        _Args.limit = 20000
+        _Args.db = str(d / "y.db")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert cli.cmd_scan(_Args) == 0
+        assert "were read" not in out.getvalue(), out.getvalue()
+
+        # A dry run records nothing, so nothing can be stamped new later and
+        # the note would be describing a consequence that cannot happen.
+        _Args.limit, _Args.dry_run = 2, True
+        _Args.db = str(d / "z.db")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert cli.cmd_scan(_Args) == 0
+        assert "were read" not in out.getvalue(), out.getvalue()
+    finally:
+        cli.fetch_all, cli.adapters.parse = real_fetch, real_parse
+
+
 def test_a_role_with_no_link_is_history_and_not_a_listing():
     """`migrate` imports the old state/seen.json, which holds a uid, a company
     and a title and no link, because its whole job was answering "have I seen

@@ -236,6 +236,22 @@ DEFAULTS = {
 }
 
 
+def _sources_it_will_read(config_path: Path) -> int:
+    """How many sources the scan about to start will actually fetch.
+
+    The same call `cmd_scan` makes, so the sentence announcing the scan and
+    the scan's own first line cannot disagree. Returns 0 rather than raising:
+    this is one sentence of a progress message, and a config that cannot be
+    loaded here is about to be reported properly by the scan itself.
+    """
+    try:
+        from .config import load as _load
+        from . import sources as _src
+        return len(_src.load(_load(str(config_path))))
+    except Exception:
+        return 0
+
+
 def first_scan(config_path: Path) -> int:
     """Scan immediately after setup, and hand over both ways of using it.
 
@@ -259,7 +275,22 @@ def first_scan(config_path: Path) -> int:
     # concurrency at all, it is set by the slowest host's own pacing. Workable
     # holds 2,094 of these boards and is read at 0.7 requests a second, which
     # is 50 minutes on its own however wide the pool is.
-    print("\nRunning your first scan now. It reads 17,807 job boards, paced")
+    #
+    # Counted, not quoted. "17,807" was a literal in this sentence, and the
+    # answer is only that for someone who set no sectors and no source
+    # countries. The wizard has just walked its reader through picking both,
+    # so the sectors question is a normal one to have answered -- and then
+    # this line said 17,807 immediately before cmd_scan printed "Fetching
+    # 13,440 sources" on the next line. Two numbers, four thousand apart, in
+    # consecutive sentences, on the first thing a new user ever runs. It also
+    # went stale on its own every time the list was regrown upstream.
+    #
+    # "sources" rather than "boards", because that is the word the very next
+    # line uses ("Fetching 13,440 sources at concurrency 16"). Same number,
+    # same noun, so the two lines cannot be read as describing two things.
+    n = _sources_it_will_read(config_path)
+    reads = f"It reads {n:,} sources, paced" if n else "It is paced"
+    print(f"\nRunning your first scan now. {reads}")
     print("per host so no one of them is hit hard, so give it about an hour.")
     print("Leave it running. `job-radar scan --limit 200` is the quick look.")
     print("Nothing is generated and nothing is sent anywhere; this only reads.\n")
