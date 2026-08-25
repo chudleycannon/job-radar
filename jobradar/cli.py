@@ -257,8 +257,16 @@ def cmd_scan(args) -> int:
     elif first_run and kept:
         # "0 new" on a first run reads as "we found nothing", when in fact
         # everything is new and there is nothing to compare against yet.
-        _say(f"  {len(kept)} match your config. First run, so none are marked "
-             f"new yet; from the next scan you will only be shown changes.")
+        #
+        # The previous wording said "none are marked new yet", and then the
+        # dashboard's New tab showed all of them, because the two count
+        # different things: this line is per-RUN, and the tab is per-DATE.
+        # Both are defensible on their own and the pair is a contradiction on
+        # the one day a person has no idea which to believe. So this says what
+        # the reader will actually see.
+        _say(f"  {len(kept)} match your config. This is the first scan, so all "
+             f"of them are new and the dashboard shows them that way; from the "
+             f"next scan this line reports only what changed.")
     else:
         _say(f"  {len(kept)} match your config, {len(new)} new")
     if truncated and kept and not args.dry_run:

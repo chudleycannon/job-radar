@@ -530,7 +530,7 @@ def test_a_limited_scan_says_so_on_the_first_run_too():
         with contextlib.redirect_stdout(out):
             assert cli.cmd_scan(_Args) == 0
         text = out.getvalue()
-        assert "First run" in text, text
+        assert "This is the first scan" in text, text
         assert "only 2 of your 3 sources were read" in text, text
 
         # A limit larger than the list cut nothing, so it must say nothing.
@@ -580,3 +580,34 @@ def test_a_role_with_no_link_is_history_and_not_a_listing():
     assert [r["uid"] for r in rows] == ["real"], "a row with no link was offered"
     # And it is still in the table, so the seen-set still knows about it.
     assert con.execute("SELECT COUNT(*) n FROM roles").fetchone()["n"] == 2
+
+
+def test_the_first_scan_and_the_dashboard_agree_about_what_new_means():
+    """`scan` said "none are marked new yet" and the New tab then showed all
+    of them.
+
+    The two count different things: the scan line is per-run, so the first run
+    has nothing to compare against, while the tab is per-date, so everything
+    first seen today qualifies. Each is defensible alone. Together they are a
+    contradiction on the one day a person has no way to know which to believe.
+    """
+    from jobradar.output import interactive
+
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,platform,first_seen,"
+                "last_seen) VALUES ('a','Acme','Engineering Manager',"
+                "'https://x.invalid/1','lever','2026-08-25','2026-08-25')")
+    con.commit()
+    # The tab really does show it, which is what made the old wording wrong
+    # rather than merely terse.
+    assert interactive.render(con).count('data-new="1"') == 1
+
+    # Asserted against what the command prints, not against the source, so the
+    # comment explaining the old wording cannot satisfy the test.
+    import inspect
+    from jobradar import cli
+    printed = [ln for ln in inspect.getsource(cli.cmd_scan).splitlines()
+               if "_say(" in ln or ln.strip().startswith('f"')]
+    blob = " ".join(printed)
+    assert "none are marked new yet" not in blob
+    assert "This is the first scan" in blob
