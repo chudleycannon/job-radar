@@ -222,6 +222,18 @@ h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 .role{font-size:1.0625rem;font-weight:600;letter-spacing:-.016em;line-height:1.3;
   /* The title wins. Salary is supporting information, not the headline. */
   color:var(--ink)}
+/* Break inside a word when there is no other way to fit it.
+   Nothing here wrapped a string with no spaces in it, and `.list` clips
+   rather than scrolls, so the overflow was not merely ugly, it was
+   unreachable: a 180 character location rendered 1,384px wide inside a 620px
+   row, the page itself did not scroll sideways, and everything past the edge
+   was cut off with nothing to say it was there. A 395 character job title is
+   fine, because titles have spaces in them; a company name, a German compound
+   word, or a bare URL in a location field is not.
+   `anywhere` rather than `break-word` so the break is also allowed to shrink
+   the grid column, which is what stops the row overflowing in the first
+   place. */
+.role,.meta,.co{overflow-wrap:anywhere}
 .role a:hover{color:var(--accent)}
 .meta{color:var(--muted);font-size:.875rem;letter-spacing:-.008em;margin-top:3px}
 .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}

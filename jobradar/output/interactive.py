@@ -61,6 +61,9 @@ _EXTRA_CSS = """
   font-size:.875rem;box-shadow:var(--shadow-up);opacity:0;pointer-events:none;
   transition:opacity var(--dur) var(--ease);z-index:50;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
+/* A facet whose count has fallen to nothing under the current tab. Left
+   clickable, because one of them may be the filter you are already in. */
+.chips button.none{opacity:.45}
 """
 
 _JS = r"""
@@ -78,7 +81,32 @@ const SETTLED=new Set(['rejected','withdrawn','skipped','closed']);
 const IN_FLIGHT=new Set(['applied','submitted','interviewing','offer']);
 // Applications that ended. Not "skipped": you never applied to those.
 const CLOSED_OUT=new Set(['rejected','withdrawn','closed']);
+// The number on a facet has to be the number that facet will show you.
+//
+// These were counted once, in Python, over every row in the database, while
+// the page opens on Open and Open hides everything settled. So a board with
+// one skipped public-sector role rendered a chip reading "Public sector 1",
+// and clicking it emptied the list and said "Nothing matches those filters".
+// Same for the country and city menus. Counting here, against the rows the
+// current tab admits, means the chip cannot promise a role the tab hides.
+//
+// Each dimension is counted with its own filter left off, because that is
+// what clicking would do: sector chips are an OR within sectors, so with Tech
+// selected the number on Finance is what adding Finance would bring in.
+function paintCounts(sec,mode,ctry,city){
+  for(const b of document.querySelectorAll('.chips button')){
+    const k=b.dataset.sec||b.dataset.mode;
+    const n=(b.dataset.sec?sec:mode)[k]||0;
+    const el=b.querySelector('.n'); if(el) el.textContent=n;
+    b.classList.toggle('none',n===0);}
+  for(const [q,m] of [['#fcountry',ctry],['#fcity',city]])
+    for(const o of document.querySelectorAll(q+' option')){
+      if(!o.value) continue;
+      o.textContent=(o.dataset.label||o.value)+' ('+(m[o.value]||0)+')';}}
+
 function apply(){let n=0;
+  const cSec={},cMode={},cCountry={},cCity={};
+  const bump=(m,k)=>{m[k]=(m[k]||0)+1};
   for(const r of document.querySelectorAll('.row')){
     const st=r.dataset.status;
     const viewOk = f==='all' || (f==='open' && !SETTLED.has(st)) ||
@@ -87,12 +115,17 @@ function apply(){let n=0;
                    (f==='live' && IN_FLIGHT.has(st)) ||
                    (f==='closed' && CLOSED_OUT.has(st)) ||
                    (f==='fit' && (+r.dataset.fit)>=70);
-    const ok = viewOk
-      && (secs.size===0  || secs.has(r.dataset.sector))
-      && (modes.size===0 || modes.has(r.dataset.mode))
-      && (!country || r.dataset.country===country)
-      && (!city    || r.dataset.city===city);
+    const okSec  = secs.size===0  || secs.has(r.dataset.sector);
+    const okMode = modes.size===0 || modes.has(r.dataset.mode);
+    const okCtry = !country || r.dataset.country===country;
+    const okCity = !city    || r.dataset.city===city;
+    if(viewOk&&okMode&&okCtry&&okCity) bump(cSec,r.dataset.sector);
+    if(viewOk&&okSec &&okCtry&&okCity) bump(cMode,r.dataset.mode);
+    if(viewOk&&okSec &&okMode&&okCity) bump(cCountry,r.dataset.country);
+    if(viewOk&&okSec &&okMode&&okCtry) bump(cCity,r.dataset.city);
+    const ok = viewOk && okSec && okMode && okCtry && okCity;
     r.hidden=!ok; if(ok)n++;}
+  paintCounts(cSec,cMode,cCountry,cCity);
   $('#empty').hidden=n>0; $('#list').hidden=n===0;}
 
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
@@ -117,11 +150,45 @@ const byRank=(a,b)=>tier(a)-tier(b)||(+b.dataset.score)-(+a.dataset.score);
 // are bad" rather than "these are unknown". They sort after the scored ones
 // but ahead of a genuine zero, and keep their filter-score order among
 // themselves so the list is still useful before you rank anything.
-const fitOf=(r)=>{const v=+r.dataset.fit; return v<0 ? -0.5 : v;};
+//
+// This mapped -1 to -0.5, which is still below zero, so the fix did nothing:
+// an unranked Head of Engineering with the second-highest filter score on the
+// board sorted underneath a role that had been read and scored 0 with the
+// reason "no people leadership at all". Fit scores are whole numbers, so any
+// value strictly between 0 and 1 puts unknown exactly where the paragraph
+// above says it belongs.
+const fitOf=(r)=>{const v=+r.dataset.fit; return v<0 ? 0.5 : v;};
 const byFit=(a,b)=>tier(a)-tier(b)
   ||fitOf(b)-fitOf(a)||(+b.dataset.score)-(+a.dataset.score);
+// Salary, in the order the numbers can actually be trusted.
+//
+// Two things were wrong with sorting on one number. data-payfloor used to
+// fall back to the top of the range when a posting stated no bottom, so
+// "up to 175,000" claimed a floor of 175,000 and led the list ahead of a
+// role guaranteeing 150,000-180,000 -- the vaguer advert winning on a figure
+// nobody had promised. And the comparison ran across currencies, so 200,000
+// of one thing outranked 175,000 of another purely on the digits, which is
+// the exact guess `salary.clears_floor` refuses to make ("cross-currency
+// comparison is refused rather than guessed at"). Those rows are already
+// flagged "not compared" against the floor; ranking them by it anyway
+// contradicted the flag on the same row.
+//
+// So: roles are grouped by how much their figure is worth relying on, and
+// only compared inside a group. On a board that is all one currency, which
+// is the normal case, this changes nothing.
+//   3  a stated bottom of range, in the currency most of the board uses
+//   2  a stated bottom of range, in some other currency
+//   1  a stated top but no bottom, so no floor at all
+//   0  no stated pay
+function payGroup(r){
+  const floor=+r.dataset.payfloor||0;
+  if(floor) return (!HOME_CUR || (r.dataset.paycur||'')===HOME_CUR) ? 3 : 2;
+  return (+r.dataset.paytop||0) ? 1 : 0;}
 const bySalary=(a,b)=>tier(a)-tier(b)
-  ||(+b.dataset.payfloor||0)-(+a.dataset.payfloor||0)||(+b.dataset.score)-(+a.dataset.score);
+  ||payGroup(b)-payGroup(a)
+  ||(+b.dataset.payfloor||0)-(+a.dataset.payfloor||0)
+  ||(+b.dataset.paytop||0)-(+a.dataset.paytop||0)
+  ||(+b.dataset.score)-(+a.dataset.score);
 const byNew=(a,b)=>tier(a)-tier(b)
   ||(b.dataset.seen||'').localeCompare(a.dataset.seen||'')
   ||(+b.dataset.score)-(+a.dataset.score);
@@ -254,6 +321,25 @@ async function post(url,body){
     body:JSON.stringify(body)});
   return {ok:r.ok, data:await r.json().catch(()=>({}))};}
 
+// One place that moves a row to a status, so the page and the database
+// cannot end up saying different things.
+//
+// Every handler used to do its own subset. Skip set row.dataset.status and
+// nothing else: no pill was created, and the status select still read "new",
+// so a row you had just skipped looked untouched while the database had it
+// settled. The pill is only in the markup for a role that is not "new", so
+// it has to be made on the way up and taken away on the way back down.
+function mark(row,status){
+  row.dataset.status=status;
+  row.classList.toggle('settled', SETTLED.has(status));
+  let pill=row.querySelector('.status');
+  if(status==='new'){ if(pill) pill.remove(); }
+  else{
+    if(!pill){ pill=document.createElement('span');
+      const head=row.querySelector('.role'); if(head) head.appendChild(pill); }
+    if(pill){ pill.textContent=status; pill.className='status '+status; }}
+  const sel=row.querySelector('select.setstatus'); if(sel) sel.value=status;}
+
 // The status select was rendered with all ten statuses and never wired to
 // anything, so picking "rejected" looked like it worked, changed nothing, and
 // reverted on the next refresh. It is a change event, not a click, which is
@@ -265,10 +351,7 @@ document.addEventListener('change', async e=>{
   const prev=row.dataset.status;
   const {ok,data}=await post('/api/status',{uid:row.dataset.uid,status});
   if(!ok){ sel.value=prev||''; say(data.error||'could not save'); return; }
-  row.dataset.status=status;
-  row.classList.toggle('settled', SETTLED.has(status));
-  const pill=row.querySelector('.status');
-  if(pill){ pill.textContent=status; pill.className='status '+status; }
+  mark(row,status);
   say('Marked '+status+(SETTLED.has(status)?'. It will not come back.':''));
   apply();
 });
@@ -296,15 +379,25 @@ document.addEventListener('click', async e=>{
   if(st){ const status=st.dataset.status;
     const {ok,data}=await post('/api/status',{uid,status});
     if(!ok){say(data.error||'could not save');return}
-    row.dataset.status=status;
-    row.classList.toggle('settled', SETTLED.has(status));
+    mark(row,status);
     say(status==='skipped'?'Skipped. It will not come back.':'Marked '+status);
     apply(); return;}
 
   if(e.target.closest('[data-apply]')){
-    await post('/api/status',{uid,status:'applied'});
-    row.dataset.status='applied'; say('Marked applied, opening the job board');
-    return;}
+    // Apply is also just the link to the advert, and it posted "applied"
+    // unconditionally. So re-opening the board for a role you were already
+    // interviewing for traded the interview for an application, in the
+    // database, with the pill on screen still reading "interviewing" so
+    // there was nothing to notice. That is the same trade store.PROGRESS
+    // exists to stop a merge making, made by the button pressed most often.
+    // It only ever moves a role forward now; the link opens either way.
+    const cur=row.dataset.status||'new';
+    if((PROGRESS[cur]||0) >= PROGRESS.applied){
+      say('Opening the job board. Still marked '+cur+'.'); return;}
+    const {ok,data}=await post('/api/status',{uid,status:'applied'});
+    if(!ok){ say(data.error||'could not save'); return; }
+    mark(row,'applied'); say('Marked applied, opening the job board');
+    apply(); return;}
 
   if(e.target.closest('[data-note]')){
     const cur=row.querySelector('.rownote');
@@ -470,14 +563,29 @@ def render(con) -> str:
         f'<button aria-pressed="false" data-mode="{m}">{_MODES[m]}'
         f'<span class="n">{mc[m]}</span></button>'
         for m in ("remote", "hybrid", "office", "unstated") if mc.get(m))
+    # data-label so the count can be rewritten in the browser against the rows
+    # the current tab actually shows, without losing the name.
     cc = Counter((r["country"] or "unknown") for r in rows)
     countries = '<option value="">All countries</option>' + "".join(
-        f'<option value="{_h.escape(c, quote=True)}">{_h.escape(c)} ({n})</option>'
+        f'<option value="{_h.escape(c, quote=True)}" '
+        f'data-label="{_h.escape(c, quote=True)}">{_h.escape(c)} ({n})</option>'
         for c, n in cc.most_common())
     cty = Counter(r["city"] for r in rows if r["city"])
     cities = '<option value="">All cities</option>' + "".join(
-        f'<option value="{_h.escape(c, quote=True)}">{_h.escape(c)} ({n})</option>'
+        f'<option value="{_h.escape(c, quote=True)}" '
+        f'data-label="{_h.escape(c, quote=True)}">{_h.escape(c)} ({n})</option>'
         for c, n in sorted(cty.items(), key=lambda x: (-x[1], x[0])))
+
+    # The currency most of the board's stated salaries are in. `bySalary`
+    # only compares figures inside one currency, because
+    # `salary.clears_floor` refuses to compare across them and the sort has
+    # no business being braver than the filter. Empty on a board with no
+    # stated pay at all, which switches the grouping off.
+    _cur = Counter(r["salary_currency"] for r in rows
+                   if r["salary_confirmed"] and r["salary_currency"])
+    home_cur = _cur.most_common(1)[0][0] if _cur else ""
+    prelude = (f"const HOME_CUR={json.dumps(home_cur)},"
+               f"PROGRESS={json.dumps(store.PROGRESS)};")
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -517,7 +625,7 @@ def render(con) -> str:
 <footer>Roles with a stated salary below your floor are hidden. Nothing is generated
 unless you click for it.</footer>
 </div><div class="toast" id="toast"></div>
-<script>{_JS}</script></body></html>"""
+<script>{prelude}{_JS}</script></body></html>"""
 
 
 def _row(r, arts, job, run=0) -> str:
@@ -610,7 +718,15 @@ def _row(r, arts, job, run=0) -> str:
         f'data-status="{_h.escape(r["status"], quote=True)}" '
         f'data-pay="{1 if paid else 0}" '
         f'data-new="{1 if r["uid"] in run else 0}" '
-        f'data-payfloor="{int(r["salary_min"] or r["salary_max"] or 0)}" '
+        # The bottom of a stated range, and only that. This fell back to the
+        # top when a posting stated no bottom, so "up to 175,000" reported a
+        # floor of 175,000 and led the salary sort ahead of a role actually
+        # guaranteeing 150,000. The ceiling is kept beside it under its own
+        # name, and the currency travels with them because comparing figures
+        # across currencies is a guess this tool refuses to make elsewhere.
+        f'data-payfloor="{int(r["salary_min"] or 0)}" '
+        f'data-paytop="{int(r["salary_max"] or r["salary_min"] or 0)}" '
+        f'data-paycur="{_h.escape(r["salary_currency"] or "", quote=True) if paid else ""}" '
         f'data-seen="{_h.escape(str(r["first_seen"] or ""), quote=True)}" '
         f'data-fit="{r["fit"] if r["fit"] is not None else -1}" '
         f'data-score="{r["score"] or 0}" '

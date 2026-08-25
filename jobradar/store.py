@@ -314,14 +314,26 @@ def new_since_last_run(con, uids: list[str]) -> set[str]:
 
 
 def set_status(con, uid: str, status: str, note: str | None = None) -> None:
+    """Move a role to `status`. `note=None` leaves any note alone.
+
+    The note used to be kept whenever the new one was empty, which is right
+    for the buttons -- Skip and Apply send a status and no note, and must not
+    wipe "second round 3 Sept" on the way past. But it also made a note
+    impossible to delete: clearing the box in the dashboard sent "", the API
+    answered ok, the page said "Note saved" and reloaded, and the old note was
+    still sitting there. Nothing anywhere could remove one.
+
+    So the two cases are told apart at the edge instead. None means "not
+    supplied, keep what is there"; "" means "the person emptied the box".
+    """
     if status not in STATUSES:
         raise ValueError(f"unknown status {status!r}")
     con.execute("""INSERT INTO role_state (uid,status,note,updated_at)
-        VALUES (?,?,?,?)
+        VALUES (?,?,COALESCE(?,''),?)
         ON CONFLICT(uid) DO UPDATE SET status=excluded.status,
-          note=COALESCE(NULLIF(excluded.note,''), role_state.note),
+          note=COALESCE(?, role_state.note),
           updated_at=excluded.updated_at""",
-        (uid, status, note or "", date.today().isoformat()))
+        (uid, status, note, date.today().isoformat(), note))
 
 
 def settled_uids(con) -> set[str]:
@@ -442,7 +454,7 @@ def merge_duplicates(con) -> int:
                 # away -- and drafting a CV sets a role to "interested", so one
                 # click was enough to arm it. This runs unattended on scan.
                 if PROGRESS.get(st["status"], 0) > PROGRESS.get(cur_s, 0):
-                    set_status(con, keep["uid"], st["status"], st["note"] or "")
+                    set_status(con, keep["uid"], st["status"], st["note"] or None)
                 elif st["note"] and not (cur and cur["note"]):
                     set_status(con, keep["uid"], cur_s, st["note"])
             con.execute("UPDATE artifacts SET uid=? WHERE uid=?",
@@ -606,7 +618,7 @@ def migrate(con, state_path="state/seen.json", apps_path=None) -> dict:
                                   (r["uid"],)).fetchone()
                 if cur and cur["status"] != "new":
                     continue
-                set_status(con, r["uid"], app.status, app.note)
+                set_status(con, r["uid"], app.status, app.note or None)
                 out["statuses"] += 1
     set_meta(con, "migrated", _now())
     return out
