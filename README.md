@@ -35,13 +35,14 @@ and no evidence any of it works. It is also the run most likely to show up a
 mistake worth fixing now, like titles that match nothing or a salary floor that
 hides everything, while you are still sitting in front of it.
 
-**Leave that first scan three quarters of an hour.** The bundled list is about
-17,600 boards, and a full pass at the default four requests at a time measured
-12,050 boards in 29.6 minutes on a laptop, which is 6.8 a second and works out
-at roughly 43 minutes for the whole list. The time is proportional to how many
-sources you keep and how many requests you allow at once, so a shorter list or
-a higher `fetch.concurrency` (capped at 12) moves it. `job-radar scan --limit
-200` takes a couple of minutes if you only want to watch it work.
+**Leave that first scan the best part of an hour.** The bundled list is 17,826
+boards, and the runtime is not a fixed number: it is proportional to how many
+sources you keep and how many requests you allow in flight, and each host is
+paced on its own clock underneath that (more on that in "Being a good
+citizen"), so a shorter list or a higher `fetch.concurrency` (default 16,
+capped at 64) moves it in a way a single stopwatch reading from one run would
+not honestly represent for the next one. `job-radar scan --limit 200` takes a
+couple of minutes if you only want to watch it work.
 
 Afterwards:
 
@@ -130,6 +131,18 @@ equal of an employer's own board:
   a guess, which means it is shown to you and cannot be used to disqualify the
   role. Reed also lets an employer hide the salary, in which case nothing
   comes back at all, which is the same as any other board.
+- **Location is a bare town, so the country gets added.** Reed's
+  `locationName` is free text ("Stoke-on-Trent", "Cambridgeshire") and the
+  location matcher cannot place most of Britain's towns and counties on its
+  own, so the adapter appends ", United Kingdom" itself rather than lose the
+  role to a country filter. It only does that where the string does not
+  already name a country outright, so "Dublin, Ireland" is left alone. That
+  test is deliberately narrow: it looks for a country name, not for whether
+  the town itself could belong to somewhere else, so a bare "Perth" or
+  "Boston" is read as not naming a country and gets the UK suffix, which is
+  right for the Scottish Perth and the Lincolnshire Boston that make up
+  almost everything Reed carries, and wrong on the rare listing that really
+  is Perth, Australia or Boston, Massachusetts typed the same bare way.
 
 ### The other one: Adzuna, and the countries you would move to
 
@@ -191,6 +204,13 @@ country and double it.
 - **Contract roles.** Adzuna annualises a day rate before publishing it, which
   is how a six month contract clears a permanent salary floor. Anything marked
   `contract_type: contract` is flagged as contract rather than permanent.
+- **Location is a town and a county, so the index's country gets added.**
+  `display_name` never names a country, so the adapter appends the one the
+  URL's index is watching, `gb` becomes ", United Kingdom", the same way the
+  Reed adapter does it and for the same reason: only where the string does
+  not already name a country. The same narrow gap applies, a bare "Perth" on
+  the British index reads as unnamed and is filed as British rather than
+  Australian.
 - **Credentials travel in the query string.** Adzuna offers no header
   authentication, so there is no alternative. They are added per request and
   are never written onto the stored source, into the state file, or into an
@@ -264,24 +284,24 @@ one live snapshot held **five** engineering-leadership titles across roughly
 
 ## What it does
 
-**Reads about 17,600 employer boards** across twenty platforms. Roughly 4,100
-are Greenhouse and 2,600 Ashby, then Workable, iCIMS, Workday, Personio,
-Breezy, Recruitee, SmartRecruiters and Oracle in the four figures or high
-hundreds, then Jobvite in the hundreds, then Avature, Phenom, Teamtailor,
-Lever on both its US and EU deployments and Pinpoint in the tens, and
-SuccessFactors in single figures. LinkedIn's public endpoint and NHS Jobs are
-in there too, as keyword searches rather than boards. `job-radar coverage`
-counts the file rather than trusting this paragraph, and that is the number to
-go by.
+**Reads 17,826 employer boards** across twenty platforms. Roughly 4,100 are
+Greenhouse and 2,600 Ashby, then Workable, iCIMS, Workday, Personio, Breezy,
+Recruitee, SmartRecruiters and Oracle in the four figures or high hundreds,
+then Jobvite in the hundreds, then Avature, Phenom, Teamtailor, Lever on both
+its US and EU deployments, Pinpoint and SuccessFactors in the tens. LinkedIn's
+public endpoint and NHS Jobs are in there too, as keyword searches rather than
+boards. `job-radar coverage` counts the file rather than trusting this
+paragraph, and that is the number to go by.
 
 Names you would recognise are on it: Barclays, Lloyds, Santander, BP, Shell,
 Unilever, Tesco, Marks & Spencer, John Lewis, Sky, Skyscanner, Accenture,
 Linklaters, Transport for London, Ofcom and the FCA among them.
 
-Three adapters shipped ahead of their boards. JazzHR, Oracle Taleo and
-BambooHR can all be read and the bundled list carries none of them yet, so
-those platforms are a `discover --add` away rather than already covered. Reed
-and Adzuna are keyed aggregators you switch on yourself.
+Oracle Taleo and BambooHR shipped ahead of their boards and have since picked
+some up: three Taleo (Cincinnati Financial, D.R. Horton, Textron) and one
+BambooHR (IP Group). JazzHR is still a `discover --add` away rather than
+already covered: the adapter can read it, the bundled list carries none of it
+yet. Reed and Adzuna are keyed aggregators you switch on yourself.
 
 The list is not hand-written, and at this size it is not `discover` output
 either. Most of it came out of a public crawl index, verified board by board,
@@ -313,6 +333,13 @@ roles that appeared since last time rather than the same list again.
 **Says when it has been throttled.** A board that used to return jobs and now
 returns none is reported as suspect rather than empty, because several of these
 APIs answer an empty array when they are rate-limiting you.
+
+**Keeps what it could not read.** A board `discover` locates but cannot fetch
+is reported as `[could not read]` rather than folded into "nothing found",
+which is three false statements at once about a board that was actually
+found. It counts as a result, but `--add` will not write it into your config:
+an unread board is a guess, and banking a guess into the source list is worse
+than leaving it out.
 
 ---
 
@@ -588,8 +615,8 @@ the adapters are shaped the way they are.
 | **Avature** | Absolute hrefs to `/JobDetail/`, and the location is only in the slug. **The signature is the path, not the host**, because Avature serves as often from the employer's own domain as from `avature.net`: Tesco's board is `careers.tesco.com`, which has nothing in the hostname to match on. So the token is `host|path-prefix` and the prefix can be more than one segment (`en_GB/careersmarketplace`). It pages on `jobOffset`, and **the page size is the tenant's, not yours**: Tesco answers ten however many you ask for. `semanticSearch=` is a real server-side keyword filter, which is what keeps a 999+ board down to a few requests. The list carries no advert. **Whether the posting page publishes schema.org JSON-LD is per tenant**: Tesco's does and EA's does not, and both are ordinary Avature installs, so `enrich` tries that block first and falls back to Avature's own `article__content__view__field__value` divs. It takes every field block rather than the one under the description heading, because that heading is localised. A minority of tenants answer the posting page with **403** (`baufest.avature.net`, `avature.cn`, `portal.fritolayemployment.com`); those roles stay unenriched. |
 | **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. The list's `ShortDescriptionStr` is a teaser, not the advert, and **the posting page is a 4.4KB JavaScript shell** with no JSON-LD, so `enrich` calls `recruitingCEJobRequisitionDetails` instead: **plural**, because the singular spelling answers 404 with an empty body, which is indistinguishable from a dead board. The advert is split across `ExternalDescriptionStr`, `ExternalResponsibilitiesStr` and `ExternalQualificationsStr` and which are filled varies by tenant, so all of them are read and then deduplicated: one measured board had all three holding the same advert. **Known gap:** `enrich` only re-reads roles whose stored description is under 200 characters, and about half of Oracle roles arrive with a longer teaser than that, so those keep the teaser rather than the advert. |
 | **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
-| **Reed** | One of the two sources that need a credential: a free API key, sent as the **HTTP Basic username with an empty password**, which is Reed's own documented scheme. Unkeyed requests are **401**, which is the good news, because a 401 cannot be mistaken for "no jobs today". A search that matched nothing is **200 with an empty `results` list**, and so is a nonsense keyword, so liveness is the result count. Pages are capped at **100** and walked with `resultsToSkip`. The catch is salary: the **search endpoint returns `minimumSalary` / `maximumSalary` with no period at all** (only the per-job details endpoint carries `salaryType`), so a bare `650` could be a year or a day. Anything under 2,000 is read as an unlabelled rate and left **unconfirmed** rather than annualised wrongly, and the advert text gets a second go at it. `locationName` is free text, so most of it is towns and counties the location matcher has never heard of ("Stoke-on-Trent", "Cambridgeshire"), and the country has to be added by the adapter or a UK-filtered search drops the lot. There is **no remote field**, and `employerName` is whoever posted the job, which on an agency listing is the agency. |
-| **Adzuna** | Needs a free `app_id` and `app_key`, and both go in the **query string**: there is no header auth, so the fetcher adds them per request and never writes them onto the stored source or into the state file. Unkeyed requests answer **400 with an HTML error page**, not a 401 and not JSON. **The country is in the URL path** (`/v1/api/jobs/gb/search/1`) and appears nowhere in the payload, so the adapter reads it from there and names it in the location, or a UK filter drops every listing whose town is not in the city list. Same for the **currency**, which follows the index. The trap is **`salary_is_predicted`**: `"1"` means the figure came from Adzuna's Jobsworth model rather than the employer, and treating a model output as a stated salary drops real roles against the floor and promotes ones that pay nothing like it, so those stay unconfirmed. **Descriptions are truncated to 500 characters** by documentation. **The page number is in the path, not a parameter**, and `results_per_page` is a request rather than a promise, so paging stops on an empty page and never on a short one. No remote field, and no direct-employer filter of any kind. |
+| **Reed** | One of the two sources that need a credential: a free API key, sent as the **HTTP Basic username with an empty password**, which is Reed's own documented scheme. Unkeyed requests are **401**, which is the good news, because a 401 cannot be mistaken for "no jobs today". A search that matched nothing is **200 with an empty `results` list**, and so is a nonsense keyword, so liveness is the result count. Pages are capped at **100** and walked with `resultsToSkip`. The catch is salary: the **search endpoint returns `minimumSalary` / `maximumSalary` with no period at all** (only the per-job details endpoint carries `salaryType`), so a bare `650` could be a year or a day. Anything under 2,000 is read as an unlabelled rate and left **unconfirmed** rather than annualised wrongly, and the advert text gets a second go at it. `locationName` is free text, so most of it is towns and counties the location matcher has never heard of ("Stoke-on-Trent", "Cambridgeshire"), and the country has to be added by the adapter or a UK-filtered search drops the lot; that append only skips a string that already names a country, so a bare town matching a foreign city ("Perth", "Boston") is filed British anyway. There is **no remote field**, and `employerName` is whoever posted the job, which on an agency listing is the agency. |
+| **Adzuna** | Needs a free `app_id` and `app_key`, and both go in the **query string**: there is no header auth, so the fetcher adds them per request and never writes them onto the stored source or into the state file. Unkeyed requests answer **400 with an HTML error page**, not a 401 and not JSON. **The country is in the URL path** (`/v1/api/jobs/gb/search/1`) and appears nowhere in the payload, so the adapter reads it from there and names it in the location, or a UK filter drops every listing whose town is not in the city list; the same append-only-if-unnamed rule as Reed applies, so a bare town matching a foreign city is filed under the index's own country. Same for the **currency**, which follows the index. The trap is **`salary_is_predicted`**: `"1"` means the figure came from Adzuna's Jobsworth model rather than the employer, and treating a model output as a stated salary drops real roles against the floor and promotes ones that pay nothing like it, so those stay unconfirmed. **Descriptions are truncated to 500 characters** by documentation. **The page number is in the path, not a parameter**, and `results_per_page` is a request rather than a promise, so paging stops on an empty page and never on a short one. No remote field, and no direct-employer filter of any kind. |
 
 **Five adapters are unverified, and this table should not imply otherwise.**
 The registry marks Recruitee, Personio and the generic RSS reader as
@@ -618,7 +645,7 @@ found 23 dead boards, and 19 of those had simply moved ATS and were hiding
 A weekly job in this repository revalidates every board on Sunday mornings and
 opens a pull request pruning anything dead. Growing the list is a separate job
 that does not live here: the crawl-index harvest that found most of these
-17,600 boards runs in a private maintainer repository, so that forking this
+17,826 boards runs in a private maintainer repository, so that forking this
 does not set a crawler loose. **Neither of them reaches your copy.**
 
 - **Cloned it?** Your source list is frozen at the day you cloned.
@@ -683,39 +710,42 @@ broken rather than out of scope.
 white-collar hiring. Trades, care work and retail floor jobs largely do not
 work this way and are better served elsewhere.
 
-**Fields you cannot select for, because almost none of the list is labelled.**
+**Fields you cannot select for, because most of the list is still unlabelled.**
 This used to read as a shortage of employers. It is now a shortage of tags. Of
-17,627 sources, **646 carry a sector tag and 16,981 carry none**: the harvest
+17,828 sources, **6,102 carry a sector tag and 11,726 carry none**: the harvest
 that took this list from hundreds to thousands read board addresses out of a
 public crawl index, and an address does not say what industry the employer is
-in. The tagged ones are 228 technology, 74 finance, 44 healthcare, 42
-industry, 34 professional services, 33 security, 31 media, 26 retail, 25
-telecoms, 23 education, 23 public sector, 17 legal, 16 travel, 15 hospitality
-and 15 charity.
+in. The tagged ones are 1,312 healthcare, 1,306 finance, 512 education, 500
+media, 410 energy, 409 retail, 406 technology, 312 construction, 241
+transport, 225 telecoms, 161 public sector, 74 hospitality, 65 charity, 43
+legal, 42 industry, 34 security, 34 professional services and 16 travel.
 
 That is less damaging than it sounds, because **a `sectors:` filter keeps every
 untagged source as well as the ones you asked for**. `sectors: [hospitality]`
-does not cut you to fifteen employers; it drops the sources tagged as
-something else and leaves the 16,981 unlabelled ones in, which is where most
+does not cut you to seventy-four employers; it drops the sources tagged as
+something else and leaves the 11,726 unlabelled ones in, which is where most
 of any industry actually is. The cost runs the other way: you cannot ask this
 list for "every hospitality employer" and get a true answer, and `job-radar
 coverage` can only report what somebody labelled.
 
-So if you work outside technology the tags will look thin and the real
-coverage will be better than they suggest. Where it genuinely is thin, adding
-the employer beats any setting in the config: `job-radar discover <employer>
---add` takes about a minute. Nando's is on Workday and Hilton is on Oracle,
-both of which this reads. UK public policy is the honest weak spot: 23 boards
-carry the `public-sector` tag, Transport for London, the FCA, the Information
-Commissioner's Office, the Care Quality Commission, UKRI and a handful of
-councils among them, and Civil Service Jobs, which is where most of that
-hiring actually is, cannot be read at all.
+So even in a sector that looks well covered above, the real number is larger
+still, and in one that looks thin the gap is in the tagging, not necessarily
+in what this can read. Where it genuinely is thin, adding the employer beats
+any setting in the config: `job-radar discover <employer> --add` takes about a
+minute. Nando's is on Workday and Hilton is on Oracle, both of which this
+reads. UK public policy is the honest weak spot regardless: 35 of the boards
+carrying the `public-sector` tag are British, Transport for London, the FCA,
+the Information Commissioner's Office, the Care Quality Commission, UKRI and a
+handful of councils among them. The tag runs to 161 in total; most of the rest
+is the same name-based rule catching US municipal and non-profit employers
+rather than more UK coverage. Civil Service Jobs, which is where most UK
+public-policy hiring actually happens, cannot be read at all.
 
 **`security` is its own sector tag.** Vendors used to be filed under
 `technology`, so `job-radar coverage` had no way to tell a security engineer
-how much of the tagged list applied to them. 33 are tagged `security` now:
+how much of the tagged list applied to them. 34 are tagged `security` now:
 CrowdStrike, Darktrace, SentinelOne, Snyk, Semgrep, Wiz, Okta, Rapid7,
-Proofpoint, Sophos, Qualys, Tenable and Zscaler among them. That was a
+Proofpoint, Sophos, Qualys, Tenable and Zscaler among them. That was mostly a
 relabelling, not new employers. It is almost entirely product vendors, and
 thin at the MSSP and consultancy end: S-RM is the only one so far. `discover`
 finds these the same way as anywhere else; nobody has pointed it at that end
@@ -894,8 +924,19 @@ consequences are not purely yours, read that table before you press go.
 
 ## Being a good citizen
 
-Concurrency defaults to 4 and is capped at 12. Requests are staggered, retried
-with backoff, and honour `Retry-After`. The user agent identifies the tool and
+Concurrency (how many different boards are read at once) defaults to 16 and is
+capped at 64, but that number governs breadth, not how hard any one host is
+hit: each host is paced on its own clock, roughly 3 requests a second, slower
+for the strict ones (Workable's limit is 0.7, learned from throwing 250 live
+employers away in one run by outrunning it). Requests to different hosts are
+interleaved rather than sent in the order the source list happens to store
+them, so 4,100 consecutive Greenhouse entries do not park the whole pool on
+one host while everything else waits. A host that answers three different
+sources with 429 in a row, having already used up their retries, is treated
+as saying no rather than asking for a pause: it is blocked outright for five
+minutes rather than retried into. A `Retry-After` under a minute is honoured
+as a pause; over a minute it is read as a refusal for the rest of the run.
+Retries otherwise use backoff, and the user agent identifies the tool and
 links here.
 
 These are other people's servers, and a job board that starts blocking
@@ -919,16 +960,26 @@ the source of truth; the copy here is synced weekly by a workflow. See
 ## Development
 
 ```bash
-python3 -m pytest -q            # 214 passed, 1 skipped
-python3 tests/test_core.py      # the core file alone, without pytest
+python3 -m pytest -q            # 297 passed
+python3 tests/test_core.py      # the core file alone, without pytest: 257/257
 job-radar validate --file sources/sources.json --report out/validation.json
 job-radar coverage              # what the source list actually holds
 ```
 
-`pytest` runs both test files. The second command is the standalone runner for
-`tests/test_core.py` and needs nothing installed, with one exception worth
-knowing before you read its output: `test_the_installer_needs_nothing_installed`
-imports pytest itself, so without pytest that runner reports 105 of 106 rather
-than a clean pass.
+`pytest` runs both test files, `tests/test_core.py` and `tests/test_locations.py`.
+The second command is the standalone runner for `tests/test_core.py` alone and
+needs nothing installed, pytest included. That used not to be quite true:
+`test_the_installer_needs_nothing_installed` used to `import pytest` to check
+whether it was present, which broke the promise the test exists to make, so a
+standalone run without pytest reported one failure rather than a clean pass.
+It checks `sys.stdlib_module_names` instead now, so the standalone run needs
+nothing beyond the standard library and reports a clean 257/257.
+
+The suite also used to under-report itself a different way: the `__main__`
+block that drives the standalone run collects `globals()` at the point it
+executes, and it once sat partway through the file rather than at the end, so
+it only ever saw the tests defined above it and silently ran less than half
+the file while printing what looked like a full pass. It now has to stay at
+the end, and the file's own comment says why.
 
 MIT licensed.
