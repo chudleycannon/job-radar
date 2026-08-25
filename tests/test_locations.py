@@ -4,6 +4,14 @@ Kept separate from test_core.py so a country rule can be added without
 touching the file every adapter's tests live in.
 """
 
+import contextlib
+import io
+import tempfile
+from pathlib import Path
+from unittest import mock
+
+import pytest
+
 from jobradar.screen import _countries_in, _country_of
 
 
@@ -276,8 +284,8 @@ def test_a_personal_config_is_preferred_over_the_one_that_ships():
 
 
 # --------------------------------------------------- country resolution, 2026
-# A tagging run over 17,834 boards read 433,955 live postings and 94,841 of
-# them (21.9%) carried a location `_countries_in` could not place. Every test
+# A tagging run over the whole bundled list read 433,955 live postings and
+# 94,841 of them (21.9%) carried a location `_countries_in` could not place. Every test
 # below is a shape taken from that run's `unrecognised_samples`, weighted by
 # how many postings actually carried it, not a case anyone invented.
 
@@ -567,3 +575,113 @@ def test_mexico_the_country_still_resolves_to_mexico():
     for loc in ("Mexico", "Mexico City", "Guadalajara, Mexico",
                 "Remote - Mexico", "Monterrey, MX"):
         assert _country_of(loc) == "MX", loc
+
+
+# --------------------------------------------------- the new-user path
+#
+# Everything below came out of one run of the tool as a stranger would meet
+# it: clone, install, setup, scan, serve. Each is something that either wrote
+# where it should not have, or failed without saying so.
+
+def test_setup_refuses_a_non_terminal_instead_of_asking_forever():
+    """`job-radar setup < /dev/null` produced 474MB of output in 25 seconds.
+
+    `_ask` returned the default on EOFError, and the two questions that loop
+    until answered (the CV, and the job titles) treat an empty answer as no
+    answer. Once stdin is at EOF every later input() raises at once, so the
+    loop spun at full speed printing its please-answer text.
+    """
+    from jobradar import setup_wizard
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = setup_wizard.run(Path("config.yaml"))
+    assert rc == 1
+    assert len(out.getvalue()) < 2000, "should be a sentence, not a torrent"
+    assert "needs a terminal" in out.getvalue()
+    assert "--defaults" in out.getvalue(), "must name the scriptable way"
+
+
+def test_ask_raises_rather_than_accepting_every_default_at_eof():
+    """The questions that do not loop were no better than the ones that did.
+
+    They silently took the default for every remaining answer and wrote a
+    config the user never saw a single line of.
+    """
+    from jobradar.setup_wizard import NoInput, _ask
+
+    def eof(_):
+        raise EOFError
+    with mock.patch("builtins.input", eof):
+        with pytest.raises(NoInput):
+            _ask("   Path to your CV", "some-default")
+
+
+def test_setup_never_writes_the_file_the_repo_ships():
+    """`setup` on a fresh clone reported "Wrote config.yaml", a tracked file.
+
+    `git status` then reported `M config.yaml`, 22 insertions and 43
+    deletions, every later `git pull` conflicted, and on a public fork it was
+    the user's own CV path that got committed. config.yaml is no longer
+    tracked upstream, so writing it creates a file rather than editing one.
+    """
+    import subprocess
+    r = subprocess.run(["git", "ls-files", "--error-unmatch", "config.yaml"],
+                       cwd=Path(__file__).resolve().parent.parent,
+                       capture_output=True, text=True)
+    assert r.returncode != 0, "config.yaml is tracked again: setup will dirty a clone"
+
+
+def test_config_paths_are_absolute():
+    """`job-radar setup` run from ~ wrote ~/config.yaml and said "config.yaml".
+
+    Cwd-relative is defensible; not saying which directory is not.
+    """
+    from jobradar.cli import _cfg_path, _cfg_write_path
+    assert _cfg_path(None).is_absolute()
+    assert _cfg_write_path("some/other.yaml").is_absolute()
+
+
+def test_a_broken_config_is_not_reported_as_zero_roles():
+    """`list` goes straight to the database and never loads the config.
+
+    With `sectors: [manufacturing]`, a tag that does not exist, it printed
+    `0 role(s)`. The config WAS loaded first, by the daily-sync nudge, whose
+    blanket `except Exception: pass` threw the explanation away.
+    """
+    from jobradar.cli import main
+    d = Path(tempfile.mkdtemp())
+    cfg = d / "config.yaml"
+    cfg.write_text("titles:\n  include: [engineer]\nsectors: [manufacturing]\n",
+                   encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = main(["-c", str(cfg), "list", "--db", str(d / "x.db")])
+    assert rc == 1
+    assert "manufacturing" in out.getvalue()
+    assert "0 role(s)" not in out.getvalue()
+
+
+def test_dry_run_leaves_the_dashboard_alone():
+    """`--dry-run` printed "nothing was recorded" and then wrote out/.
+
+    True of the database, false of the filesystem. `scan --limit 200
+    --dry-run`, the quick look the wizard recommends, replaced a full
+    dashboard with a 200-source sample of one.
+    """
+    from jobradar.cli import main
+    d = Path(tempfile.mkdtemp())
+    cfg = d / "config.yaml"
+    cfg.write_text(
+        "titles:\n  include: [engineer]\n"
+        "sources:\n  use_bundled: false\n"
+        "  extra:\n    - {company: Nowhere, platform: greenhouse, url: 'https://example.invalid/x'}\n"
+        f"cv:\n  path: {cfg}\n", encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), \
+            mock.patch("jobradar.cli.fetch_all", return_value=[]):
+        rc = main(["-c", str(cfg), "scan", "--dry-run", "--no-enrich",
+                   "--db", ":memory:", "--out", str(d / "out")])
+    assert rc == 0, out.getvalue()
+    assert not (d / "out").exists(), "a dry run wrote the dashboard"
+    assert "left alone" in out.getvalue(), "and it should say so"

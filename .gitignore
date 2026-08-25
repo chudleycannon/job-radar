@@ -1,9 +1,17 @@
 # Your own settings, kept out of the repo.
 #
-# Note what is NOT ignored: config.yaml and state/. Both have to be committed
-# for the GitHub Actions path to work, because a fresh runner has no memory.
-# If you want a private config on a public fork, put it in config.local.yaml,
-# which the CLI prefers over config.yaml and which is ignored here.
+# Note what is NOT ignored: config.yaml and state/. Neither is tracked here,
+# because upstream has no business shipping either one, but a fork that uses
+# the GitHub Actions path has to commit both: a fresh runner has no memory, so
+# an uncommitted config is a config it cannot see. `git add -f` them there.
+#
+# config.yaml was tracked until 2026-08-25, which meant `job-radar setup` on a
+# fresh clone reported "Wrote config.yaml" and `git status` reported a
+# modified tracked file. Every later pull conflicted.
+#
+# If you want a private config even on a public fork, put it in
+# config.local.yaml, which the CLI prefers over config.yaml and which is
+# ignored here.
 config.local.yaml
 *.local.yaml
 

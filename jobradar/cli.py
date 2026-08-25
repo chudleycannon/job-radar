@@ -283,15 +283,21 @@ def cmd_scan(args) -> int:
     }
     outdir = Path(args.out or cfg.out_dir)
     written = []
-    if "html" in cfg.formats:
+    # A dry run prints "nothing was recorded", which was true of the database
+    # and false of the filesystem: it still overwrote out/index.html and
+    # out/roles.json, so `--limit 200 --dry-run` replaced a full dashboard
+    # with a 200-source sample of one.
+    if args.dry_run:
+        _say("  (dry run, so out/ was left alone)")
+    elif "html" in cfg.formats:
         written.append(output.html_out.write(
             outdir / "index.html", new=new, seen=seen, dropped=dropped,
             sources_ok=ok, sources_total=len(srcs), throttled=throttled,
             postings=len(all_jobs),
         ))
-    if "json" in cfg.formats:
+    if not args.dry_run and "json" in cfg.formats:
         written.append(output.write_json(outdir / "roles.json", new, seen, meta))
-    if "markdown" in cfg.formats or "md" in cfg.formats:
+    if not args.dry_run and ("markdown" in cfg.formats or "md" in cfg.formats):
         written.append(output.write_markdown(outdir / "roles.md", new, seen, meta))
 
     if not args.dry_run:
@@ -564,13 +570,34 @@ def _cfg_path(raw) -> Path:
     typo in the argument.
     """
     if raw:
-        return Path(str(raw).strip()).expanduser()
+        return Path(str(raw).strip()).expanduser().resolve()
     # config.local.yaml is the personal one and is gitignored; config.yaml
     # ships. Defaulting to the latter meant `discover <employer> --add` wrote
     # somebody's own board into the file the repo distributes, which is either
     # committed by accident or silently lost on the next pull.
     local = Path("config.local.yaml")
-    return local if local.exists() else Path("config.yaml")
+    return (local if local.exists() else Path("config.yaml")).resolve()
+
+
+def _cfg_write_path(raw) -> Path:
+    """Where `setup` and `discover --add` are allowed to write.
+
+    Reading and writing want different answers. Reading should find whichever
+    config exists. Writing must never land on a file the repo distributes: on
+    a fresh clone neither personal config exists, so the read path fell
+    through to `config.yaml`, and `job-radar setup` reported "Wrote
+    config.yaml" while `git status` reported `M config.yaml`, 22 insertions
+    and 43 deletions against a tracked file. Every later `git pull`
+    conflicted, and on a public fork it is the user's own CV path that gets
+    committed.
+
+    Upstream no longer tracks `config.yaml`, so writing it on a fresh clone is
+    now correct and creates an untracked file. That is deliberately still the
+    default rather than `config.local.yaml`, because the GitHub Actions path
+    documented in the README needs a config a runner can see, and a runner
+    only sees what was committed.
+    """
+    return _cfg_path(raw)
 
 
 def _cfg_or_default(raw) -> Config:
@@ -1103,9 +1130,18 @@ def cmd_serve(args) -> int:
 # ---------------------------------------------------------------- setup
 def cmd_setup(args) -> int:
     from .setup_wizard import run as wizard
-    return wizard(_cfg_path(args.config),
-                  non_interactive=args.defaults, cv=args.cv, titles=args.titles,
-                  scan=getattr(args, "scan", False))
+    from .setup_wizard import NoInput
+    try:
+        return wizard(_cfg_write_path(args.config),
+                      non_interactive=args.defaults, cv=args.cv,
+                      titles=args.titles, scan=getattr(args, "scan", False))
+    except NoInput:
+        # stdin closed part-way through. The isatty guard in the wizard turns
+        # most of these away at the door; this catches the rest, such as a pty
+        # whose other end went away, so they end in a sentence rather than a
+        # traceback or an unanswerable question asked forever.
+        _say("\nInput ended before setup finished, so nothing was written.")
+        return 1
 
 
 # ---------------------------------------------------------------- main
@@ -1238,6 +1274,14 @@ def main(argv=None) -> int:
             try:
                 _daily_sync_nudge(_cfg_or_default(args.config),
                                   getattr(args, "db", None))
+            except ConfigError:
+                # A nudge must never stop the command, but a broken config is
+                # not a failed nudge, it is the reason the command is about to
+                # give a wrong answer. `list` never loads the config itself, so
+                # swallowing this was the difference between "sectors:
+                # [manufacturing] is not a sector that exists" and a confident
+                # `0 role(s)`.
+                raise
             except Exception:
                 pass          # a nudge must never stop the command
         return args.func(args)

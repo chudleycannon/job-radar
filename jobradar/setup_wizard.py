@@ -10,6 +10,7 @@ cannot drift apart.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 COMMON_DEALBREAKERS = {
@@ -56,12 +57,23 @@ _TITLE_HINT = re.compile(
 )
 
 
+class NoInput(Exception):
+    """stdin ended, so there is nobody there to answer the next question."""
+
+
 def _ask(prompt: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
     try:
         v = input(f"{prompt}{suffix}: ").strip()
     except EOFError:
-        return default
+        # Returning the default here looked kind and was not. Once stdin is
+        # at EOF every later input() raises immediately, so the two questions
+        # that loop until they get an answer (the CV, and the job titles)
+        # never got one and never stopped asking: `job-radar setup
+        # < /dev/null` produced 474MB of output in 25 seconds. The questions
+        # that do not loop were no better, they silently accepted every
+        # default and wrote a config the user never saw.
+        raise NoInput from None
     return v or default
 
 
@@ -138,7 +150,7 @@ def write_config(path: Path, answers: dict) -> Path:
     cvq = _q(answers.get("cv_path") or "")
     body = f"""# job-radar config
 # Everything the tool does is decided here. Edit freely; re-running
-# `job-radar setup` updates this file rather than replacing it.
+# `job-radar setup` rewrites this file, comments and all.
 
 titles:
   # Roles you want. Matched against the posting title.
@@ -239,12 +251,17 @@ def first_scan(config_path: Path) -> int:
     """
     from . import cli
 
-    # The bundled list went from a few hundred boards to about 17,600, so the
-    # old "two or three minutes" promise was out by a factor of twenty and it
-    # was the first thing a new user was told.
-    print("\nRunning your first scan now. It reads about 17,600 job boards at")
-    print("four requests at a time, so it takes roughly 40 minutes. Leave it")
-    print("running. `job-radar scan --limit 200` is the quick look instead.")
+    # The bundled list went from a few hundred boards to 17,807, so the old
+    # "two or three minutes" promise was out by a factor of twenty and it was
+    # the first thing a new user was told. The replacement was wrong too: it
+    # said "four requests at a time" long after the default became 16, and
+    # derived 40 minutes from the four. The real floor is not set by the
+    # concurrency at all, it is set by the slowest host's own pacing. Workable
+    # holds 2,094 of these boards and is read at 0.7 requests a second, which
+    # is 50 minutes on its own however wide the pool is.
+    print("\nRunning your first scan now. It reads 17,807 job boards, paced")
+    print("per host so no one of them is hit hard, so give it about an hour.")
+    print("Leave it running. `job-radar scan --limit 200` is the quick look.")
     print("Nothing is generated and nothing is sent anywhere; this only reads.\n")
 
     # Paths follow the config, not the working directory.
@@ -340,6 +357,13 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
             return first_scan(path)
         print("Edit it, then run `job-radar scan`.")
         return 0
+
+    if not sys.stdin.isatty():
+        print("`job-radar setup` asks questions, so it needs a terminal.")
+        print("Piped or redirected input cannot answer them. For scripts:")
+        print("  job-radar setup --defaults --cv /path/to/cv.docx \\")
+        print("      --titles 'engineering manager,head of engineering'")
+        return 1
 
     print("\njob-radar setup\n" + "-" * 40)
     print("A few questions. Everything is editable afterwards.\n")
