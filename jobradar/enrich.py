@@ -19,6 +19,21 @@ it into the ground.
 The robots.txt position is the same one the README already discloses for the
 search endpoint: LinkedIn disallows it, this reads it anyway, and that is a
 deliberate choice a user should know they are making.
+
+ROBOTS.TXT, for the whole module and not only LinkedIn: nothing here fetches
+or honours a robots.txt, on the owner's standing instruction. That covers the
+posting pages read by every fetcher below (Workday CXS, SmartRecruiters' API,
+Breezy, BambooHR, Jobvite, JazzHR, Taleo, iCIMS, Oracle Recruiting Cloud,
+Avature and SuccessFactors RMK) and the URL-shape fallback that sends a role
+to one of them by the host in its own link. What it does honour is rate:
+`fetch.HostLimiter` paces every host separately, one posting at a time.
+
+BOT PROTECTION is not worked around anywhere in here. A 403, a CAPTCHA, a
+JavaScript challenge or a page that only renders behind a minted token is
+recorded as a failed fetch and the role stays unenriched. The two shape
+changes below that look like workarounds are not: `in_iframe=1` is the same
+public parameter iCIMS' own search results are served with, and Workday's CXS
+endpoint is the JSON the employer's own careers page calls.
 """
 
 from __future__ import annotations
@@ -96,11 +111,24 @@ def _workday_api(url: str) -> str:
 
     https://x.wd5.myworkdayjobs.com/en-US/site/job/City/Title_R123
       -> https://x.wd5.myworkdayjobs.com/wday/cxs/x/site/job/City/Title_R123
+
+    The tail is trimmed of a trailing slash and of an `/apply` segment before
+    it is used. CXS answers **406 Not Acceptable** for either, with a 104 byte
+    body and no hint of what it objected to, which is indistinguishable here
+    from a dead requisition. `parse_workday` builds clean URLs so the board
+    path never hit this, but the URLs that arrive from somewhere else do:
+    every Phenom board whose apply link points at the employer's Workday
+    tenant carries the `/apply` form, and measured on live tenants (Thales,
+    GE HealthCare) the same requisition answers 406 with the suffix and 200
+    with 8,035 and 8,873 characters of advert without it.
     """
     m = _WD_URL.match((url or "").split("?")[0])
     if not m:
         return ""
     host, _lang, site, path = m.groups()
+    path = re.sub(r"/apply/?$", "", path).rstrip("/")
+    if not path:
+        return ""
     tenant = host.split(".")[0]
     return f"https://{host}/wday/cxs/{tenant}/{site}/job/{path}"
 
@@ -121,7 +149,21 @@ def _from_workday(url: str, session=None, timeout: int = 20) -> str:
     return _strip(info.get("jobDescription") or "")
 
 
-_SR_URL = re.compile(r"smartrecruiters\.com/([^/]+)/postings?/(\d+)")
+# `/posting/` and `/postings/` are the OLD public path and it 404s. It is also
+# the only shape this pattern used to accept, and `parse_smartrecruiters` was
+# fixed to stop producing it: the live link is
+# `https://jobs.smartrecruiters.com/<Company>/<20-digit id>` with no segment
+# between them. So the board parser was corrected and the enricher was not, and
+# the two have disagreed ever since. The measured effect is total: 269 of 269
+# SmartRecruiters roles in a 244-board scan arrived with no description (the
+# list endpoint has no `jobAd`), and 0 of 25 sampled were enriched, because
+# every URL failed this match before a request was ever made. 910 bundled
+# boards, 5.1% of the list.
+#
+# Both shapes are accepted rather than swapped, because a role stored before
+# the parser was fixed still carries the old URL in the database.
+_SR_URL = re.compile(
+    r"smartrecruiters\.com/([^/?#]+)/(?:postings?/)?(\d+)")
 
 
 def _from_smartrecruiters(url: str, session=None, timeout: int = 20) -> str:
@@ -206,7 +248,41 @@ def _from_json_ld(url: str, session=None, timeout: int = 20) -> str:
 
 
 _from_breezy = _from_json_ld
-_from_jobvite = _from_json_ld
+
+# Jobvite publishes a JobPosting block on most tenants and none at all on
+# some: `ness`, `traffictech` and `edgeautonomy-careers` all carry one, while
+# `savers` and `monarchinvestment` carry zero blocks of any type on a
+# perfectly healthy 200, so the shared reader returns "" and the role stays
+# unscreenable. Measured on a 244-board scan: 3 of 13 sampled Jobvite postings
+# that answered 200 had no JSON-LD.
+#
+# The advert on those pages sits in `<div class="jv-job-detail-description">`,
+# which is Jobvite's own template markup rather than an employer theme, and it
+# is the same class on the tenants that do publish JSON-LD. `ng-non-bindable`
+# sits on the same tag on some pages and not others, so the class is matched
+# as a word anywhere in the tag.
+#
+# Counted rather than lazy for the same reason `_from_rmk` counts: the advert
+# is a chain of nested divs (the Savers posting nests four deep immediately),
+# and a lazy `(.*?)</div>` stops at the first inner close and returns a
+# fragment, which over 200 characters would be stored and treated as the whole
+# advert.
+_JV_DESC_OPEN = re.compile(
+    r'<div[^>]*\bclass="[^"]*\bjv-job-detail-description\b[^"]*"[^>]*>', re.I)
+
+
+def _from_jobvite(url: str, session=None, timeout: int = 20) -> str:
+    page = _page(url, session, timeout)
+    if not page:
+        return ""
+    text = _json_ld_text(page)
+    if text:
+        return text
+    for body in _inner_blocks(page, _JV_DESC_OPEN, "div"):
+        return _strip_blocks(body)
+    return ""
+
+
 # JazzHR publishes an Organization block on the posting page but no
 # JobPosting one, so the shared JSON-LD reader comes back empty. The advert
 # itself sits in a div with a stable id, which is what this reads instead.
@@ -339,12 +415,20 @@ def _inner_blocks(page: str, opener, tag: str):
 # its `in_iframe=1` somewhere (a redirect, a hand-edited source) would enrich
 # to nothing with no error to show for it.
 _ICIMS_JOB = re.compile(r"/jobs/\d+/", re.I)
+_ICIMS_WALL = re.compile(r"/(?:login|register)/?$", re.I)
 
 
 def _from_icims(url: str, session=None, timeout: int = 20) -> str:
     base = (url or "").split("?")[0]
     if not _ICIMS_JOB.search(base):
         return ""
+    # `.../job/login` is the sign-in wall in front of the same requisition,
+    # and it answers 200 with a 28KB page carrying no JobPosting block at all,
+    # so it reads as a healthy page with no advert on it. Dropping the suffix
+    # returns the posting: measured on two Orange requisitions, 0 characters
+    # at `/job/login` against 4,746 and 5,990 at `/job`. These URLs arrive from
+    # Phenom boards whose apply link points at the employer's iCIMS tenant.
+    base = _ICIMS_WALL.sub("", base)
     get = (session or requests).get
     try:
         r = get(f"{base}?in_iframe=1", headers={"User-Agent": UA},
@@ -439,6 +523,24 @@ _AV_FIELD = re.compile(
     r'<div[^>]*\bclass="[^"]*\barticle__content__view__field__value\b[^"]*"[^>]*>',
     re.I)
 
+# Avature ships a second, older page template that has neither of the two
+# things above: jobs.colorado.edu is an ordinary Avature tenant serving
+# `/jobs/JobDetail/<slug>/<id>` with zero JSON-LD blocks and zero
+# `article__content__view__field__value` divs, so both readers returned "" on
+# a healthy 200 and the role stayed unscreenable.
+#
+# What that template does carry is schema.org as MICRODATA rather than
+# JSON-LD: `<div class="jobDetail" itemscope itemtype=".../JobPosting">` with
+# eleven `itemprop="description"` divs inside it, one per accordion section
+# (Job Summary, Duties, Qualifications...). Reading every one of them and
+# joining is what keeps the qualifications, which is where the must-haves are
+# and what the dealbreakers are actually judged on.
+#
+# `itemprop` is matched rather than the theme's `jobDetailDescription` class,
+# because the class is part of the employer's skin and the microdata is part
+# of the schema.org contract the page is claiming to honour.
+_AV_MICRO = re.compile(r'<div[^>]*\bitemprop="description"[^>]*>', re.I)
+
 
 def _from_avature(url: str, session=None, timeout: int = 20) -> str:
     page = _page(url, session, timeout)
@@ -448,7 +550,16 @@ def _from_avature(url: str, session=None, timeout: int = 20) -> str:
     if text:
         return text
     parts = [_strip_blocks(b) for b in _inner_blocks(page, _AV_FIELD, "div")]
-    return "\n\n".join(p for p in parts if p).strip()
+    out = "\n\n".join(p for p in parts if p).strip()
+    if len(out) >= 200:
+        return out
+    # The field blocks are the location, the worker type and the req id when
+    # there is no advert block among them, which is about 86 characters and
+    # is not a description. Below the floor `run()` would discard it anyway,
+    # so trying the microdata costs nothing and recovers the whole advert.
+    micro = [_strip_blocks(b) for b in _inner_blocks(page, _AV_MICRO, "div")]
+    joined = "\n\n".join(p for p in micro if p).strip()
+    return joined if len(joined) > len(out) else out
 
 
 # SuccessFactors RMK publishes no JSON-LD at all: zero blocks on Reckitt and
@@ -498,10 +609,117 @@ FETCHERS = {
 }
 
 
+# The platform column says which BOARD a role came off. It does not say which
+# system publishes the advert, and for two of the bundled platforms those are
+# routinely different systems:
+#
+#   * Phenom's `applyUrl` is the employer's real ATS. Measured over 1,882
+#     Phenom roles from 18 boards: 1,562 point at a Workday tenant, 73 at
+#     iCIMS, 33 at a SuccessFactors jobs2web host. 1,668 of 1,882, 88.6%, are
+#     on a system this module already knows how to read.
+#   * The two `custom` boards in the bundled list are Atlassian, whose
+#     listings endpoint hands back iCIMS posting URLs. All 111 roles, all
+#     iCIMS, all previously enriched by nothing at all because "custom" is not
+#     a key in FETCHERS.
+#
+# So dispatch falls back to the shape of the role's own URL. This is not a
+# guess about an unknown platform: each pattern is a host that one of the
+# fetchers above is already written against, and a URL that matches none of
+# them is left alone exactly as before.
+#
+# The SQL LIKE beside each pattern is what puts these roles in front of
+# `candidates()` in the first place. It is kept in this table rather than
+# hand-written into the query for the same reason the platform list was moved
+# here: two copies of the same fact drift, and the symptom is a fetcher that
+# never runs with no error to show for it.
+URL_FETCHERS = (
+    (re.compile(r"//[^/]*\.myworkdayjobs\.com/", re.I),
+     "%.myworkdayjobs.com/%", _from_workday),
+    (re.compile(r"//[^/]*myworkdaysite\.com/", re.I),
+     "%myworkdaysite.com/%", _from_workday),
+    (re.compile(r"//jobs\.smartrecruiters\.com/[^/?#]+/\d+", re.I),
+     "%jobs.smartrecruiters.com/%", _from_smartrecruiters),
+    (re.compile(r"//[^/]*\.icims\.com/jobs/\d+/", re.I),
+     "%.icims.com/jobs/%", _from_icims),
+    (re.compile(r"//[^/]*jobs2web\.com/", re.I),
+     "%jobs2web.com/%", _from_rmk),
+    (re.compile(r"//[^/]*\.avature\.net/", re.I),
+     "%.avature.net/%", _from_avature),
+    (re.compile(r"//[^/]*\.taleo\.net/", re.I),
+     "%.taleo.net/%", _from_taleo),
+    (re.compile(r"//[^/]*\.breezy\.hr/p/", re.I),
+     "%.breezy.hr/p/%", _from_breezy),
+    (re.compile(r"//[^/]*\.bamboohr\.com/careers/\d+", re.I),
+     "%.bamboohr.com/careers/%", _from_bamboohr),
+    (re.compile(r"//[^/]*\.applytojob\.com/apply/", re.I),
+     "%.applytojob.com/apply/%", _from_jazzhr),
+    (re.compile(r"//jobs\.jobvite\.com/[^/?#]+/job/", re.I),
+     "%jobs.jobvite.com/%", _from_jobvite),
+    (re.compile(r"/hcmUI/CandidateExperience/", re.I),
+     "%/hcmUI/CandidateExperience/%", _from_oracle),
+)
+
+
+# Some list endpoints publish a teaser, not the advert, and a teaser is long
+# enough to clear a 200 character floor. That is the worst of the three
+# states: the role looks described, `candidates()` never picks it up, and the
+# dealbreakers and the salary floor run against a paragraph of marketing.
+#
+# Measured, from the same 244-board scan:
+#   * Phenom's `descriptionTeaser` averages 290 characters. 1,714 of 1,882
+#     Phenom roles cleared the old floor on nothing but that teaser.
+#   * Oracle's `ShortDescriptionStr` gave 185 of 483 roles a stored
+#     description of 200-1,000 characters. Fetching the full requisition for
+#     20 of them returned a median of 6,400 characters: every single one was
+#     between 3.8x and 16.2x longer than what was stored.
+#
+# 1,200 is set above every teaser measured and below every real advert
+# measured. A genuinely short advert on one of these two platforms costs one
+# wasted request per scan, which is the cheap side of the mistake.
+STUB_FLOORS = {"phenom": 1200, "oracle": 1200}
+
+# Below this a fetched text is treated as a failed parse rather than an
+# advert, because a fragment stored as the whole advert is worse than nothing:
+# nothing at least leaves the role visibly unscreened.
+MIN_DESC = 200
+
+
+def fetcher_for(url: str, platform: str = ""):
+    """The fetchers to try for one role, best first, at most two.
+
+    The platform's own fetcher goes first because it is the one written
+    against that board's stored URL shape. The URL fetcher stands behind it
+    for a role whose platform has none, and for one whose platform fetcher
+    came back empty on a URL that plainly belongs to another system.
+    """
+    out = []
+    first = FETCHERS.get(platform)
+    if first:
+        out.append(first)
+    for pat, _like, fn in URL_FETCHERS:
+        if pat.search(url or "") and fn not in out:
+            out.append(fn)
+            break
+    return out
+
+
+def _floor_sql() -> str:
+    """`LENGTH(...) < <floor>`, with the per-platform stub floors folded in."""
+    cases = " ".join(f"WHEN '{p}' THEN {n}" for p, n in STUB_FLOORS.items())
+    return (f"LENGTH(TRIM(COALESCE(r.description,''))) < "
+            f"CASE r.platform {cases} ELSE {MIN_DESC} END")
+
+
 def candidates(con, limit: int = 0) -> list:
     """Roles on the board that have a URL we can expand and no description."""
     store._ensure_columns(con)
-    q = ("SELECT r.uid, r.url, r.platform, r.salary_confirmed FROM roles r "
+    likes = [like for _pat, like, _fn in URL_FETCHERS]
+    q = ("SELECT r.uid, r.url, r.platform, r.salary_confirmed, "
+         # The stored length comes back with the row so that `run()` can
+         # refuse to replace a long advert with a short one. Without it the
+         # stub floors would happily overwrite Oracle's 653 character teaser
+         # with a 300 character parse failure and call that an improvement.
+         "LENGTH(TRIM(COALESCE(r.description,''))) AS desc_len FROM roles r "
          "LEFT JOIN role_state s ON s.uid = r.uid "
          "WHERE COALESCE(s.status,'new') NOT IN "
          "('rejected','withdrawn','skipped','closed') "
@@ -509,9 +727,10 @@ def candidates(con, limit: int = 0) -> list:
          # Was a second, hand-maintained copy of FETCHERS' keys. Adding Breezy
          # to one and not the other writes a fetcher that never runs, and the
          # symptom is silence rather than an error.
-         f"AND r.platform IN ({','.join('?' for _ in FETCHERS)}) "
-         "AND LENGTH(TRIM(COALESCE(r.description,''))) < 200")
-    rows = con.execute(q, tuple(FETCHERS)).fetchall()
+         f"AND (r.platform IN ({','.join('?' for _ in FETCHERS)}) "
+         f"OR {' OR '.join('r.url LIKE ?' for _ in likes)}) "
+         f"AND {_floor_sql()}")
+    rows = con.execute(q, (*FETCHERS, *likes)).fetchall()
     return rows[:limit] if limit else rows
 
 
@@ -526,7 +745,7 @@ def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None,
     rows = candidates(con) if rows is None else rows
     got = 0
     for i, r, text in _texts(rows, pause, concurrency):
-        if text and len(text) >= 200:
+        if text and len(text) >= MIN_DESC and len(text) > _stored_len(r):
             got += 1
             fields = {"description": text[:20000]}
             s = sal_mod.parse_text(text, cfg.salary_currency if cfg else None)
@@ -542,6 +761,19 @@ def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None,
         if on_each:
             on_each(i, len(rows), got)
     return got, len(rows)
+
+
+def _stored_len(row) -> int:
+    """How long the description already on the role is, or 0.
+
+    Tolerant of a row that has no `desc_len`, because `run()` takes whatever
+    rows it is handed and a caller with its own query should not have to know
+    about a column added for the stub floors.
+    """
+    try:
+        return int(row["desc_len"] or 0)
+    except (IndexError, KeyError, TypeError, ValueError):
+        return 0
 
 
 def _texts(rows, pause: float, concurrency: int):
@@ -561,12 +793,25 @@ def _texts(rows, pause: float, concurrency: int):
     `pause` still works and still means what it said, for anyone who set it,
     and passing concurrency=1 restores the old behaviour exactly.
     """
-    fetchers = [(i, r, FETCHERS.get(r["platform"]))
+    def _try(chain, url, session) -> str:
+        """The first fetcher in the chain that returns something.
+
+        At most two requests for a role, and only when the second fetcher is
+        a different one reading a different system: a role whose platform
+        fetcher and URL fetcher are the same function is asked once.
+        """
+        for fn in chain:
+            text = fn(url, session)
+            if text:
+                return text
+        return ""
+
+    fetchers = [(i, r, fetcher_for(r["url"], r["platform"]))
                 for i, r in enumerate(rows, 1)]
     if concurrency <= 1:
         session = requests.Session()
-        for i, r, fetcher in fetchers:
-            yield i, r, (fetcher(r["url"], session) if fetcher else "")
+        for i, r, chain in fetchers:
+            yield i, r, (_try(chain, r["url"], session) if chain else "")
             if pause and i < len(rows):
                 time.sleep(pause)
         return
@@ -575,8 +820,8 @@ def _texts(rows, pause: float, concurrency: int):
     local = threading.local()
 
     def one(item):
-        i, r, fetcher = item
-        if not fetcher:
+        i, r, chain = item
+        if not chain:
             return i, r, ""
         session = getattr(local, "session", None)
         if session is None:
@@ -588,7 +833,7 @@ def _texts(rows, pause: float, concurrency: int):
             return i, r, ""
         limiter.wait(r["url"])
         try:
-            return i, r, fetcher(r["url"], session)
+            return i, r, _try(chain, r["url"], session)
         except Exception:
             # One unreadable posting must not end the pass. Before this ran in
             # a pool the loop had the same exposure, and a role with no text

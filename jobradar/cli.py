@@ -186,7 +186,21 @@ def cmd_scan(args) -> int:
     # "this writes nothing" untrue in the one mode people use to check exactly
     # that before trusting the tool.
     con = store.connect(":memory:" if args.dry_run else args.db)
-    mig = {"roles": 0, "statuses": 0} if args.dry_run else store.migrate(con)
+    # The legacy import follows the database, not the working directory.
+    # `store.migrate(con)` resolved both of its sources against the cwd, so a
+    # scan started in the repo with `--db /tmp/scratch.db` still read this
+    # directory's state/seen.json and applications.local.yaml and copied 1,526
+    # roles and a real application history into the scratch file. `--db` reads
+    # as isolation and was not one, and the result is somebody's job search in
+    # a temp directory they will not think to clear.
+    #
+    # A database that is the configured one keeps the old behaviour, because
+    # that is the upgrade path this function exists for.
+    own_db = not args.db or Path(args.db) == store.DEFAULT_PATH
+    mig = ({"roles": 0, "statuses": 0} if args.dry_run else
+           store.migrate(con,
+                         state_path=str(state.path) if own_db else "",
+                         apps_path=None if own_db else ""))
     if mig["roles"] or mig["statuses"]:
         _say(f"  migrated {mig['roles']} roles and {mig['statuses']} statuses "
              f"into the database")

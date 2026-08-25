@@ -129,3 +129,48 @@ def test_a_very_long_title_is_rendered_in_full_rather_than_cut():
     p = html_out.write(out / "index.html", new=[j], seen=[], dropped={},
                        sources_ok=1, sources_total=1, throttled={}, postings=1)
     assert title in Path(p).read_text(encoding="utf-8")
+
+
+def test_a_scan_pointed_at_another_database_does_not_import_this_one():
+    """`--db` reads as isolation and was not one.
+
+    `store.migrate` resolves state/seen.json and applications.local.yaml
+    against the working directory, and `cmd_scan` called it with no arguments
+    at all. So a scan started inside the repo with `--db /tmp/scratch.db`
+    still read this directory's history and copied 1,526 roles and a real
+    application history into the scratch file. Nothing was written back, but
+    the copy is somebody's job search sitting in a temp directory they will
+    never think to clear. Found when an audit's throwaway database turned out
+    to be holding the owner's applications.
+    """
+    import json
+    import os
+
+    d = Path(tempfile.mkdtemp())
+    (d / "state").mkdir()
+    (d / "state" / "seen.json").write_text(json.dumps({"seen": {
+        "old1": {"company": "Previous Employer", "title": "Engineering Manager"}}}),
+        encoding="utf-8")
+    (d / "applications.local.yaml").write_text(
+        "applications:\n  - company: Previous Employer\n"
+        "    title: Engineering Manager\n    status: interviewing\n",
+        encoding="utf-8")
+
+    cwd = os.getcwd()
+    try:
+        os.chdir(d)
+        # Somewhere else entirely: the legacy stores here are not its history.
+        elsewhere = store.connect(str(d / "scratch.db"))
+        got = store.migrate(elsewhere, state_path="", apps_path="")
+        assert got["roles"] == 0, "a scratch database inherited someone's history"
+        assert elsewhere.execute("SELECT COUNT(*) n FROM roles"
+                                 ).fetchone()["n"] == 0
+
+        # The configured database still gets the upgrade path this exists for.
+        own = store.connect(str(d / "data" / "job-radar.db"))
+        got = store.migrate(own, state_path="state/seen.json")
+        assert got["roles"] == 1, "the real upgrade path stopped working"
+        assert own.execute("SELECT company FROM roles").fetchone()["company"] \
+            == "Previous Employer"
+    finally:
+        os.chdir(cwd)

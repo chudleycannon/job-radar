@@ -581,14 +581,25 @@ def migrate(con, state_path="state/seen.json", apps_path=None) -> dict:
 
     Runs only against rows that are not already present, so a second call
     changes nothing. That matters because this is called on every `scan`.
+
+    Both paths resolve against the current working directory, which is the
+    right default and was the wrong behaviour for anyone passing `--db`. A
+    scan run from the repo with `--db /tmp/scratch.db` still read this
+    directory's `state/seen.json` and `applications.local.yaml` and copied
+    1,526 roles and a real application history into the scratch database.
+    Nothing was written back, but `--db` reads as isolation and was not, and
+    the copy is somebody's job search sitting in a temp directory.
+
+    Pass `""` for either path to skip that import entirely, which is what a
+    database outside the configured one now gets.
     """
     from .applications import Tracker
 
     done = get_meta(con, "migrated")
     out = {"roles": 0, "statuses": 0, "already": bool(done)}
 
-    sp = Path(state_path)
-    if sp.exists():
+    sp = Path(state_path) if state_path else None
+    if sp is not None and sp.exists():
         try:
             data = json.loads(sp.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -607,7 +618,9 @@ def migrate(con, state_path="state/seen.json", apps_path=None) -> dict:
         if not get_meta(con, "runs"):
             set_meta(con, "runs", data.get("runs", 0))
 
-    tracker = Tracker.load(apps_path)
+    # `Tracker.load(None)` searches the working directory, which is what the
+    # default wants. `""` is the explicit "there is no history to import here".
+    tracker = Tracker() if apps_path == "" else Tracker.load(apps_path)
     for app in tracker.apps:
         rows = con.execute("SELECT uid, company, title FROM roles").fetchall()
         for r in rows:

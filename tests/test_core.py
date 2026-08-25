@@ -3530,12 +3530,28 @@ def test_a_jobvite_company_that_does_not_exist_yields_no_jobs():
 
 def test_breezy_and_jobvite_read_the_same_json_ld_block():
     """Both publish a schema.org JobPosting on the posting page and neither
-    puts the advert in its list endpoint. They share one fetcher rather than
-    keeping two copies that drift; this is what stops someone fixing a bug in
-    one and leaving it in the other."""
+    puts the advert in its list endpoint, so both read that block with the
+    same code rather than keeping two copies that drift.
+
+    They stopped being the same function when Jobvite turned out to have
+    tenants that publish no JSON-LD at all (`savers` and `monarchinvestment`
+    serve zero blocks of any type on a healthy 200), which needed a fallback
+    Breezy has no use for. What must not drift is the JSON-LD reading itself,
+    so that is what this checks: one shared reader, still reached first on
+    both platforms, still producing the same answer for the same page."""
+    import inspect
+
     from jobradar import enrich as enrich_mod
 
-    assert enrich_mod.FETCHERS["jobvite"] is enrich_mod.FETCHERS["breezy"]
+    assert enrich_mod.FETCHERS["breezy"] is enrich_mod._from_json_ld
+    src = inspect.getsource(enrich_mod._from_jobvite)
+    assert "_json_ld_text(page)" in src, \
+        "Jobvite must still read the shared JSON-LD block before its fallback"
+
+    page = ('<script type="application/ld+json">'
+            '{"@type":"JobPosting","description":"<p>Shared</p><li>reader</li>"}'
+            '</script>')
+    assert enrich_mod._json_ld_text(page) == "Shared\nreader"
 
 
 # -------------------------------------------------------------------- reed
