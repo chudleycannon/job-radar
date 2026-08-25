@@ -6492,8 +6492,11 @@ def test_an_ordinary_429_eventually_shuts_the_host():
     assert calls["n"] == armed * 3, (
         f"{calls['n']} requests sent; the breaker should arm after {armed} "
         f"sources have each spent three attempts, and spare the other 9")
-    assert 0 < lim.blocked_for("https://busy.example.com/x") <= \
-        fetch_mod.BREAKER_BLOCK_SECONDS
+    left = lim.blocked_for("https://busy.example.com/x")
+    assert 0 < left <= fetch_mod.BREAKER_BLOCK_SECONDS, (
+        f"breaker armed after {calls['n']} calls but blocked_for returned "
+        f"{left}; block map={dict(lim._blocked_until)} "
+        f"refusals={dict(lim._refusals)}")
     assert all(r.throttled for r in results), (
         "throttled, not empty: `validate --prune` deletes the second kind")
     assert all(not r.ok for r in results)

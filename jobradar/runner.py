@@ -795,6 +795,20 @@ def _invented(doc: str, source: str) -> list[str]:
 MAX_REVISIONS = int(os.environ.get("JOB_RADAR_MAX_REVISIONS", "2"))
 
 
+def _child_env() -> dict:
+    """Make a Python child emit UTF-8 whatever the console code page is.
+
+    Windows Python writes stdout in the active code page, so a CV containing
+    "Engineering Manager * CrowdStrike" with a middle dot in it came back as
+    byte 0xb7 and the UTF-8 decode on this side raised inside subprocess's
+    reader thread. The document was fine; reading the report about it was not.
+    """
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
 def _script(name: str, rel: str) -> Path | None:
     """Find a script inside a bundled or user-installed skill."""
     return next((r / name / rel for r in _skill_roots() if (r / name / rel).exists()),
@@ -826,7 +840,8 @@ def _quality(d: Path, doc: str, kind: str) -> tuple[bool, list[str], dict]:
         try:
             r = subprocess.run([sys.executable, str(det), str(f)],
                                capture_output=True, text=True,
-                               encoding="utf-8", timeout=120)
+                               encoding="utf-8", errors="replace",
+                               env=_child_env(), timeout=120)
             blob = r.stdout + r.stderr
             m = re.search(r"SLOP SCORE:\s*(\d+)", blob, re.I)
             if m:
@@ -855,7 +870,8 @@ def _quality(d: Path, doc: str, kind: str) -> tuple[bool, list[str], dict]:
             try:
                 r = subprocess.run([sys.executable, str(sig), str(f)],
                                    capture_output=True, text=True,
-                                   encoding="utf-8", timeout=120)
+                                   encoding="utf-8", errors="replace",
+                                   env=_child_env(), timeout=120)
                 blob = r.stdout + r.stderr
                 miss = re.search(r"MISSING\s+\[([^\]]*)\]", blob)
                 if miss and miss.group(1).strip():
@@ -977,7 +993,8 @@ def _gates(d: Path, name: str) -> dict:
             # standard Windows install, so the gate reported None and the
             # dashboard, which counts only `is False`, showed nothing at all.
             r = subprocess.run([sys.executable, str(det), str(f)],
-                               capture_output=True, text=True, encoding="utf-8", timeout=120)
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", env=_child_env(), timeout=120)
             blob = r.stdout + r.stderr
             # Read the verdict line, not any occurrence of the word FAIL.
             # detect.py prints "Fix the FAIL/WARN lines above" as standing
