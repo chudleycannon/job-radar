@@ -11,10 +11,13 @@ readable document you can edit and send.
 
 from __future__ import annotations
 
+import io
 import re
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
+
+from .state import atomic_write_bytes
 
 _CT = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -163,12 +166,17 @@ def markdown_to_docx(md: str, out_path: Path) -> Path:
            f'<w:pgMar w:top="900" w:right="1000" w:bottom="900" w:left="1000"/>'
            f'</w:sectPr></w:body></w:document>')
 
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
+    # Built in memory, then written atomically. Writing the zip straight to
+    # the final path truncates it first, so an interrupted write leaves a file
+    # with a .docx name that no word processor will open, where a good one
+    # used to be. These documents are one per application and regenerating one
+    # costs a model call, so the old version is worth keeping. A CV is a few
+    # kilobytes, so holding it in memory costs nothing.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", _CT)
         z.writestr("_rels/.rels", _RELS)
         z.writestr("word/_rels/document.xml.rels", _DOC_RELS)
         z.writestr("word/styles.xml", _STYLES)
         z.writestr("word/document.xml", doc)
-    return out_path
+    return atomic_write_bytes(out_path, buf.getvalue())

@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..models import Job
+from ..state import atomic_write_text
 
 from .favicon import link_tag as _favicon_tag, mark as _favicon_mark
 
@@ -442,7 +443,8 @@ Working pattern is only known where the employer said so.</footer>
 
 
 def write(path, **kwargs):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render(**kwargs), encoding="utf-8")
-    return path
+    # Atomic. This one is regenerable, but a truncated page is the worst kind
+    # of broken: a browser renders what it got and shows no error, so half a
+    # dashboard looks like a dashboard with half the roles in it. Replacing at
+    # the rename means an interrupted run leaves yesterday's complete page.
+    return atomic_write_text(path, render(**kwargs))

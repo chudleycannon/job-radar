@@ -19,7 +19,7 @@ from .fetch import (HostLimiter, detect_throttling, fetch_all,
                     pinned_to_one_page)
 from .models import Source
 from .screen import run as screen_run, _countries_in
-from .state import State
+from .state import State, atomic_write_text
 
 
 def _say(msg: str = "") -> None:
@@ -723,7 +723,10 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> int:   # used by disco
             f"Refusing to write {cfg_path}: the result would not parse "
             f"({str(e).splitlines()[0]}). Add this by hand under "
             f"sources.extra:\n{block}")
-    cfg_path.write_text(result, encoding="utf-8")
+    # Atomic, for the same reason as the check above: this rewrites a config
+    # the user wrote by hand, and half of one is not recoverable from anything
+    # this tool holds.
+    atomic_write_text(cfg_path, result)
     return len(add)
 
 
@@ -775,11 +778,14 @@ def cmd_validate(args) -> int:
         _say(f"  MISMATCH  {r['company']}: {r['note']}")
 
     if args.report:
-        Path(args.report).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.report).write_text(json.dumps({
+        # Atomic. This is the only durable trace of a validation run that took
+        # hours of network, and it is what `--prune` is argued from. Killed
+        # part way through, the run's own results are gone either way, but the
+        # previous report is not, and half a JSON file is not a report.
+        atomic_write_text(Path(args.report), json.dumps({
             "checked": datetime.now().isoformat(timespec="seconds"),
             "total": len(rows), "dead": dead, "mismatch": mismatch, "rows": rows,
-        }, indent=1), encoding="utf-8")
+        }, indent=1))
         _say(f"  wrote {args.report}")
 
     if args.prune and not args.file:

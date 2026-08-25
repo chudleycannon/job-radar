@@ -13,6 +13,8 @@ import re
 import sys
 from pathlib import Path
 
+from .state import atomic_write_text
+
 COMMON_DEALBREAKERS = {
     "coding round": r"take.?home|live coding|coding (?:test|assessment|challenge|exercise)|"
                     r"pair.?program\w* (?:interview|round)|technical assessment",
@@ -204,9 +206,10 @@ fetch:
   timeout: 20
   retries: 2
 """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
-    return path
+    # Atomic. `setup` rewrites an existing config in place, so an
+    # interruption here would leave the user with a half-written config.yaml
+    # and no copy of the answers they had already given.
+    return atomic_write_text(path, body)
 
 
 # Deliberately empty. Filling these with the author's own job titles and

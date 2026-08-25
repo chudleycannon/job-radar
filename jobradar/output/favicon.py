@@ -55,7 +55,15 @@ def link_tag() -> str:
 
 
 def write(path) -> None:
-    """Write the standalone file, for anything that wants a real asset."""
+    """Write the standalone file, for anything that wants a real asset.
+
+    Left as a plain write, deliberately, while the seen-set, the source list,
+    the config and the dashboard were all made atomic. This writes a module
+    constant of about three hundred bytes: it is one write() call, so there is
+    barely a window to be killed in, and if it were killed the file is
+    reproduced exactly by calling this again. There is nothing here that a
+    rename would protect.
+    """
     from pathlib import Path
     Path(path).write_text(SVG, encoding="utf-8")
 

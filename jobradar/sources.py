@@ -10,6 +10,7 @@ from . import adapters
 from .config import Config
 from .models import Source
 from .screen import country_name
+from .state import atomic_write_text
 
 BUNDLED = Path(__file__).parent.parent / "sources" / "sources.json"
 
@@ -163,7 +164,12 @@ def save(sources: list[Source], path: str | Path, meta: dict | None = None) -> N
         "sources": [s.to_dict() for s in
                     sorted(sources, key=lambda x: (x.platform, x.company.lower()))],
     }
-    p.write_text(json.dumps(body, indent=1, ensure_ascii=False), encoding="utf-8")
+    # Atomic. The weekly `validate --prune` rewrites 17,810 entries in
+    # place, and the crawler that finds employers does not ship here, so a
+    # write killed half way through destroys a list nothing in this repository
+    # can rebuild. It would also read back with no `meta`, which is how the
+    # provenance note and the version would go missing on the run after.
+    atomic_write_text(p, json.dumps(body, indent=1, ensure_ascii=False))
 
 
 def age_days(path=None) -> int | None:
