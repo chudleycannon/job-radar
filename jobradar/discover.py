@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import requests
 
@@ -539,6 +539,34 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
 KEYED_PLATFORMS = {"reed", "adzuna"}
 
 
+def _parse_or_why(payload, src: Source) -> tuple[list, str | None]:
+    """Parse a fetched payload, or say why it could not be parsed.
+
+    `adapters.parse` catches every exception and returns `[]`, which is right
+    for a scan -- one malformed board must not end a run over 13,000 sources
+    -- and is exactly wrong here, because here the zero is a verdict. A board
+    answering HTTP 200 with `<html>Service Unavailable</html>` instead of its
+    usual JSON raises inside the platform's parser, and `count_jobs` reported
+    `(0, [], None)`: no error, no postings. `validate_source` turns that into
+    "dead / no postings returned / prunable: True", and the weekly maintenance
+    workflow runs `validate --prune` unattended, so a live employer is deleted
+    from the source list because their board was briefly serving a holding
+    page. That is the 429-as-an-empty-board fault (9d74c68) arriving through
+    the parser instead of through HTTP.
+
+    So the parse happens here, where the exception can be turned into the
+    third value that already means "we could not read it".
+    """
+    p = adapters.by_name(src.platform) or adapters.detect(src.url)
+    try:
+        return [j for j in p.parse(payload, src) if j.title and j.url], None
+    except Exception as e:
+        return [], (f"the board answered, but its {src.platform or 'response'} "
+                    f"could not be read ({type(e).__name__}: "
+                    f"{str(e)[:120]}). That is not the same as having no "
+                    f"postings, so it is not a dead board")
+
+
 def count_jobs(src: Source, timeout: int = 25,
                *, transport: list | None = None) -> tuple[int, list, str | None]:
     """Fetch and parse. Job count is the only reliable liveness signal:
@@ -586,7 +614,9 @@ def count_jobs(src: Source, timeout: int = 25,
             # readable fact, so a prune can refuse on it.
             transport.append(res.transport)
         return 0, [], why
-    jobs = adapters.parse(res.payload, src)
+    jobs, unreadable = _parse_or_why(res.payload, src)
+    if unreadable:
+        return 0, [], unreadable
     return len(jobs), jobs, None
 
 
@@ -594,6 +624,62 @@ def _norm(s: str) -> str:
     """Lowercase alphanumerics only, so 'Checkout.com' and 'checkout.com' and
     "Sotheby's" and 'sothebys' compare equal."""
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+# Host labels that describe the careers SITE rather than the employer running
+# it. `careers.monzo.com` is Monzo's careers site, not a company called
+# Careers, and pasting that URL is the single most natural way to use this.
+_SITE_LABELS = {
+    "www", "www2", "www3", "careers", "career", "jobs", "job", "apply",
+    "recruitment", "recruiting", "recruit", "hiring", "hire", "work",
+    "workwithus", "talent", "people", "join", "joinus", "vacancies",
+    "opportunities", "emea", "global",
+}
+
+
+def clean_host(value: str | None) -> str:
+    """A bare lowercase hostname: no scheme, no credentials, no port, no path.
+
+    `urlparse().netloc` keeps the userinfo and the port, and both were being
+    written straight into the source list. `discover
+    https://alice:s3cret@monzo.com/careers` stored `domain:
+    alice:s3cret@monzo.com` and named the employer "Alice:S3Cret@Monzo": a
+    password copied into a config file the user then has no reason to look at.
+    `urlsplit().hostname` is the parsed form with all of that stripped.
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if "://" not in v:
+        v = "//" + v.lstrip("/")
+    try:
+        return (urlsplit(v).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def employer_label(host: str | None) -> str:
+    """The employer's own label out of a hostname.
+
+    `netloc.split(".")[0]` was doing this job, and it is only right when the
+    board sits on the apex domain. Every other shape gave the vendor's or the
+    site's word instead of the employer's, and the answer was used for two
+    things at once, so a wrong one cost twice:
+
+      * as the company name, so `--add www.monzo.com` wrote a source called
+        "Www" and every role it found was attributed to Www;
+      * as the identity root, so `discover careers.monzo.com` compared the
+        board's own name "Monzo" against "Careers", called that a MISMATCH,
+        and `--add` then refused a perfectly good board.
+
+    Stops stripping at two labels, so `jobs.com` stays "jobs" rather than
+    becoming "com": a site label is only a site label when there is a
+    registrable name left behind it.
+    """
+    labels = [p for p in clean_host(host).split(".") if p]
+    while len(labels) > 2 and labels[0] in _SITE_LABELS:
+        labels.pop(0)
+    return labels[0] if labels else ""
 
 
 def verify_identity(jobs: list, domain: str | None, company: str,
@@ -617,8 +703,12 @@ def verify_identity(jobs: list, domain: str | None, company: str,
     norm_names = {_norm(n) for n in names if n}
 
     if domain:
-        d = domain.lower().replace("www.", "")
-        root = _norm(d.split(".")[0])
+        d = clean_host(domain) or domain.lower()
+        # The employer's label, not the first one. On `careers.monzo.com` the
+        # first label is "careers", which matches nothing a board ever calls
+        # itself, so every careers-subdomain URL fell through to the `want`
+        # test below and came back "mismatch" against a board that was right.
+        root = _norm(employer_label(d))
         if root and any(root in _norm(h) for h in apply_hosts):
             return "ok", f"apply links point at {d}"
         if root and any(root in n or n in root for n in norm_names if n):
@@ -660,8 +750,11 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     found: list[Found] = []
     domain = None
     if target.startswith("http") or "." in target:
-        domain = urlparse(target if target.startswith("http") else f"https://{target}").netloc
-    name = company or (domain.split(".")[0] if domain else target).replace("-", " ").title()
+        # `hostname`, not `netloc`: the latter carries any user:password@ and
+        # :port the person pasted, and this value is written into the config.
+        domain = clean_host(target) or None
+    name = company or (employer_label(domain) if domain
+                       else target).replace("-", " ").title()
 
     # If the thing being asked about IS one of the platforms we cannot read,
     # say so and stop. Guessing tokens from the domain label answered
@@ -669,7 +762,19 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     # "Civil Service Jobs" (it is one department's, holding a single posting),
     # marked it verified, and left a user believing the whole civil service
     # was covered. A platform domain is never an employer.
-    platform_hit = detect_unsupported("", target)
+    #
+    # Unless the target already names a board we can read, which is not the
+    # same thing at all. `UNSUPPORTED` holds "Workday (site unknown)", so
+    # pasting a live Workday board URL -- the exact case this module says it
+    # exists for, because tenant and site cannot be guessed and the URL is the
+    # only place they are written down -- was answered with "job-radar cannot
+    # read it yet", without one request being made, while `WORKDAY_RE` sitting
+    # in the same file reads the tenant and the site straight out of it. Same
+    # for the readable iCIMS form. `_scan` on the target settles it: a hit
+    # means there is a board here to try, and `count_jobs` will report
+    # honestly if it turns out we cannot read it after all.
+    on_target = _scan("", target)
+    platform_hit = "" if on_target else detect_unsupported("", target)
     if platform_hit:
         return [Found(company=name, url=target if target.startswith("http")
                       else f"https://{target}", platform="", token="",
@@ -683,12 +788,16 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     cands = _candidates(target)
-    hits: list[tuple[str, str, str]] = []
+    # A URL that already names a board needs no careers page read to find it.
+    hits: list[tuple[str, str, str]] = list(on_target)
     blocked = 0
     unsupported = ""          # a platform we recognised but cannot read yet
     unsupported_url = ""
+    # Nothing to read a careers page for when the URL itself named the board.
+    # Not merely a saving: it is up to 40 requests at a host that already told
+    # us the answer.
     with ThreadPoolExecutor(max_workers=6) as ex:
-        futs = {ex.submit(_get, c, 10): c for c in cands}
+        futs = {} if hits else {ex.submit(_get, c, 10): c for c in cands}
         try:
             for fut in as_completed(futs, timeout=75):
                 r = fut.result()
@@ -749,8 +858,17 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     # Empty boards are noise when they came from guessing rather than from a
     # link the company actually published. A board that errored is not empty:
     # its count is zero because the fetch failed, so it is kept and flagged.
+    #
+    # A board named in the URL the person typed is the opposite of a guess, so
+    # it is kept at zero too. Dropping it answered a pasted board URL with
+    # "nothing found ... either it is rendered by JavaScript, or the platform
+    # has no adapter yet", about a board read straight out of the URL in front
+    # of them, which is the same false statement 9d74c68 removed for the
+    # unreadable case.
+    named = {api for _p, _t, api in on_target}
     found = [f for f in checked
-             if f.live_jobs > 0 or f.identity == "unreadable" or not validate]
+             if f.live_jobs > 0 or f.identity == "unreadable"
+             or f.url in named or not validate]
 
     if not found:
         if unsupported:

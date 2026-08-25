@@ -438,10 +438,11 @@ def merge_duplicates(con) -> int:
     the whole point of the merge is that you keep what you did.
     """
     from .screen import directness
+    _ensure_columns(con)
     groups: dict[tuple, list] = {}
     for r in con.execute(
-            "SELECT uid, company, title, platform, description, salary_confirmed "
-            "FROM roles").fetchall():
+            "SELECT uid, company, title, platform, description, salary_confirmed, "
+            "fit, fit_why FROM roles").fetchall():
         key = (r["company"].strip().lower(), r["title"].strip().lower())
         groups.setdefault(key, []).append(r)
 
@@ -470,6 +471,28 @@ def merge_duplicates(con) -> int:
                     set_status(con, keep["uid"], st["status"], st["note"] or None)
                 elif st["note"] and not (cur and cur["note"]):
                     set_status(con, keep["uid"], cur_s, st["note"])
+            # The fit score moves for the same reason the artifacts do: it was
+            # paid for. `rank` spends real money and real minutes on it, and
+            # this function runs unattended on every scan, so a duplicate
+            # arriving on Tuesday quietly deleted Monday's score. It did not
+            # read as a loss either: the keeper's fit stays -1, and -1 means
+            # "not yet judged", so the role the model had scored 91 came back
+            # as unranked, indistinguishable from one that had never been
+            # looked at -- and `rank` then charged for it a second time.
+            #
+            # Only ever into a gap. A keeper that already has a score keeps it:
+            # its score was judged against its own description, which is the
+            # longer one, which is why it is the keeper.
+            if lose["fit"] is not None and lose["fit"] >= 0:
+                kept_fit = con.execute("SELECT fit FROM roles WHERE uid=?",
+                                       (keep["uid"],)).fetchone()
+                # Spelled out rather than `kept_fit["fit"] or -1`: a genuine
+                # score of 0 is falsy, and treating it as "no score" would let
+                # the merge overwrite the one verdict `rank` calls terminal.
+                kf = kept_fit["fit"] if kept_fit is not None else None
+                if kf is None or kf < 0:
+                    con.execute("UPDATE roles SET fit=?, fit_why=? WHERE uid=?",
+                                (lose["fit"], lose["fit_why"] or "", keep["uid"]))
             con.execute("UPDATE artifacts SET uid=? WHERE uid=?",
                         (keep["uid"], lose["uid"]))
             con.execute("DELETE FROM jobs WHERE uid=?", (lose["uid"],))
