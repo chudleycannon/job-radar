@@ -1179,6 +1179,9 @@ def cmd_list(args) -> int:
             # that had not been on a board for weeks.
             where.append(store.LIVE_SQL + " OR COALESCE(s.status,'new') <> 'new'"
                          " OR r.uid IN (SELECT DISTINCT uid FROM artifacts)")
+        # A role with no link is seen-set history, not a listing. See
+        # store.ACTIONABLE_SQL.
+        where.append(store.ACTIONABLE_SQL)
         if where:
             q += " WHERE " + " AND ".join(f"({w})" for w in where)
         q += " ORDER BY r.score DESC, r.company COLLATE NOCASE"

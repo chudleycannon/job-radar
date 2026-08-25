@@ -260,3 +260,32 @@ def test_rescreen_reports_before_it_removes_and_never_touches_what_you_acted_on(
     left = {r["uid"] for r in con.execute("SELECT uid FROM roles")}
     assert left == {"keep", "mine"}, f"removed the wrong rows: {left}"
     con.close()
+
+
+def test_a_role_with_no_link_is_history_and_not_a_listing():
+    """`migrate` imports the old state/seen.json, which holds a uid, a company
+    and a title and no link, because its whole job was answering "have I seen
+    this before". Those rows went into the same table as real listings and the
+    dashboard rendered them with an empty href: 103 of them on a real
+    database, indistinguishable from a live vacancy until you clicked one and
+    the page reloaded on itself.
+
+    They still have to exist, or every role in the old seen-set comes back as
+    new on the next scan. They just must not be offered as something to apply
+    to.
+    """
+    from jobradar.output import interactive
+
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,platform,first_seen,"
+                "last_seen) VALUES ('real','Acme','Engineering Manager',"
+                "'https://x.invalid/1','lever','2026-08-25','2026-08-25')")
+    con.execute("INSERT INTO roles (uid,company,title,first_seen,last_seen) "
+                "VALUES ('legacy','Anthropic','Engineering Manager',"
+                "'2026-08-25','2026-08-25')")
+    con.commit()
+
+    rows = interactive._rows(con)
+    assert [r["uid"] for r in rows] == ["real"], "a row with no link was offered"
+    # And it is still in the table, so the seen-set still knows about it.
+    assert con.execute("SELECT COUNT(*) n FROM roles").fetchone()["n"] == 2

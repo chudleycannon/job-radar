@@ -1297,7 +1297,7 @@ def test_the_dashboard_survives_a_limited_scan():
     for i, day in enumerate(["2026-08-10"] * 5 + ["2026-08-20"]):
         con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
                     "first_seen,last_seen,first_run) VALUES (?,?,?,?,?,?,?,?,1)",
-                    (f"u{i}", "C", "T", f"u{i}", "London", "greenhouse", day, day))
+                    (f"u{i}", "C", "T", f"https://x.invalid/{i}", "London", "greenhouse", day, day))
     assert len(interactive._rows(con)) == 6
 
 
@@ -1316,7 +1316,7 @@ def test_new_survives_a_second_scan_the_same_day():
         con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
                     "first_seen,last_seen,first_run) VALUES "
                     "(?,?,?,?,?,?,?,'2026-08-20',?)",
-                    (uid, "C", "T", uid, "London", "greenhouse", first, run))
+                    (uid, "C", "T", "https://x.invalid/" + uid, "London", "greenhouse", first, run))
     html = interactive.render(con)
     assert html.count('data-new="1"') == 2, "both of today's should be new"
     assert 'data-f="new"' in html

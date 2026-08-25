@@ -269,6 +269,19 @@ LIVE_WINDOW_DAYS = 14
 LIVE_SQL = (f"r.last_seen >= date((SELECT MAX(last_seen) FROM roles), "
             f"'-{LIVE_WINDOW_DAYS} days')")
 
+# A role you cannot open is not a role you can act on.
+#
+# `migrate` imports the old state/seen.json, which holds a uid, a company and
+# a title and no link, because its whole job was answering "have I seen this
+# before". Those rows went into the same table as real listings and the
+# dashboard rendered them with `href=""`: 103 of them on this database,
+# indistinguishable from a live vacancy until you clicked one and the page
+# reloaded on itself.
+#
+# They still have to exist, or every role in the old seen-set comes back as
+# new. They just must not be offered as something to apply to.
+ACTIONABLE_SQL = "COALESCE(r.url,'') LIKE 'http%'"
+
 # "New" means first seen on the most recent scan DATE, not on the most recent
 # run NUMBER.
 #

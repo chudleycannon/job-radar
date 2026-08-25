@@ -483,7 +483,7 @@ def _rows(con):
     return con.execute("""
         SELECT r.*, COALESCE(s.status,'new') AS status, COALESCE(s.note,'') AS note
         FROM roles r LEFT JOIN role_state s ON s.uid = r.uid
-        WHERE """ + store.LIVE_SQL + """
+        WHERE """ + store.LIVE_SQL + " AND " + store.ACTIONABLE_SQL + """
            OR COALESCE(s.status,'new') <> 'new'
            OR r.uid IN (SELECT DISTINCT uid FROM artifacts)
         ORDER BY r.score DESC, r.company COLLATE NOCASE
