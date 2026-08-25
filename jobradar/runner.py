@@ -565,6 +565,63 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                 error=f"finished without writing {expected}. See the log.",
                 log=out)
             return
+
+        # Check it, and send it back if it is not good enough.
+        #
+        # The prompt already hands the model the linter and asks it to run it.
+        # Nothing read the answer. So a draft could come back with the linter
+        # never run, or run and ignored, and the tool would file it as done:
+        # the first CV this produced went out at a slop score of 0 with an
+        # invented-specifics gate failing, and the second carried a
+        # construction the linter has a rule for.
+        #
+        # Screens are analysis, not prose anyone sends, so they are left
+        # alone. A revision that does not improve the count stops the loop,
+        # because paying for a third identical answer helps nobody.
+        if job["kind"] in ("cv", "cover_letter"):
+            ok, problems, scores = _quality(d, expected, job["kind"])
+            history = [f"attempt 1: {'clean' if ok else str(len(problems)) + ' problem(s)'}"
+                       + (f", slop {scores['slop']}" if "slop" in scores else "")]
+            for attempt in range(MAX_REVISIONS):
+                if ok:
+                    break
+                out += ("\n\nsent back for revision:\n"
+                        + "\n".join(f"  {p}" for p in problems))
+                try:
+                    rev = subprocess.run(
+                        [claude, "-p", _revision_prompt(expected, problems),
+                         "--permission-mode", "acceptEdits",
+                         "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
+                         f"Bash(python3 {SKILL_DIR}/natural-writing/scripts/detect.py:*)",
+                         f"Bash(python {SKILL_DIR}/natural-writing/scripts/detect.py:*)"],
+                        cwd=str(d), capture_output=True, text=True,
+                        encoding="utf-8", stdin=subprocess.DEVNULL, timeout=TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    out += "\n  revision timed out; keeping the draft as it stands"
+                    break
+                if rev.returncode != 0:
+                    out += "\n  revision failed; keeping the draft as it stands"
+                    break
+                out += (rev.stdout or "")[-2000:]
+                was = len(problems)
+                ok, problems, scores = _quality(d, expected, job["kind"])
+                history.append(
+                    f"attempt {attempt + 2}: "
+                    + ("clean" if ok else f"{len(problems)} problem(s)")
+                    + (f", slop {scores['slop']}" if "slop" in scores else ""))
+                if not ok and len(problems) >= was:
+                    out += ("\n  revision did not improve it, so it stops here "
+                            "rather than paying for the same answer again")
+                    break
+            out += "\n\nquality loop: " + " -> ".join(history)
+            if not ok:
+                # Recorded, not hidden. The document is still written and
+                # still usable; the reader is told which checks it did not
+                # clear, because a draft that failed silently is one that
+                # gets sent.
+                out += ("\n  still unresolved:\n"
+                        + "\n".join(f"    {p}" for p in problems))
+
         _record(con, job, d, out)
         store.mark_job(con, job_id, "done", log=out)
     except Exception as e:                      # never leave a job stuck running
@@ -726,6 +783,130 @@ def _invented(doc: str, source: str) -> list[str]:
         if tok not in out:
             out.append(tok)
     return out[:12]
+
+
+# How many times a draft may be sent back before the tool stops paying for
+# another go. Three attempts total by default.
+#
+# There is a cap because every revision is another call, and a loop with no
+# ceiling can spend a lot of somebody's money getting a slop score from 6 to
+# 4. There is a cap of two rather than one because the first revision fixes
+# the obvious tells and the second is where the specifics get put back.
+MAX_REVISIONS = int(os.environ.get("JOB_RADAR_MAX_REVISIONS", "2"))
+
+
+def _script(name: str, rel: str) -> Path | None:
+    """Find a script inside a bundled or user-installed skill."""
+    return next((r / name / rel for r in _skill_roots() if (r / name / rel).exists()),
+                None)
+
+
+def _quality(d: Path, doc: str, kind: str) -> tuple[bool, list[str], dict]:
+    """Measure a draft and say, in words, what is wrong with it.
+
+    Two checks, because they catch different failures and a document needs to
+    clear both. natural-writing finds the tells that make prose read as
+    machine-written. cv_signals finds the mechanical faults that stop an
+    applicant tracking system reading it at all: a missing section, no
+    parseable date range, bullets with no numbers in them.
+
+    The returned list is written to be pasted straight into a revision
+    prompt, so it names the failing check and what it wants, rather than
+    printing a score and leaving the model to guess.
+    """
+    f = d / doc
+    if not f.exists():
+        return False, [f"{doc} was not written"], {}
+
+    scores: dict = {}
+    problems: list[str] = []
+
+    det = _script("natural-writing", "scripts/detect.py")
+    if det is not None:
+        try:
+            r = subprocess.run([sys.executable, str(det), str(f)],
+                               capture_output=True, text=True,
+                               encoding="utf-8", timeout=120)
+            blob = r.stdout + r.stderr
+            m = re.search(r"SLOP SCORE:\s*(\d+)", blob, re.I)
+            if m:
+                scores["slop"] = int(m.group(1))
+            # The failing lines themselves, not the score. "colon-reveal FAIL
+            # 4 statement: elaboration colons" tells the model what to change;
+            # "34/100" does not.
+            fails = [ln.strip() for ln in blob.splitlines()
+                     if re.search(r"\bFAIL\b", ln) and "SLOP SCORE" not in ln
+                     and "Fix the FAIL" not in ln]
+            problems += [f"natural-writing: {ln}" for ln in fails]
+            if scores.get("slop", 0) > 20:
+                problems.append(
+                    f"natural-writing: slop score {scores['slop']}, needs 20 or under")
+        except Exception as e:
+            problems.append(f"natural-writing could not run: {type(e).__name__}")
+    else:
+        # Not a pass. An unmeasurable gate is a failed gate everywhere else in
+        # this file, and a document nothing checked must not look like one
+        # that was checked and cleared.
+        problems.append("natural-writing is not installed, so prose was never checked")
+
+    if kind == "cv":
+        sig = _script("rate-cv", "scripts/cv_signals.py")
+        if sig is not None:
+            try:
+                r = subprocess.run([sys.executable, str(sig), str(f)],
+                                   capture_output=True, text=True,
+                                   encoding="utf-8", timeout=120)
+                blob = r.stdout + r.stderr
+                miss = re.search(r"MISSING\s+\[([^\]]*)\]", blob)
+                if miss and miss.group(1).strip():
+                    problems.append(
+                        f"cv-rating: no {miss.group(1)} section, which every "
+                        f"applicant tracking system looks for")
+                dr = re.search(r"(\d+)\s+explicit role date-ranges", blob)
+                if dr:
+                    scores["date_ranges"] = int(dr.group(1))
+                    if int(dr.group(1)) == 0:
+                        problems.append(
+                            "cv-rating: no parseable role date ranges. Write them "
+                            "as '2022 - Present', not '2022 to present'")
+                q = re.search(r"quantified:\s*(\d+)/(\d+)\s*=\s*(\d+)%", blob)
+                if q:
+                    scores["quantified"] = int(q.group(3))
+                    if int(q.group(3)) < 60:
+                        problems.append(
+                            f"cv-rating: only {q.group(3)}% of bullets carry a "
+                            f"number, needs 60%")
+                em = re.search(r"em-dashes:\s*(\d+)", blob)
+                if em and int(em.group(1)):
+                    problems.append(f"cv-rating: {em.group(1)} em-dashes, needs none")
+            except Exception as e:
+                problems.append(f"cv-rating could not run: {type(e).__name__}")
+            finally:
+                # cv_signals writes a working file next to the document.
+                (f.parent / (f.name + ".extracted.txt")).unlink(missing_ok=True)
+        else:
+            problems.append("rate-cv is not installed, so the CV was never scored")
+
+    return (not problems), problems, scores
+
+
+def _revision_prompt(doc: str, problems: list[str]) -> str:
+    """Send the draft back with the failures named.
+
+    Deliberately says what not to do as well: the first version of this loop
+    watched a model shorten a CV until it passed by having almost nothing
+    left in it, which is a better score and a worse document.
+    """
+    lines = "\n".join(f"- {p}" for p in problems)
+    return (
+        f"Revise {doc} in place. It was checked and these came back:\n\n"
+        f"{lines}\n\n"
+        f"Fix exactly those. Do not remove content to make a score go up: "
+        f"every claim already in the document is one the candidate can "
+        f"defend, and losing it costs more than the score gains. Do not add "
+        f"any fact that is not in source-cv.txt. Keep the same structure and "
+        f"the same headings. Write the file, do not print it."
+    )
 
 
 def _gates(d: Path, name: str) -> dict:
