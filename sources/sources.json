@@ -4437,7 +4437,7 @@
    "country": "US"
   },
   {
-   "company": "ERP•AI",
+   "company": "ERP\u2022AI",
    "url": "https://api.ashbyhq.com/posting-api/job-board/erp.ai?includeCompensation=true",
    "platform": "ashby",
    "country": "US"
@@ -17453,7 +17453,7 @@
    "country": "US"
   },
   {
-   "company": "Baked Bros™",
+   "company": "Baked Bros\u2122",
    "url": "https://baked-bros.breezy.hr/json",
    "platform": "breezy",
    "country": "US"
@@ -17691,7 +17691,7 @@
    "country": "US"
   },
   {
-   "company": "Black & McDonald Français",
+   "company": "Black & McDonald Fran\u00e7ais",
    "url": "https://black-mcdonald-francais.breezy.hr/json",
    "platform": "breezy",
    "country": "CA"
@@ -18313,7 +18313,7 @@
    "country": "CA"
   },
   {
-   "company": "Commerzbank AG – Poland",
+   "company": "Commerzbank AG \u2013 Poland",
    "url": "https://commerzbank-poland.breezy.hr/json",
    "platform": "breezy",
    "country": "PL"
@@ -19833,7 +19833,7 @@
    "country": "ZA"
   },
   {
-   "company": "Hôpital fribourgeois",
+   "company": "H\u00f4pital fribourgeois",
    "url": "https://hopital-fribourgeois.breezy.hr/json",
    "platform": "breezy"
   },
@@ -19890,7 +19890,7 @@
    "country": "multi"
   },
   {
-   "company": "Il Gabbiano, Società Cooperativa Sociale - ONLUS",
+   "company": "Il Gabbiano, Societ\u00e0 Cooperativa Sociale - ONLUS",
    "url": "https://il-gabbiano-societa-cooperativa-sociale-onlus.breezy.hr/json",
    "platform": "breezy",
    "country": "IT"
@@ -21516,7 +21516,7 @@
    "country": "UK"
   },
   {
-   "company": "Pipo Saúde",
+   "company": "Pipo Sa\u00fade",
    "url": "https://pipo-saude.breezy.hr/json",
    "platform": "breezy",
    "country": "BR"
@@ -22745,7 +22745,7 @@
    "country": "ZA"
   },
   {
-   "company": "St. Mark’s School",
+   "company": "St. Mark\u2019s School",
    "url": "https://st-mark-s-school.breezy.hr/json",
    "platform": "breezy",
    "sector": "education",
@@ -24324,7 +24324,7 @@
    "country": "CA"
   },
   {
-   "company": "84.51°",
+   "company": "84.51\u00b0",
    "url": "https://boards-api.greenhouse.io/v1/boards/8451/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -25938,7 +25938,7 @@
    "country": "US"
   },
   {
-   "company": "Arco Educação",
+   "company": "Arco Educa\u00e7\u00e3o",
    "url": "https://boards-api.greenhouse.io/v1/boards/arcoeducacao/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "BR"
@@ -28635,7 +28635,7 @@
    "country": "US"
   },
   {
-   "company": "Carrières Broadsign",
+   "company": "Carri\u00e8res Broadsign",
    "url": "https://boards-api.greenhouse.io/v1/boards/broadsignfr/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -29094,7 +29094,7 @@
    "country": "US"
   },
   {
-   "company": "Children’s Treehouse",
+   "company": "Children\u2019s Treehouse",
    "url": "https://boards-api.greenhouse.io/v1/boards/childrenstreehouse/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -29469,7 +29469,7 @@
    "country": "CA"
   },
   {
-   "company": "Clēnera, LLC",
+   "company": "Cl\u0113nera, LLC",
    "url": "https://boards-api.greenhouse.io/v1/boards/clenera/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -29754,7 +29754,7 @@
    "country": "US"
   },
   {
-   "company": "ComparaJá",
+   "company": "ComparaJ\u00e1",
    "url": "https://boards-api.greenhouse.io/v1/boards/comparaja/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "finance",
@@ -30174,7 +30174,7 @@
    "country": "US"
   },
   {
-   "company": "Co–Star",
+   "company": "Co\u2013Star",
    "url": "https://boards-api.greenhouse.io/v1/boards/costar/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "media",
@@ -30295,7 +30295,7 @@
    "country": "US"
   },
   {
-   "company": "Croí Health",
+   "company": "Cro\u00ed Health",
    "url": "https://boards-api.greenhouse.io/v1/boards/croihealth/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "healthcare",
@@ -30779,7 +30779,7 @@
    "country": "US"
   },
   {
-   "company": "DEPT®",
+   "company": "DEPT\u00ae",
    "url": "https://boards-api.greenhouse.io/v1/boards/dept/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "retail",
@@ -31528,7 +31528,7 @@
    "country": "US"
   },
   {
-   "company": "Ekō",
+   "company": "Ek\u014d",
    "url": "https://boards-api.greenhouse.io/v1/boards/sumofus/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse"
   },
@@ -32258,7 +32258,7 @@
    "country": "US"
   },
   {
-   "company": "EVERY™",
+   "company": "EVERY\u2122",
    "url": "https://boards-api.greenhouse.io/v1/boards/theeverycompany/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -32429,7 +32429,7 @@
    "country": "US"
   },
   {
-   "company": "EōS Fitness",
+   "company": "E\u014dS Fitness",
    "url": "https://boards-api.greenhouse.io/v1/boards/eosfitness/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -32616,7 +32616,7 @@
    "country": "multi"
   },
   {
-   "company": "FERMÀT",
+   "company": "FERM\u00c0T",
    "url": "https://boards-api.greenhouse.io/v1/boards/fermat/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -32805,7 +32805,7 @@
    "country": "US"
   },
   {
-   "company": "FIS® Amount™",
+   "company": "FIS\u00ae Amount\u2122",
    "url": "https://boards-api.greenhouse.io/v1/boards/amount/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -33386,7 +33386,7 @@
    "country": "multi"
   },
   {
-   "company": "Fussball Club Cincinnati LLC (“FC Cincinnati”)",
+   "company": "Fussball Club Cincinnati LLC (\u201cFC Cincinnati\u201d)",
    "url": "https://boards-api.greenhouse.io/v1/boards/fccincinnati/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "education",
@@ -34424,7 +34424,7 @@
    "country": "US"
   },
   {
-   "company": "Grüns",
+   "company": "Gr\u00fcns",
    "url": "https://boards-api.greenhouse.io/v1/boards/gruns/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "finance",
@@ -35463,7 +35463,7 @@
    "country": "BR"
   },
   {
-   "company": "iFood Indicações",
+   "company": "iFood Indica\u00e7\u00f5es",
    "url": "https://boards-api.greenhouse.io/v1/boards/indicacoesifoodinterno/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "telecoms",
@@ -36891,7 +36891,7 @@
    "country": "IN"
   },
   {
-   "company": "KRAFTON Montréal Studio",
+   "company": "KRAFTON Montr\u00e9al Studio",
    "url": "https://boards-api.greenhouse.io/v1/boards/studiokraftonboard/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "media",
@@ -39398,7 +39398,7 @@
    "country": "DE"
   },
   {
-   "company": "Na Prática",
+   "company": "Na Pr\u00e1tica",
    "url": "https://boards-api.greenhouse.io/v1/boards/napratica/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "BR"
@@ -40122,7 +40122,7 @@
    "country": "UK"
   },
   {
-   "company": "Nuitée",
+   "company": "Nuit\u00e9e",
    "url": "https://boards-api.greenhouse.io/v1/boards/nuitee/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "multi"
@@ -41939,7 +41939,7 @@
    "country": "US"
   },
   {
-   "company": "Playﬂy Sports",
+   "company": "Play\ufb02y Sports",
    "url": "https://boards-api.greenhouse.io/v1/boards/playsports/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "education",
@@ -44195,7 +44195,7 @@
    "country": "US"
   },
   {
-   "company": "Schrödinger",
+   "company": "Schr\u00f6dinger",
    "url": "https://boards-api.greenhouse.io/v1/boards/schrdinger/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -45130,7 +45130,7 @@
    "country": "US"
   },
   {
-   "company": "Sol de Janeiro Future SolStars – Early Careers Program",
+   "company": "Sol de Janeiro Future SolStars \u2013 Early Careers Program",
    "url": "https://boards-api.greenhouse.io/v1/boards/soldejaneirointernship/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -46996,7 +46996,7 @@
    "country": "US"
   },
   {
-   "company": "The Pokémon Company International",
+   "company": "The Pok\u00e9mon Company International",
    "url": "https://boards-api.greenhouse.io/v1/boards/pokemoncareers/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "retail",
@@ -47343,7 +47343,7 @@
    "country": "multi"
   },
   {
-   "company": "TooJay’s Deli • Bakery • Restaurant",
+   "company": "TooJay\u2019s Deli \u2022 Bakery \u2022 Restaurant",
    "url": "https://boards-api.greenhouse.io/v1/boards/toojaysdeli/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "hospitality",
@@ -49993,27 +49993,27 @@
    "country": "multi"
   },
   {
-   "company": "Zócalo Health",
+   "company": "Z\u00f3calo Health",
    "url": "https://boards-api.greenhouse.io/v1/boards/zocalohealth/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
   },
   {
-   "company": "ília",
+   "company": "\u00edlia",
    "url": "https://boards-api.greenhouse.io/v1/boards/ilia/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "telecoms",
    "country": "BR"
   },
   {
-   "company": "Ōura",
+   "company": "\u014cura",
    "url": "https://boards-api.greenhouse.io/v1/boards/oura/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "healthcare",
    "country": "US"
   },
   {
-   "company": "‎ConnectWise",
+   "company": "\u200eConnectWise",
    "url": "https://boards-api.greenhouse.io/v1/boards/connectwise/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "multi"
@@ -50392,7 +50392,7 @@
    "platform": "icims"
   },
   {
-   "company": "Aktuelle jobmuligheder på {virksomhed}",
+   "company": "Aktuelle jobmuligheder p\u00e5 {virksomhed}",
    "url": "https://careers-dn-merlinentertainments.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "hospitality"
@@ -52004,7 +52004,7 @@
    "platform": "icims"
   },
   {
-   "company": "CECO Environmental 的职位列表",
+   "company": "CECO Environmental \u7684\u804c\u4f4d\u5217\u8868",
    "url": "https://careers-chn-cecoenviro.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -53084,7 +53084,7 @@
    "sector": "retail"
   },
   {
-   "company": "Elizabeth Seton Children’s",
+   "company": "Elizabeth Seton Children\u2019s",
    "url": "https://careers-setonchildrens.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "healthcare"
@@ -54477,7 +54477,7 @@
    "country": "US"
   },
   {
-   "company": "Horizons Window Fashions • B&amp;W Window Fashions • Careers • Job Listings at Springs Window Fashions",
+   "company": "Horizons Window Fashions \u2022 B&amp;W Window Fashions \u2022 Careers \u2022 Job Listings at Springs Window Fashions",
    "url": "https://careers-horizon.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "country": "US"
@@ -55480,13 +55480,13 @@
    "platform": "icims"
   },
   {
-   "company": "Live! Casino·Hotel (Mdcareers Livech)",
+   "company": "Live! Casino\u00b7Hotel (Mdcareers Livech)",
    "url": "https://mdcareers-livech.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "hospitality"
   },
   {
-   "company": "Live! Casino·Hotel (Phlcareers Livech)",
+   "company": "Live! Casino\u00b7Hotel (Phlcareers Livech)",
    "url": "https://phlcareers-livech.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "hospitality"
@@ -55801,7 +55801,7 @@
    "platform": "icims"
   },
   {
-   "company": "McCarthy Tétrault LLP",
+   "company": "McCarthy T\u00e9trault LLP",
    "url": "https://careers-mccarthyca.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "legal"
@@ -56626,7 +56626,7 @@
    "platform": "icims"
   },
   {
-   "company": "Offres d'emploi chez McCarthy Tétrault LLP",
+   "company": "Offres d'emploi chez McCarthy T\u00e9trault LLP",
    "url": "https://frenchexternal-mccarthyca.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "legal"
@@ -56638,12 +56638,12 @@
    "sector": "energy"
   },
   {
-   "company": "Offres d’emploi chez {Expleo} (Expleo Jobs Fr Fr)",
+   "company": "Offres d\u2019emploi chez {Expleo} (Expleo Jobs Fr Fr)",
    "url": "https://expleo-jobs-fr-fr.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
   {
-   "company": "Offres d’emploi chez {Expleo} (Expleo Jobs Ma Fr)",
+   "company": "Offres d\u2019emploi chez {Expleo} (Expleo Jobs Ma Fr)",
    "url": "https://expleo-jobs-ma-fr.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -57877,7 +57877,7 @@
    "sector": "healthcare"
   },
   {
-   "company": "Santé à domicile Ontario",
+   "company": "Sant\u00e9 \u00e0 domicile Ontario",
    "url": "https://healthcareathomejobs-fr.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "healthcare"
@@ -59494,7 +59494,7 @@
    "country": "multi"
   },
   {
-   "company": "Trinseo LLC 职位列表",
+   "company": "Trinseo LLC \u804c\u4f4d\u5217\u8868",
    "url": "https://cn-apaccareers-trinseo.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims"
   },
@@ -60005,7 +60005,7 @@
    "platform": "icims"
   },
   {
-   "company": "VIER PFOTEN International- Gemeinnützige Privatstiftung",
+   "company": "VIER PFOTEN International- Gemeinn\u00fctzige Privatstiftung",
    "url": "https://careers-four-paws.icims.com/jobs/search?ss=1&in_iframe=1",
    "platform": "icims",
    "sector": "finance"
@@ -64003,7 +64003,7 @@
    "country": "AE"
   },
   {
-   "company": "Dürr Group",
+   "company": "D\u00fcrr Group",
    "url": "https://fa-eurk-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
    "country": "DE"
@@ -65197,7 +65197,7 @@
    "country": "US"
   },
   {
-   "company": "Klépierre",
+   "company": "Kl\u00e9pierre",
    "url": "https://fa-ewfm-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
    "sector": "finance",
@@ -66382,7 +66382,7 @@
    "country": "US"
   },
   {
-   "company": "Site carrière externe sodiaal",
+   "company": "Site carri\u00e8re externe sodiaal",
    "url": "https://fa-epmr-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
    "country": "FR"
@@ -66555,7 +66555,7 @@
    "country": "multi"
   },
   {
-   "company": "Startek®",
+   "company": "Startek\u00ae",
    "url": "https://fa-evuf-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
    "country": "IN"
@@ -66709,7 +66709,7 @@
    "country": "UK"
   },
   {
-   "company": "Te Herenga Waka—Victoria University of Wellington",
+   "company": "Te Herenga Waka\u2014Victoria University of Wellington",
    "url": "https://ejye.fa.ap1.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=200,sortBy=POSTING_DATES_DESC",
    "platform": "oracle",
    "sector": "education",
@@ -70268,7 +70268,7 @@
    "country": "DE"
   },
   {
-   "company": "GÖRG",
+   "company": "G\u00d6RG",
    "url": "https://goerg-partnerschaft-von-rechtsanwaelten.jobs.personio.de/xml",
    "platform": "personio",
    "sector": "finance",
@@ -71318,7 +71318,7 @@
    "platform": "personio"
   },
   {
-   "company": "KSI für Mess- und Sensortechnik Meinsberg e.V.",
+   "company": "KSI f\u00fcr Mess- und Sensortechnik Meinsberg e.V.",
    "url": "https://ksisensors.jobs.personio.de/xml",
    "platform": "personio"
   },
@@ -75626,7 +75626,7 @@
    "country": "multi"
   },
   {
-   "company": "Adèle Express MTL",
+   "company": "Ad\u00e8le Express MTL",
    "url": "https://adeleexpressfr.recruitee.com/api/offers/",
    "platform": "recruitee",
    "country": "CA"
@@ -77128,7 +77128,7 @@
    "country": "BE"
   },
   {
-   "company": "ENERVIE – Südwestfalen Energie und Wasser AG",
+   "company": "ENERVIE \u2013 S\u00fcdwestfalen Energie und Wasser AG",
    "url": "https://enerviesudwestfalenenergieundwasserag.recruitee.com/api/offers/",
    "platform": "recruitee",
    "sector": "media",
@@ -80621,7 +80621,7 @@
    "platform": "recruitee"
   },
   {
-   "company": "VRT Partnerschaft mbB Wirtschaftsprüfer Steuerberater Rechtsanwälte",
+   "company": "VRT Partnerschaft mbB Wirtschaftspr\u00fcfer Steuerberater Rechtsanw\u00e4lte",
    "url": "https://vrtlinzbachloecherbachundpartner.recruitee.com/api/offers/",
    "platform": "recruitee"
   },
@@ -82295,7 +82295,7 @@
    "country": "DE"
   },
   {
-   "company": "Barrière",
+   "company": "Barri\u00e8re",
    "url": "https://api.smartrecruiters.com/v1/companies/barriere/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "FR"
@@ -82393,7 +82393,7 @@
    "country": "multi"
   },
   {
-   "company": "BEW Berliner Energie und Wärme GmbH",
+   "company": "BEW Berliner Energie und W\u00e4rme GmbH",
    "url": "https://api.smartrecruiters.com/v1/companies/bew/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "DE"
@@ -82611,7 +82611,7 @@
    "domain": "caci.co.uk"
   },
   {
-   "company": "Caffè Nero",
+   "company": "Caff\u00e8 Nero",
    "url": "https://api.smartrecruiters.com/v1/companies/caffenero/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "hospitality",
@@ -82733,7 +82733,7 @@
    "country": "US"
   },
   {
-   "company": "Cerfrance Brocéliande",
+   "company": "Cerfrance Broc\u00e9liande",
    "url": "https://api.smartrecruiters.com/v1/companies/cerfrancebroceliande/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -82750,7 +82750,7 @@
    "country": "CH"
   },
   {
-   "company": "CF Montréal",
+   "company": "CF Montr\u00e9al",
    "url": "https://api.smartrecruiters.com/v1/companies/cfmontreal/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "education",
@@ -82790,7 +82790,7 @@
    "country": "DE"
   },
   {
-   "company": "Chiquita Brands International Sàrl",
+   "company": "Chiquita Brands International S\u00e0rl",
    "url": "https://api.smartrecruiters.com/v1/companies/chiquitabrandsinternationalsrl/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "multi"
@@ -83461,7 +83461,7 @@
    "domain": "estio.co.uk"
   },
   {
-   "company": "Etablissements publics pour l’intégration",
+   "company": "Etablissements publics pour l\u2019int\u00e9gration",
    "url": "https://api.smartrecruiters.com/v1/companies/etablissementspublicspourlintegration/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "CH"
@@ -83762,7 +83762,7 @@
    "country": "US"
   },
   {
-   "company": "Gesellschaft für Gesundheit und Pädagogik mbH",
+   "company": "Gesellschaft f\u00fcr Gesundheit und P\u00e4dagogik mbH",
    "url": "https://api.smartrecruiters.com/v1/companies/gesellschaftfrgesundheitundpdagogikmbh/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "media"
@@ -84076,7 +84076,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Hôpitaux Universitaires de Genève",
+   "company": "H\u00f4pitaux Universitaires de Gen\u00e8ve",
    "url": "https://api.smartrecruiters.com/v1/companies/hug/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "healthcare",
@@ -84183,14 +84183,6 @@
    "country": "US"
   },
   {
-   "company": "Informa",
-   "url": "https://api.smartrecruiters.com/v1/companies/InformaGroupPlc/postings?limit=100",
-   "platform": "smartrecruiters",
-   "sector": "media",
-   "country": "UK",
-   "domain": "informa.com"
-  },
-  {
    "company": "Informa Group Plc.",
    "url": "https://api.smartrecruiters.com/v1/companies/informagroupplc/postings?limit=100",
    "platform": "smartrecruiters",
@@ -84223,7 +84215,7 @@
    "country": "US"
   },
   {
-   "company": "Ingérop",
+   "company": "Ing\u00e9rop",
    "url": "https://api.smartrecruiters.com/v1/companies/ingrop/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "construction",
@@ -84482,7 +84474,7 @@
    "country": "multi"
   },
   {
-   "company": "Kinougarde-Complétude",
+   "company": "Kinougarde-Compl\u00e9tude",
    "url": "https://api.smartrecruiters.com/v1/companies/epiktet/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "FR"
@@ -84650,7 +84642,7 @@
    "domain": "lgcgroup.com"
   },
   {
-   "company": "LGI Healthcare Solutions Santé Inc.",
+   "company": "LGI Healthcare Solutions Sant\u00e9 Inc.",
    "url": "https://api.smartrecruiters.com/v1/companies/lgihealthcaresolutionssanteinc/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "healthcare"
@@ -84666,7 +84658,7 @@
    "platform": "smartrecruiters"
   },
   {
-   "company": "Lifted, an Upwork Company™",
+   "company": "Lifted, an Upwork Company\u2122",
    "url": "https://api.smartrecruiters.com/v1/companies/liftedanupworkcompany/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "retail",
@@ -84794,7 +84786,7 @@
    "domain": "macdonaldhotels.co.uk"
   },
   {
-   "company": "Macher Serviços em Tecnologia EIRELI",
+   "company": "Macher Servi\u00e7os em Tecnologia EIRELI",
    "url": "https://api.smartrecruiters.com/v1/companies/macherserviosemtecnologiaeireli/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "telecoms"
@@ -85077,7 +85069,7 @@
    "country": "PT"
   },
   {
-   "company": "naturéO",
+   "company": "natur\u00e9O",
    "url": "https://api.smartrecruiters.com/v1/companies/natureo/postings?limit=100",
    "platform": "smartrecruiters"
   },
@@ -85170,14 +85162,6 @@
    "country": "multi"
   },
   {
-   "company": "Nielsen",
-   "url": "https://api.smartrecruiters.com/v1/companies/TheNielsenCompany/postings?limit=100",
-   "platform": "smartrecruiters",
-   "sector": "technology",
-   "country": "UK",
-   "domain": "nielsen.com"
-  },
-  {
    "company": "Nielseniq",
    "url": "https://api.smartrecruiters.com/v1/companies/nielseniq/postings?limit=100",
    "platform": "smartrecruiters",
@@ -85228,7 +85212,7 @@
    "country": "US"
   },
   {
-   "company": "N’AGE",
+   "company": "N\u2019AGE",
    "url": "https://api.smartrecruiters.com/v1/companies/nage1/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "DK"
@@ -85732,14 +85716,14 @@
    "country": "DE"
   },
   {
-   "company": "Reitmans (Canada) Ltée/Ltd",
+   "company": "Reitmans (Canada) Lt\u00e9e/Ltd",
    "url": "https://api.smartrecruiters.com/v1/companies/reitmanscanadalteltd/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "retail",
    "country": "multi"
   },
   {
-   "company": "Relais & Châteaux",
+   "company": "Relais & Ch\u00e2teaux",
    "url": "https://api.smartrecruiters.com/v1/companies/relaischateaux/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "hospitality",
@@ -85998,7 +85982,7 @@
    "country": "NL"
   },
   {
-   "company": "Schréder",
+   "company": "Schr\u00e9der",
    "url": "https://api.smartrecruiters.com/v1/companies/schrder/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "multi"
@@ -86473,13 +86457,13 @@
    "country": "CA"
   },
   {
-   "company": "Ströer SE & Co. KGaA (Ströer Gruppe)",
+   "company": "Str\u00f6er SE & Co. KGaA (Str\u00f6er Gruppe)",
    "url": "https://api.smartrecruiters.com/v1/companies/strersecokgaastrergruppe/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "DE"
   },
   {
-   "company": "Stäubli",
+   "company": "St\u00e4ubli",
    "url": "https://api.smartrecruiters.com/v1/companies/staubligroup/postings?limit=100",
    "platform": "smartrecruiters",
    "country": "US"
@@ -86646,7 +86630,7 @@
    "country": "multi"
   },
   {
-   "company": "Thalia Bücher GmbH",
+   "company": "Thalia B\u00fccher GmbH",
    "url": "https://api.smartrecruiters.com/v1/companies/thaliabchergmbh1/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "transport",
@@ -87137,7 +87121,7 @@
    "country": "US"
   },
   {
-   "company": "Voyage Privé",
+   "company": "Voyage Priv\u00e9",
    "url": "https://api.smartrecruiters.com/v1/companies/voyagepriv/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "media",
@@ -87405,7 +87389,7 @@
    "domain": "wtwco.com"
   },
   {
-   "company": "Wüest Partner",
+   "company": "W\u00fcest Partner",
    "url": "https://api.smartrecruiters.com/v1/companies/wuestpartner/postings?limit=100",
    "platform": "smartrecruiters",
    "sector": "construction",
@@ -87689,7 +87673,7 @@
    "country": "FR"
   },
   {
-   "company": "Maison Lutétia",
+   "company": "Maison Lut\u00e9tia",
    "url": "https://maisonlutetia.teamtailor.com/jobs.rss?per_page=200",
    "platform": "teamtailor",
    "sector": "media",
@@ -87721,7 +87705,7 @@
    "country": "UK"
   },
   {
-   "company": "Protector Försäkring Sverige",
+   "company": "Protector F\u00f6rs\u00e4kring Sverige",
    "url": "https://protectorforsakringsverige.teamtailor.com/jobs.rss?per_page=200",
    "platform": "teamtailor",
    "country": "SE"
@@ -98687,7 +98671,7 @@
    "country": "US"
   },
   {
-   "company": "Admiralbeverage",
+   "company": "Teton Distributors",
    "url": "https://admiralbeverage.wd5.myworkdayjobs.com/wday/cxs/admiralbeverage/Teton_External_Career/jobs",
    "platform": "workday"
   },
@@ -98766,12 +98750,6 @@
    "country": "US"
   },
   {
-   "company": "Ag",
-   "url": "https://ag.wd3.myworkdayjobs.com/wday/cxs/ag/airbus/jobs",
-   "platform": "workday",
-   "country": "multi"
-  },
-  {
    "company": "Agcbio",
    "url": "https://agcbio.wd5.myworkdayjobs.com/wday/cxs/agcbio/agcbio_careers/jobs",
    "platform": "workday",
@@ -98796,7 +98774,7 @@
    "country": "multi"
   },
   {
-   "company": "Agoc",
+   "company": "Armstrong Group",
    "url": "https://agoc.wd5.myworkdayjobs.com/wday/cxs/agoc/External/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -98883,7 +98861,7 @@
    "country": "multi"
   },
   {
-   "company": "Alcority",
+   "company": "Traditions Health",
    "url": "https://alcority.wd1.myworkdayjobs.com/wday/cxs/alcority/TraditionsHealth/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -98948,7 +98926,7 @@
    "country": "AU"
   },
   {
-   "company": "Alliancewd",
+   "company": "Renault Group",
    "url": "https://alliancewd.wd3.myworkdayjobs.com/wday/cxs/alliancewd/renault-group-careers/jobs",
    "platform": "workday"
   },
@@ -99003,7 +98981,7 @@
    "country": "multi"
   },
   {
-   "company": "Alterra",
+   "company": "June Mountain",
    "url": "https://alterra.wd1.myworkdayjobs.com/wday/cxs/alterra/JuneMountain/jobs",
    "platform": "workday",
    "sector": "education",
@@ -99108,7 +99086,7 @@
    "country": "multi"
   },
   {
-   "company": "Amherst",
+   "company": "Folger Shakespeare Library",
    "url": "https://amherst.wd5.myworkdayjobs.com/wday/cxs/amherst/FSL_Employment_Opportunities/jobs",
    "platform": "workday"
   },
@@ -99222,7 +99200,7 @@
    "country": "US"
   },
   {
-   "company": "Archgroup",
+   "company": "Arch Capital Group Ltd",
    "url": "https://archgroup.wd1.myworkdayjobs.com/wday/cxs/archgroup/Careers/jobs",
    "platform": "workday",
    "sector": "education",
@@ -99321,7 +99299,7 @@
    "country": "US"
   },
   {
-   "company": "Artbrew",
+   "company": "ABV",
    "url": "https://artbrew.wd501.myworkdayjobs.com/wday/cxs/artbrew/Southern_Tier/jobs",
    "platform": "workday",
    "country": "US"
@@ -99644,7 +99622,7 @@
    "country": "US"
   },
   {
-   "company": "Basecamp",
+   "company": "ECMC Group",
    "url": "https://basecamp.wd1.myworkdayjobs.com/wday/cxs/basecamp/ECMC/jobs",
    "platform": "workday",
    "country": "US"
@@ -99679,7 +99657,7 @@
    "country": "multi"
   },
   {
-   "company": "Bb",
+   "company": "BlackBerry Limited",
    "url": "https://bb.wd3.myworkdayjobs.com/wday/cxs/bb/Student/jobs",
    "platform": "workday",
    "country": "MY"
@@ -99705,7 +99683,7 @@
    "country": "US"
   },
   {
-   "company": "Bcbsma",
+   "company": "Blue Cross Blue Shield",
    "url": "https://bcbsma.wd5.myworkdayjobs.com/wday/cxs/bcbsma/bcbsma/jobs",
    "platform": "workday",
    "sector": "media",
@@ -99771,13 +99749,13 @@
    "sector": "education"
   },
   {
-   "company": "Begacheese",
+   "company": "Bega Group",
    "url": "https://begacheese.wd3.myworkdayjobs.com/wday/cxs/begacheese/Bega_Careers/jobs",
    "platform": "workday",
    "country": "AU"
   },
   {
-   "company": "Beigene",
+   "company": "BeOne",
    "url": "https://beigene.wd5.myworkdayjobs.com/wday/cxs/beigene/BeiGene/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -99823,7 +99801,7 @@
    "country": "US"
   },
   {
-   "company": "Bhs",
+   "company": "Baptist Health Rehabilitation Hospital",
    "url": "https://bhs.wd1.myworkdayjobs.com/wday/cxs/bhs/careers/jobs",
    "platform": "workday",
    "country": "US"
@@ -100233,7 +100211,7 @@
    "country": "US"
   },
   {
-   "company": "Canadian Imperial Bank of Commerce",
+   "company": "CIBC",
    "url": "https://cibc.wd3.myworkdayjobs.com/wday/cxs/cibc/search/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -100279,7 +100257,7 @@
    "sector": "healthcare"
   },
   {
-   "company": "Capgroup",
+   "company": "Capital Group",
    "url": "https://capgroup.wd1.myworkdayjobs.com/wday/cxs/capgroup/capitalgroupcareers/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -100387,13 +100365,6 @@
    "country": "US"
   },
   {
-   "company": "Cc",
-   "url": "https://cc.wd3.myworkdayjobs.com/wday/cxs/cc/chanelcareers/jobs",
-   "platform": "workday",
-   "sector": "retail",
-   "country": "FR"
-  },
-  {
    "company": "Ccrcca",
    "url": "https://ccrcca.wd1.myworkdayjobs.com/wday/cxs/ccrcca/careers/jobs",
    "platform": "workday",
@@ -100401,7 +100372,7 @@
    "country": "US"
   },
   {
-   "company": "Cecentertainment",
+   "company": "Chuck E. Cheese",
    "url": "https://cecentertainment.wd5.myworkdayjobs.com/wday/cxs/cecentertainment/CEC_Careers/jobs",
    "platform": "workday",
    "country": "US"
@@ -100727,14 +100698,14 @@
    "country": "US"
   },
   {
-   "company": "Cnoinc",
+   "company": "CNO Financial Group",
    "url": "https://cnoinc.wd5.myworkdayjobs.com/wday/cxs/cnoinc/Careers/jobs",
    "platform": "workday",
    "sector": "finance",
    "country": "US"
   },
   {
-   "company": "Cnx",
+   "company": "Concentrix CVG Corporation",
    "url": "https://cnx.wd1.myworkdayjobs.com/wday/cxs/cnx/external_global/jobs",
    "platform": "workday",
    "country": "ES"
@@ -100747,7 +100718,7 @@
    "country": "multi"
   },
   {
-   "company": "Coke",
+   "company": "Coca-Cola Company",
    "url": "https://coke.wd1.myworkdayjobs.com/wday/cxs/coke/coca-cola-careers/jobs",
    "platform": "workday",
    "sector": "retail",
@@ -100774,7 +100745,7 @@
    "country": "US"
   },
   {
-   "company": "Comfortsystemsusa",
+   "company": "EAS",
    "url": "https://comfortsystemsusa.wd1.myworkdayjobs.com/wday/cxs/comfortsystemsusa/EAScareers/jobs",
    "platform": "workday",
    "country": "US"
@@ -100797,7 +100768,7 @@
    "platform": "workday"
   },
   {
-   "company": "Condé Nast",
+   "company": "Cond\u00e9 Nast",
    "url": "https://condenast.wd115.myworkdayjobs.com/wday/cxs/condenast/CondeCareers/jobs",
    "platform": "workday",
    "sector": "media",
@@ -100980,19 +100951,13 @@
    "domain": "csgi.com"
   },
   {
-   "company": "Csgi",
-   "url": "https://csgi.wd5.myworkdayjobs.com/wday/cxs/csgi/csgcareers/jobs",
-   "platform": "workday",
-   "country": "multi"
-  },
-  {
    "company": "Csl",
    "url": "https://csl.wd1.myworkdayjobs.com/wday/cxs/csl/csl_external/jobs",
    "platform": "workday",
    "country": "multi"
   },
   {
-   "company": "Csusystem",
+   "company": "Colorado State University",
    "url": "https://csusystem.wd12.myworkdayjobs.com/wday/cxs/csusystem/fortcollins_careers/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -101145,7 +101110,7 @@
    "country": "IE"
   },
   {
-   "company": "Deluxe",
+   "company": "Wausau Financial Systems Inc",
    "url": "https://deluxe.wd5.myworkdayjobs.com/wday/cxs/deluxe/usa_can/jobs",
    "platform": "workday",
    "country": "US"
@@ -101158,14 +101123,6 @@
   },
   {
    "company": "Dentsu UK",
-   "url": "https://dentsuaegis.wd3.myworkdayjobs.com/wday/cxs/dentsuaegis/DAN_GLOBAL/jobs",
-   "platform": "workday",
-   "sector": "media",
-   "country": "UK",
-   "domain": "dentsu.com"
-  },
-  {
-   "company": "Dentsuaegis",
    "url": "https://dentsuaegis.wd3.myworkdayjobs.com/wday/cxs/dentsuaegis/dan_global/jobs",
    "platform": "workday",
    "sector": "media",
@@ -101449,7 +101406,7 @@
    "country": "US"
   },
   {
-   "company": "Emerysapp",
+   "company": "Rummel Construction",
    "url": "https://emerysapp.wd501.myworkdayjobs.com/wday/cxs/emerysapp/RUM/jobs",
    "platform": "workday",
    "sector": "construction",
@@ -101628,7 +101585,7 @@
    "country": "DK"
   },
   {
-   "company": "Eventimgroup",
+   "company": "KPS Group",
    "url": "https://eventimgroup.wd3.myworkdayjobs.com/wday/cxs/eventimgroup/kps/jobs",
    "platform": "workday"
   },
@@ -101697,13 +101654,6 @@
    "sector": "education"
   },
   {
-   "company": "Fca",
-   "url": "https://fca.wd3.myworkdayjobs.com/wday/cxs/fca/fca_careers/jobs",
-   "platform": "workday",
-   "sector": "finance",
-   "country": "UK"
-  },
-  {
    "company": "Fccfac",
    "url": "https://fccfac.wd3.myworkdayjobs.com/wday/cxs/fccfac/careers-carrieres/jobs",
    "platform": "workday"
@@ -101733,7 +101683,7 @@
    "country": "US"
   },
   {
-   "company": "Ffd",
+   "company": "Fairfield University",
    "url": "https://ffd.wd1.myworkdayjobs.com/wday/cxs/ffd/employmentopportunities/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -101789,7 +101739,7 @@
    "country": "US"
   },
   {
-   "company": "Fil",
+   "company": "Fidelity Canada",
    "url": "https://fil.wd3.myworkdayjobs.com/wday/cxs/fil/fidelitycanada/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -101895,7 +101845,7 @@
    "country": "US"
   },
   {
-   "company": "Flcancer",
+   "company": "FCS Campus",
    "url": "https://flcancer.wd1.myworkdayjobs.com/wday/cxs/flcancer/FLCancer_Careers/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -101915,13 +101865,13 @@
    "country": "US"
   },
   {
-   "company": "Flextronics",
+   "company": "Anord Mardix",
    "url": "https://flextronics.wd1.myworkdayjobs.com/wday/cxs/flextronics/Anord_Mardix_Careers/jobs",
    "platform": "workday",
    "country": "multi"
   },
   {
-   "company": "Flg",
+   "company": "Goodlife",
    "url": "https://flg.wd105.myworkdayjobs.com/wday/cxs/flg/GLHC/jobs",
    "platform": "workday",
    "country": "AU"
@@ -101980,7 +101930,7 @@
    "country": "US"
   },
   {
-   "company": "Foundationccc",
+   "company": "California Community College",
    "url": "https://foundationccc.wd1.myworkdayjobs.com/wday/cxs/foundationccc/fccc-careers/jobs",
    "platform": "workday",
    "sector": "education",
@@ -102113,7 +102063,7 @@
    "country": "US"
   },
   {
-   "company": "Gehc",
+   "company": "GE HealthCare",
    "url": "https://gehc.wd5.myworkdayjobs.com/wday/cxs/gehc/GEHC_ExternalSite/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -102214,7 +102164,7 @@
    "country": "DE"
   },
   {
-   "company": "Ghc",
+   "company": "Residential Home Health and Hospice",
    "url": "https://ghc.wd1.myworkdayjobs.com/wday/cxs/ghc/Residential_Careers/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -102227,7 +102177,7 @@
    "country": "IN"
   },
   {
-   "company": "Gi",
+   "company": "Global Infrastructure",
    "url": "https://gi.wd1.myworkdayjobs.com/wday/cxs/gi/Global_Infrastructure/jobs",
    "platform": "workday",
    "sector": "energy",
@@ -102287,7 +102237,7 @@
    "country": "multi"
   },
   {
-   "company": "Globalhr",
+   "company": "RTX",
    "url": "https://globalhr.wd5.myworkdayjobs.com/wday/cxs/globalhr/REC_RTX_Ext_Gateway/jobs",
    "platform": "workday",
    "country": "US"
@@ -102330,7 +102280,7 @@
    "country": "DE"
   },
   {
-   "company": "Golimitless",
+   "company": "IMB",
    "url": "https://golimitless.wd1.myworkdayjobs.com/wday/cxs/golimitless/Staff_External_career_site/jobs",
    "platform": "workday",
    "country": "US"
@@ -102527,7 +102477,7 @@
    "platform": "workday"
   },
   {
-   "company": "Hcmportal",
+   "company": "UPS",
    "url": "https://hcmportal.wd5.myworkdayjobs.com/wday/cxs/hcmportal/Search/jobs",
    "platform": "workday",
    "country": "US"
@@ -102630,7 +102580,7 @@
    "country": "multi"
   },
   {
-   "company": "Hklaw",
+   "company": "Holland & Knight",
    "url": "https://hklaw.wd1.myworkdayjobs.com/wday/cxs/hklaw/Holland_Knight/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -102693,7 +102643,7 @@
    "country": "US"
   },
   {
-   "company": "Hospicecom",
+   "company": "Compassus",
    "url": "https://hospicecom.wd5.myworkdayjobs.com/wday/cxs/hospicecom/Volunteer/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -102713,7 +102663,7 @@
    "domain": "aplan.co.uk"
   },
   {
-   "company": "Howdenjoinerylimited",
+   "company": "Howdens",
    "url": "https://howdenjoinerylimited.wd103.myworkdayjobs.com/wday/cxs/howdenjoinerylimited/howdenscareers/jobs",
    "platform": "workday",
    "country": "UK"
@@ -102810,7 +102760,7 @@
    "country": "US"
   },
   {
-   "company": "Hyvee",
+   "company": "Amber Specialty Pharmacy",
    "url": "https://hyvee.wd1.myworkdayjobs.com/wday/cxs/hyvee/AmberSpecialtyPharmacyHy-VeePharmacySolutions/jobs",
    "platform": "workday",
    "sector": "retail",
@@ -102843,7 +102793,7 @@
    "country": "UK"
   },
   {
-   "company": "Icmarc",
+   "company": "MissionSquare",
    "url": "https://icmarc.wd108.myworkdayjobs.com/wday/cxs/icmarc/MissionSquare/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -102855,7 +102805,7 @@
    "platform": "workday"
   },
   {
-   "company": "Ielfreight",
+   "company": "Integrity Express Logistics",
    "url": "https://ielfreight.wd1.myworkdayjobs.com/wday/cxs/ielfreight/external/jobs",
    "platform": "workday",
    "sector": "transport",
@@ -102907,7 +102857,7 @@
    "country": "IT"
   },
   {
-   "company": "Ilitch",
+   "company": "Champion Foods",
    "url": "https://ilitch.wd5.myworkdayjobs.com/wday/cxs/ilitch/Champion-Foods/jobs",
    "platform": "workday",
    "sector": "transport",
@@ -102927,7 +102877,7 @@
    "country": "US"
   },
   {
-   "company": "Imh",
+   "company": "Intermountain Health",
    "url": "https://imh.wd108.myworkdayjobs.com/wday/cxs/imh/IntermountainCareers/jobs",
    "platform": "workday",
    "country": "US"
@@ -103080,13 +103030,6 @@
    "domain": "ipsen.co.uk"
   },
   {
-   "company": "Iqvia",
-   "url": "https://iqvia.wd1.myworkdayjobs.com/wday/cxs/iqvia/iqvia/jobs",
-   "platform": "workday",
-   "sector": "healthcare",
-   "country": "multi"
-  },
-  {
    "company": "IQVIA Holdings",
    "url": "https://iqvia.wd1.myworkdayjobs.com/wday/cxs/iqvia/IQVIA/jobs",
    "platform": "workday",
@@ -103112,7 +103055,7 @@
    "country": "US"
   },
   {
-   "company": "Issgovernance",
+   "company": "ISS STOXX",
    "url": "https://issgovernance.wd1.myworkdayjobs.com/wday/cxs/issgovernance/isscareers/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -103139,7 +103082,7 @@
    "country": "multi"
   },
   {
-   "company": "Ivyrehab",
+   "company": "Ivy Health",
    "url": "https://ivyrehab.wd5.myworkdayjobs.com/wday/cxs/ivyrehab/ivy_rehab/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -103184,7 +103127,7 @@
    "country": "US"
   },
   {
-   "company": "Jci",
+   "company": "Johnson Controls",
    "url": "https://jci.wd5.myworkdayjobs.com/wday/cxs/jci/jci/jobs",
    "platform": "workday",
    "sector": "transport",
@@ -103198,7 +103141,7 @@
    "country": "US"
   },
   {
-   "company": "Jdgroupnam",
+   "company": "Hibbett",
    "url": "https://jdgroupnam.wd1.myworkdayjobs.com/wday/cxs/jdgroupnam/HSPRETAIL/jobs",
    "platform": "workday",
    "sector": "retail",
@@ -103264,7 +103207,7 @@
    "country": "US"
   },
   {
-   "company": "Jscfcu",
+   "company": "Wellby Financial",
    "url": "https://jscfcu.wd1.myworkdayjobs.com/wday/cxs/jscfcu/JSC/jobs",
    "platform": "workday",
    "country": "US"
@@ -103329,20 +103272,14 @@
    "country": "US"
   },
   {
-   "company": "Keybank",
+   "company": "KeyCorp",
    "url": "https://keybank.wd5.myworkdayjobs.com/wday/cxs/keybank/external_career_site/jobs",
    "platform": "workday",
    "sector": "finance",
    "country": "US"
   },
   {
-   "company": "KeyCorp",
-   "url": "https://keybank.wd5.myworkdayjobs.com/wday/cxs/keybank/External_Career_Site/jobs",
-   "platform": "workday",
-   "country": "US"
-  },
-  {
-   "company": "Kidsii",
+   "company": "Kids2",
    "url": "https://kidsii.wd1.myworkdayjobs.com/wday/cxs/kidsii/KidsII_Career_Site/jobs",
    "platform": "workday",
    "country": "US"
@@ -103354,20 +103291,13 @@
    "country": "US"
   },
   {
-   "company": "Kimberlyclark",
-   "url": "https://kimberlyclark.wd1.myworkdayjobs.com/wday/cxs/kimberlyclark/GLOBAL/jobs",
-   "platform": "workday",
-   "sector": "transport",
-   "country": "multi"
-  },
-  {
    "company": "Kiongroup",
    "url": "https://kiongroup.wd3.myworkdayjobs.com/wday/cxs/kiongroup/KION_SCS/jobs",
    "platform": "workday",
    "country": "multi"
   },
   {
-   "company": "Kissusa",
+   "company": "KISS Beauty Group",
    "url": "https://kissusa.wd12.myworkdayjobs.com/wday/cxs/kissusa/KISS_Careers_External/jobs",
    "platform": "workday",
    "country": "US"
@@ -103446,13 +103376,6 @@
    "country": "UK"
   },
   {
-   "company": "Landolakes",
-   "url": "https://landolakes.wd1.myworkdayjobs.com/wday/cxs/landolakes/landolakes/jobs",
-   "platform": "workday",
-   "sector": "energy",
-   "country": "US"
-  },
-  {
    "company": "Langara",
    "url": "https://langara.wd10.myworkdayjobs.com/wday/cxs/langara/External_Employment_Opportunities/jobs",
    "platform": "workday",
@@ -103469,13 +103392,6 @@
    "url": "https://latitudefinancial.wd3.myworkdayjobs.com/wday/cxs/latitudefinancial/careers/jobs",
    "platform": "workday",
    "country": "AU"
-  },
-  {
-   "company": "Lbg",
-   "url": "https://lbg.wd3.myworkdayjobs.com/wday/cxs/lbg/lbg_Careers/jobs",
-   "platform": "workday",
-   "sector": "finance",
-   "country": "UK"
   },
   {
    "company": "Learfield",
@@ -103741,7 +103657,7 @@
    "country": "UK"
   },
   {
-   "company": "Macfound",
+   "company": "MacArthur",
    "url": "https://macfound.wd1.myworkdayjobs.com/wday/cxs/macfound/MAC_FOUND_EXT_CAREERS/jobs",
    "platform": "workday",
    "country": "US"
@@ -103843,7 +103759,7 @@
    "country": "US"
   },
   {
-   "company": "Marquardbahls",
+   "company": "Advario",
    "url": "https://marquardbahls.wd3.myworkdayjobs.com/wday/cxs/marquardbahls/Advario/jobs",
    "platform": "workday",
    "sector": "transport",
@@ -103872,7 +103788,7 @@
    "country": "US"
   },
   {
-   "company": "Marylandconnect",
+   "company": "Bowie State University",
    "url": "https://marylandconnect.wd1.myworkdayjobs.com/wday/cxs/marylandconnect/BSU_Careers/jobs",
    "platform": "workday",
    "sector": "education"
@@ -103926,7 +103842,7 @@
    "domain": "ipaccess.com"
   },
   {
-   "company": "Maxar",
+   "company": "Vantor",
    "url": "https://maxar.wd1.myworkdayjobs.com/wday/cxs/maxar/Vantor/jobs",
    "platform": "workday",
    "country": "US"
@@ -104031,7 +103947,7 @@
    "sector": "healthcare"
   },
   {
-   "company": "Meredith",
+   "company": "People Inc",
    "url": "https://meredith.wd5.myworkdayjobs.com/wday/cxs/meredith/EXT/jobs",
    "platform": "workday",
    "country": "US"
@@ -104158,14 +104074,14 @@
    "country": "CA"
   },
   {
-   "company": "Mmc",
+   "company": "US051 Mercer Investments LLC",
    "url": "https://mmc.wd1.myworkdayjobs.com/wday/cxs/mmc/careers/jobs",
    "platform": "workday",
    "sector": "education",
    "country": "multi"
   },
   {
-   "company": "Modaxo",
+   "company": "Vontas",
    "url": "https://modaxo.wd3.myworkdayjobs.com/wday/cxs/modaxo/vontas/jobs",
    "platform": "workday",
    "sector": "telecoms",
@@ -104231,12 +104147,6 @@
    "platform": "workday"
   },
   {
-   "company": "Moog",
-   "url": "https://moog.wd5.myworkdayjobs.com/wday/cxs/moog/moog_external_career_site/jobs",
-   "platform": "workday",
-   "country": "US"
-  },
-  {
    "company": "Moog Aircraft Group",
    "url": "https://moog.wd5.myworkdayjobs.com/wday/cxs/moog/MOOG_External_Career_Site/jobs",
    "platform": "workday",
@@ -104283,7 +104193,7 @@
    "country": "US"
   },
   {
-   "company": "Mq",
+   "company": "Macquarie",
    "url": "https://mq.wd3.myworkdayjobs.com/wday/cxs/mq/CareersatMQ/jobs",
    "platform": "workday",
    "sector": "finance"
@@ -104309,7 +104219,7 @@
    "country": "multi"
   },
   {
-   "company": "Msfg",
+   "company": "MONY Group",
    "url": "https://msfg.wd3.myworkdayjobs.com/wday/cxs/msfg/Careers/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -104376,7 +104286,7 @@
    "country": "multi"
   },
   {
-   "company": "Mvh",
+   "company": "Vet et Nous",
    "url": "https://mvh.wd115.myworkdayjobs.com/wday/cxs/mvh/VeNCarreers/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -104389,7 +104299,7 @@
    "country": "multi"
   },
   {
-   "company": "Myhrabc",
+   "company": "Cencora",
    "url": "https://myhrabc.wd5.myworkdayjobs.com/wday/cxs/myhrabc/global/jobs",
    "platform": "workday",
    "sector": "retail",
@@ -104408,14 +104318,14 @@
    "country": "US"
   },
   {
-   "company": "Myview",
+   "company": "Choice Properties REIT",
    "url": "https://myview.wd3.myworkdayjobs.com/wday/cxs/myview/Choice_Properties_REIT/jobs",
    "platform": "workday",
    "sector": "finance",
    "country": "CA"
   },
   {
-   "company": "Myworkdaycenter",
+   "company": "MediaNews Group",
    "url": "https://myworkdaycenter.wd5.myworkdayjobs.com/wday/cxs/myworkdaycenter/MNG/jobs",
    "platform": "workday",
    "country": "US"
@@ -104564,7 +104474,7 @@
    "domain": "themanchester.co.uk"
   },
   {
-   "company": "Newchartertech",
+   "company": "CTSI",
    "url": "https://newchartertech.wd12.myworkdayjobs.com/wday/cxs/newchartertech/CTSI/jobs",
    "platform": "workday"
   },
@@ -104698,13 +104608,13 @@
    "country": "multi"
   },
   {
-   "company": "Nphosting",
+   "company": "Breckenridge Village",
    "url": "https://nphosting.wd5.myworkdayjobs.com/wday/cxs/nphosting/BVTCareers/jobs",
    "platform": "workday",
    "country": "US"
   },
   {
-   "company": "Nrel",
+   "company": "NLR",
    "url": "https://nrel.wd5.myworkdayjobs.com/wday/cxs/nrel/NLR/jobs",
    "platform": "workday",
    "sector": "media",
@@ -104717,7 +104627,7 @@
    "sector": "education"
   },
   {
-   "company": "Ntrs",
+   "company": "Northern Trust",
    "url": "https://ntrs.wd1.myworkdayjobs.com/wday/cxs/ntrs/northerntrust/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -104742,7 +104652,7 @@
    "country": "SG"
   },
   {
-   "company": "Nus",
+   "company": "National University",
    "url": "https://nus.wd1.myworkdayjobs.com/wday/cxs/nus/careers/jobs",
    "platform": "workday",
    "country": "US"
@@ -104774,7 +104684,7 @@
    "country": "multi"
   },
   {
-   "company": "Nwis",
+   "company": "Nightwing",
    "url": "https://nwis.wd12.myworkdayjobs.com/wday/cxs/nwis/NW/jobs",
    "platform": "workday",
    "country": "US"
@@ -104830,7 +104740,7 @@
    "country": "US"
   },
   {
-   "company": "Odl",
+   "company": "Robover",
    "url": "https://odl.wd5.myworkdayjobs.com/wday/cxs/odl/robover/jobs",
    "platform": "workday"
   },
@@ -104842,7 +104752,7 @@
    "country": "UK"
   },
   {
-   "company": "Okgov",
+   "company": "Oklahoma State Government",
    "url": "https://okgov.wd1.myworkdayjobs.com/wday/cxs/okgov/okgovjobs/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -104981,7 +104891,7 @@
    "country": "US"
   },
   {
-   "company": "Oxford",
+   "company": "Lilly Pulitzer",
    "url": "https://oxford.wd5.myworkdayjobs.com/wday/cxs/oxford/LillyPulitzer/jobs",
    "platform": "workday",
    "sector": "retail",
@@ -105254,14 +105164,14 @@
    "country": "US"
   },
   {
-   "company": "Pointquestgroup",
+   "company": "Nyman Associates",
    "url": "https://pointquestgroup.wd108.myworkdayjobs.com/wday/cxs/pointquestgroup/Nyman_Careers/jobs",
    "platform": "workday",
    "sector": "healthcare",
    "country": "US"
   },
   {
-   "company": "Polaris",
+   "company": "Teton Outfitters",
    "url": "https://polaris.wd5.myworkdayjobs.com/wday/cxs/polaris/TetonJobs/jobs",
    "platform": "workday",
    "country": "US"
@@ -105379,14 +105289,6 @@
   },
   {
    "company": "Prysmian UK",
-   "url": "https://prysmiangroup.wd3.myworkdayjobs.com/wday/cxs/prysmiangroup/Careers/jobs",
-   "platform": "workday",
-   "sector": "telecoms",
-   "country": "UK",
-   "domain": "prysmiangroup.com"
-  },
-  {
-   "company": "Prysmiangroup",
    "url": "https://prysmiangroup.wd3.myworkdayjobs.com/wday/cxs/prysmiangroup/careers/jobs",
    "platform": "workday",
    "country": "IT"
@@ -105503,7 +105405,7 @@
    "country": "US"
   },
   {
-   "company": "Ramsay Health Care UK",
+   "company": "0104 Clifton Park Hospital",
    "url": "https://ramsayhealthcare.wd3.myworkdayjobs.com/wday/cxs/ramsayhealthcare/Ramsay_Careers/jobs",
    "platform": "workday",
    "sector": "healthcare",
@@ -105551,7 +105453,7 @@
    "country": "US"
   },
   {
-   "company": "Rb",
+   "company": "Federal Reserve System",
    "url": "https://rb.wd5.myworkdayjobs.com/wday/cxs/rb/frs/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -105584,7 +105486,7 @@
    "country": "UK"
   },
   {
-   "company": "Redbulltechnology",
+   "company": "Red Bull Advanced Technologies Limited",
    "url": "https://redbulltechnology.wd3.myworkdayjobs.com/wday/cxs/redbulltechnology/RB_Racing/jobs",
    "platform": "workday",
    "country": "UK"
@@ -105683,7 +105585,7 @@
    "country": "multi"
   },
   {
-   "company": "Revantage",
+   "company": "Perform Properties",
    "url": "https://revantage.wd1.myworkdayjobs.com/wday/cxs/revantage/Perform/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -105829,7 +105731,7 @@
    "country": "IE"
   },
   {
-   "company": "Rosennxt",
+   "company": "Rosenxt",
    "url": "https://rosennxt.wd103.myworkdayjobs.com/wday/cxs/rosennxt/rosenxt/jobs",
    "platform": "workday",
    "sector": "energy",
@@ -105849,12 +105751,12 @@
    "country": "AU"
   },
   {
-   "company": "Rrhs",
+   "company": "Rochester Regional Health",
    "url": "https://rrhs.wd5.myworkdayjobs.com/wday/cxs/rrhs/rrh/jobs",
    "platform": "workday"
   },
   {
-   "company": "Rsllc",
+   "company": "RSL LifeCare",
    "url": "https://rsllc.wd3.myworkdayjobs.com/wday/cxs/rsllc/rsllc/jobs",
    "platform": "workday",
    "country": "AU"
@@ -105926,7 +105828,7 @@
    "country": "ES"
   },
   {
-   "company": "Saks",
+   "company": "Exemplar Luxury Group",
    "url": "https://saks.wd1.myworkdayjobs.com/wday/cxs/saks/careers_at_saks/jobs",
    "platform": "workday",
    "country": "US"
@@ -106047,7 +105949,7 @@
    "country": "multi"
   },
   {
-   "company": "Scm",
+   "company": "Davies",
    "url": "https://scm.wd3.myworkdayjobs.com/wday/cxs/scm/DaviesNorthAmerica/jobs",
    "platform": "workday",
    "country": "CA"
@@ -106070,7 +105972,7 @@
    "sector": "education"
   },
   {
-   "company": "Sec",
+   "company": "Samsung Electronics",
    "url": "https://sec.wd3.myworkdayjobs.com/wday/cxs/sec/Samsung_Careers/jobs",
    "platform": "workday",
    "sector": "retail",
@@ -106082,12 +105984,6 @@
    "platform": "workday",
    "sector": "finance",
    "country": "US"
-  },
-  {
-   "company": "Sedgwick",
-   "url": "https://sedgwick.wd1.myworkdayjobs.com/wday/cxs/sedgwick/sedgwick/jobs",
-   "platform": "workday",
-   "country": "multi"
   },
   {
    "company": "Sedgwick UK",
@@ -106152,7 +106048,7 @@
    "country": "US"
   },
   {
-   "company": "Sggovterp",
+   "company": "Singapore Public Service",
    "url": "https://sggovterp.wd102.myworkdayjobs.com/wday/cxs/sggovterp/publicservicecareers/jobs",
    "platform": "workday",
    "sector": "education",
@@ -106218,7 +106114,7 @@
    "country": "US"
   },
   {
-   "company": "Silabs",
+   "company": "Silicon Labs",
    "url": "https://silabs.wd1.myworkdayjobs.com/wday/cxs/silabs/siliconlabscareers/jobs",
    "platform": "workday",
    "sector": "telecoms",
@@ -106370,13 +106266,6 @@
    "platform": "workday"
   },
   {
-   "company": "Smithnephew",
-   "url": "https://smithnephew.wd5.myworkdayjobs.com/wday/cxs/smithnephew/external/jobs",
-   "platform": "workday",
-   "sector": "transport",
-   "country": "US"
-  },
-  {
    "company": "Snapchat",
    "url": "https://snapchat.wd1.myworkdayjobs.com/wday/cxs/snapchat/snap/jobs",
    "platform": "workday",
@@ -106410,7 +106299,7 @@
    "country": "multi"
   },
   {
-   "company": "Sok",
+   "company": "S Group",
    "url": "https://sok.wd502.myworkdayjobs.com/wday/cxs/sok/S-ryhman-avoimet-tyopaikat/jobs",
    "platform": "workday",
    "sector": "hospitality",
@@ -106631,13 +106520,6 @@
    "country": "US"
   },
   {
-   "company": "Stryker",
-   "url": "https://stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/strykercareers/jobs",
-   "platform": "workday",
-   "sector": "construction",
-   "country": "multi"
-  },
-  {
    "company": "Stryker UK",
    "url": "https://stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/StrykerCareers/jobs",
    "platform": "workday",
@@ -106769,7 +106651,7 @@
    "country": "US"
   },
   {
-   "company": "Talentmanagementsolution",
+   "company": "CORA Group",
    "url": "https://talentmanagementsolution.wd3.myworkdayjobs.com/wday/cxs/talentmanagementsolution/cora_group/jobs",
    "platform": "workday",
    "country": "CA"
@@ -106783,7 +106665,7 @@
    "domain": "talktalk.co.uk"
   },
   {
-   "company": "Tamus",
+   "company": "Texas A&M University-Texarkana",
    "url": "https://tamus.wd1.myworkdayjobs.com/wday/cxs/tamus/TAMUT_External/jobs",
    "platform": "workday",
    "country": "US"
@@ -106829,7 +106711,7 @@
    "country": "CA"
   },
   {
-   "company": "Tcsedsystem",
+   "company": "University of Western States",
    "url": "https://tcsedsystem.wd1.myworkdayjobs.com/wday/cxs/tcsedsystem/UWS/jobs",
    "platform": "workday",
    "country": "US"
@@ -106904,7 +106786,7 @@
    "country": "US"
   },
   {
-   "company": "Tencent",
+   "company": "LIGHTSPEED STUDIOS",
    "url": "https://tencent.wd1.myworkdayjobs.com/wday/cxs/tencent/Lightspeed/jobs",
    "platform": "workday",
    "sector": "media",
@@ -107002,13 +106884,6 @@
    "domain": "thomsonreuters.com"
   },
   {
-   "company": "Thomsonreuters",
-   "url": "https://thomsonreuters.wd5.myworkdayjobs.com/wday/cxs/thomsonreuters/external_career_site/jobs",
-   "platform": "workday",
-   "sector": "retail",
-   "country": "multi"
-  },
-  {
    "company": "Thrivent Financial",
    "url": "https://thrivent.wd5.myworkdayjobs.com/wday/cxs/thrivent/external/jobs",
    "platform": "workday",
@@ -107030,20 +106905,20 @@
    "country": "US"
   },
   {
-   "company": "Tieto",
+   "company": "Vivicta",
    "url": "https://tieto.wd3.myworkdayjobs.com/wday/cxs/tieto/Tieto_Careers_External_Site/jobs",
    "platform": "workday",
    "country": "FI"
   },
   {
-   "company": "Tihinsurance",
+   "company": "CRC Group",
    "url": "https://tihinsurance.wd1.myworkdayjobs.com/wday/cxs/tihinsurance/crc_careers/jobs",
    "platform": "workday",
    "sector": "finance",
    "country": "US"
   },
   {
-   "company": "Tiketdotcom",
+   "company": "Blibli",
    "url": "https://tiketdotcom.wd3.myworkdayjobs.com/wday/cxs/tiketdotcom/Tiket_Careers/jobs",
    "platform": "workday",
    "country": "ID"
@@ -107118,7 +106993,7 @@
    "country": "UK"
   },
   {
-   "company": "Trafigura",
+   "company": "Puma Energy",
    "url": "https://trafigura.wd3.myworkdayjobs.com/wday/cxs/trafigura/Puma_Energy_Careers/jobs",
    "platform": "workday",
    "sector": "construction",
@@ -107228,7 +107103,7 @@
    "sector": "healthcare"
   },
   {
-   "company": "Tsys",
+   "company": "Global Payments Inc",
    "url": "https://tsys.wd1.myworkdayjobs.com/wday/cxs/tsys/TSYS/jobs",
    "platform": "workday",
    "country": "multi"
@@ -107265,7 +107140,7 @@
    "country": "US"
   },
   {
-   "company": "Uasys",
+   "company": "Arkansas Community College",
    "url": "https://uasys.wd5.myworkdayjobs.com/wday/cxs/uasys/UACCHT_External_Career_Site/jobs",
    "platform": "workday",
    "sector": "finance"
@@ -107321,7 +107196,7 @@
    "platform": "workday"
   },
   {
-   "company": "Ulsselu",
+   "company": "Southeastern Louisiana University",
    "url": "https://ulsselu.wd503.myworkdayjobs.com/wday/cxs/ulsselu/SLU/jobs",
    "platform": "workday"
   },
@@ -107459,7 +107334,7 @@
    "country": "multi"
   },
   {
-   "company": "Uofl",
+   "company": "University of Louisville",
    "url": "https://uofl.wd1.myworkdayjobs.com/wday/cxs/uofl/UofLCareerSite/jobs",
    "platform": "workday",
    "sector": "healthcare"
@@ -107547,7 +107422,7 @@
    "sector": "education"
   },
   {
-   "company": "Usyd",
+   "company": "University of Sydney",
    "url": "https://usyd.wd105.myworkdayjobs.com/wday/cxs/usyd/USYD_EXTERNAL_CAREER_SITE/jobs",
    "platform": "workday",
    "sector": "education"
@@ -107677,17 +107552,11 @@
    "country": "US"
   },
   {
-   "company": "Vhaca",
+   "company": "VHA Home HealthCare",
    "url": "https://vhaca.wd10.myworkdayjobs.com/wday/cxs/vhaca/VHA/jobs",
    "platform": "workday",
    "sector": "healthcare",
    "country": "CA"
-  },
-  {
-   "company": "Viatris",
-   "url": "https://viatris.wd5.myworkdayjobs.com/wday/cxs/viatris/external/jobs",
-   "platform": "workday",
-   "country": "US"
   },
   {
    "company": "Viatris UK",
@@ -107763,21 +107632,21 @@
    "country": "US"
   },
   {
-   "company": "Vumc",
+   "company": "Vanderbilt University",
    "url": "https://vumc.wd1.myworkdayjobs.com/wday/cxs/vumc/vumccareers/jobs",
    "platform": "workday",
    "sector": "healthcare",
    "country": "US"
   },
   {
-   "company": "Vwr",
+   "company": "Avantor",
    "url": "https://vwr.wd1.myworkdayjobs.com/wday/cxs/vwr/avantorjobs/jobs",
    "platform": "workday",
    "sector": "transport",
    "country": "multi"
   },
   {
-   "company": "Vystarcu",
+   "company": "VyStar Credit Union",
    "url": "https://vystarcu.wd1.myworkdayjobs.com/wday/cxs/vystarcu/Careers/jobs",
    "platform": "workday",
    "country": "US"
@@ -107847,7 +107716,7 @@
    "country": "multi"
   },
   {
-   "company": "Websteronline",
+   "company": "Ametros",
    "url": "https://websteronline.wd12.myworkdayjobs.com/wday/cxs/websteronline/AmetrosExternalCareerSite/jobs",
    "platform": "workday"
   },
@@ -107947,7 +107816,7 @@
    "country": "US"
   },
   {
-   "company": "Wgl",
+   "company": "AltaGas",
    "url": "https://wgl.wd5.myworkdayjobs.com/wday/cxs/wgl/AltaGas/jobs",
    "platform": "workday",
    "sector": "finance",
@@ -108143,7 +108012,7 @@
    "country": "US"
   },
   {
-   "company": "Xboxgaming",
+   "company": "Activision Central Tech",
    "url": "https://xboxgaming.wd1.myworkdayjobs.com/wday/cxs/xboxgaming/CentralTech/jobs",
    "platform": "workday"
   },
@@ -108257,7 +108126,7 @@
    "country": "US"
   },
   {
-   "company": "Össur UK",
+   "company": "\u00d6ssur UK",
    "url": "https://ossur.wd3.myworkdayjobs.com/wday/cxs/ossur/OssurCareersGlobal/jobs",
    "platform": "workday",
    "sector": "healthcare",
