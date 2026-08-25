@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only. Without this block the job inherits whatever the repository's
+# default is, which for a repo created before February 2023 is read/write on
+# everything, handed to a job whose whole purpose is to execute code from a
+# pull request.
+permissions:
+  contents: read
+
 jobs:
   test:
     # Every version the package claims to support, and Windows.
@@ -19,6 +26,10 @@ jobs:
     # encoding uses cp1252 there, and the shipped source list already contains
     # an accented company name.
     runs-on: ${{ matrix.os }}
+    # The suite runs in about a minute. Five of these start at once, so a hung
+    # one holding a runner for the default six hours costs five runners, and on
+    # a free account that is the whole allowance.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

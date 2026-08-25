@@ -7,6 +7,24 @@ name: validate sources
 # Runs weekly, checks every bundled source is alive and is still the company it
 # claims to be, and opens a pull request when something has changed. Nothing is
 # removed without a human merging it.
+#
+# This is the only unattended job here that deletes anything, so read the
+# guards below before changing them. There are four, and they are in different
+# places on purpose:
+#
+#  1. `count_jobs` returns a reason as well as a count, so a failed fetch is
+#     never counted as an empty board.
+#  2. A TLS handshake failure sets a `transport` flag and forces the verdict to
+#     "unreachable". A handshake that never completed is a fact about the
+#     machine running `validate`, not about the employer, and it is never
+#     evidence a board is dead however many Sundays in a row it reports.
+#  3. `validate --prune` refuses outright when more than a quarter of the list
+#     comes back empty, which is what a platform outage or a rate-limited
+#     runner looks like.
+#  4. The step below re-checks every row about to be deleted, and blocks the
+#     pull request rather than the prune. The prune only rewrites a file on the
+#     runner; nothing is destroyed until that file is committed, so the pull
+#     request is the last point where this can still be stopped.
 
 on:
   schedule:
@@ -16,10 +34,20 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # For the failure report at the end. A weekly job that nobody watches needs
+  # somewhere to put "this did not work" that is not the Actions tab.
+  issues: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # 17,810 entries, paced per host. apply.workable.com holds 2,094 of them at
+    # 0.7 requests a second, which is a 50 minute floor on that host alone
+    # before the 4,078 Greenhouse boards are counted. The last scheduled run
+    # took 1m45s against a 653 entry list, so nothing about the old runtime
+    # says anything about this one. The step limit is below the job limit so
+    # that the failure report at the end still gets to run.
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +59,12 @@ jobs:
       - run: pip install -e .
 
       - name: Check every source
+        timeout-minutes: 300
+        # No --force-prune. That flag exists to override the "more than a
+        # quarter of the list came back empty" refusal, which is the one thing
+        # standing between a rate-limited runner and a pull request that
+        # deletes several thousand live employers. It has no business in an
+        # unattended job.
         run: |
           job-radar validate --file sources/sources.json \
                              --report out/validation.json \
@@ -39,43 +73,137 @@ jobs:
       - name: Summarise
         id: sum
         run: |
-          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
-          import json
-          r = json.load(open("out/validation.json"))
-          print(f"## Source validation\n")
-          print(f"- checked: **{r['total']}**")
-          print(f"- dead: **{len(r['dead'])}**")
-          print(f"- identity mismatch: **{len(r['mismatch'])}**\n")
-          if r["dead"]:
-              print("### Dead\n")
-              for d in r["dead"][:60]:
-                  print(f"- `{d['company']}`, {d['url']}")
-          if r["mismatch"]:
-              print("\n### Wrong company?\n")
-              print("These boards respond, but do not look like who we think they are.")
-              print("That is how a Florida schools operator ended up filed as a London")
-              print("payments company.\n")
-              for d in r["mismatch"][:60]:
-                  print(f"- `{d['company']}`, {d['note']}")
+          python3 - <<'PY'
+          import json, os
+
+          r = json.load(open("out/validation.json", encoding="utf-8"))
+          rows = r.get("rows") or []
+          dead = r.get("dead") or []
+          mismatch = r.get("mismatch") or []
+          unreachable = [x for x in rows if x.get("verdict") == "unreachable"]
+          transport = [x for x in rows if x.get("transport")]
+
+          # Every row that is about to be deleted, checked again here rather
+          # than trusted. `--prune` keys on the verdict; this keys on the
+          # per-row `prunable` flag and on the transport alert, so a future
+          # refactor that lets a handshake failure reach the "dead" branch is
+          # caught by a different piece of code than the one that broke.
+          unsafe = [d for d in dead
+                    if d.get("transport")
+                    or d.get("verdict") != "dead"
+                    or d.get("prunable") is False]
+
+          # An absolute cap, because the refusal inside `validate` is a share.
+          # A quarter of 653 sources was 163; a quarter of 17,810 is 4,452, so
+          # the same rule that was tight on the old list would now wave through
+          # a pull request deleting four thousand employers. Weekly attrition
+          # on a list this size is tens, not hundreds.
+          CAP = 250
+          refuse = bool(unsafe) or len(dead) > CAP
+
+          out = []
+          out.append("## Source validation\n")
+          out.append(f"- checked: **{r['total']}**")
+          out.append(f"- dead (answered, no postings): **{len(dead)}**")
+          # Never shown before, which meant a run where nine thousand boards
+          # could not be read looked exactly like a clean one.
+          out.append(f"- unreachable (left alone): **{len(unreachable)}**")
+          out.append(f"- TLS handshake failures (never prunable): **{len(transport)}**")
+          out.append(f"- identity mismatch: **{len(mismatch)}**\n")
+          if unsafe:
+              out.append("### Refusing to open a pull request\n")
+              out.append(f"{len(unsafe)} row(s) queued for deletion are not safe "
+                         "to delete. A board that could not be reached is not a "
+                         "board that is gone.\n")
+              for d in unsafe[:40]:
+                  out.append(f"- `{d['company']}`, verdict `{d.get('verdict')}`, "
+                             f"transport `{d.get('transport')}`")
+              out.append("")
+          elif len(dead) > CAP:
+              out.append("### Refusing to open a pull request\n")
+              out.append(f"{len(dead)} dead of {r['total']} is above the cap of "
+                         f"{CAP}. That many boards do not die in a week: this is "
+                         "a platform change or a throttled runner. Nothing was "
+                         "committed. Re-run it, or run it from a laptop.\n")
+          if dead:
+              out.append("### Dead\n")
+              for d in dead[:60]:
+                  out.append(f"- `{d['company']}`, {d['url']}")
+          if mismatch:
+              out.append("\n### Wrong company?\n")
+              out.append("These boards respond, but do not look like who we think they are.")
+              out.append("That is how a Florida schools operator ended up filed as a London")
+              out.append("payments company.\n")
+              for d in mismatch[:60]:
+                  out.append(f"- `{d['company']}`, {d['note']}")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(out) + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"dead={len(dead)}\n")
+              f.write(f"unreachable={len(unreachable)}\n")
+              f.write(f"refuse={'true' if refuse else 'false'}\n")
           PY
-          echo "dead=$(python3 -c "import json;print(len(json.load(open('out/validation.json'))['dead']))")" >> "$GITHUB_OUTPUT"
 
       - name: Open a pull request
-        if: steps.sum.outputs.dead != '0'
+        if: steps.sum.outputs.dead != '0' && steps.sum.outputs.refuse != 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           branch: chore/validate-sources
+          # add-paths, so that a run which happened to leave anything else in
+          # the working tree cannot smuggle it into the commit. out/ holds the
+          # full report and is gitignored, but an ignore rule is not a reason
+          # to widen this.
+          add-paths: sources/sources.json
           title: "Prune ${{ steps.sum.outputs.dead }} dead source(s)"
           body: |
             Weekly source validation. Every bundled board was fetched and
             checked for live postings and for company identity.
 
-            Dead sources have been removed from `sources/sources.json`.
+            Dead sources have been removed from `sources/sources.json`. A
+            source is only dead if the board answered and had no postings.
+            ${{ steps.sum.outputs.unreachable }} source(s) could not be read at
+            all this week and were left exactly where they are: a timeout, a
+            429 or a TLS handshake failure is a fact about the runner, not
+            about the employer.
+
             Identity mismatches are listed in the run summary but left in
             place, because a mismatch needs a human to decide whether the
             token is wrong or the company simply renamed itself.
 
             Full report is in the workflow summary.
-          add-paths: sources/sources.json
           commit-message: "sources: prune dead boards"
           delete-branch: true
+
+      - name: Refuse the prune
+        # Deliberately after the pull request step, and deliberately fails the
+        # job. The prune has already rewritten the file on this runner, but
+        # nothing was committed and the runner is thrown away, so the source
+        # list upstream is untouched.
+        if: steps.sum.outputs.refuse == 'true'
+        run: |
+          echo "::error::Refusing to open a prune pull request: ${{ steps.sum.outputs.dead }} dead source(s), and rows that are not safe to delete. See the run summary. Nothing was committed."
+          exit 1
+
+      - name: Report a failed run
+        # Weekly, unattended, and it deletes things. A red tick on a page
+        # nobody opens is not a report.
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --title "Source validation failed: run ${{ github.run_id }}" \
+            --body "The weekly source validation did not finish, or refused to open its pull request. No sources were removed.
+
+          Log: ${RUN_URL}
+
+          The usual causes:
+
+          1. It refused to prune. Either more than 250 boards came back empty, or a row queued for deletion had a transport failure against it. Both mean a throttled runner or a platform change, not that many employers died in a week.
+          2. It ran past its 300 minute step limit. The list is 17,810 entries and apply.workable.com alone is a 50 minute floor.
+
+          The source list is unchanged either way. This issue is filed once per failed run and is safe to close." \
+            || echo "could not file an issue"

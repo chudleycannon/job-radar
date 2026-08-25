@@ -1,11 +1,23 @@
 name: scan
 
-# Fork this repo, edit config.yaml, then uncomment the `schedule:` block
-# below. It does NOT run on its own until you do: a fork inherits the
-# workflow with its cron disabled, which is deliberate so a fork does not
-# start hitting job boards the moment somebody clicks Fork.
+# Fork this repo, commit a `config.yaml`, then uncomment the `schedule:` block
+# below. It does NOT run on its own until you do: a fork inherits the workflow
+# with its cron disabled, which is deliberate so a fork does not start hitting
+# job boards the moment somebody clicks Fork.
 #
-# Two things worth knowing before you rely on it:
+# `config.yaml` is gitignored, so a fresh fork has no config at all and the
+# scan below stops on "No config at config.yaml". Committing it takes a
+# deliberate flag:
+#
+#     job-radar setup            # or copy config.example.yaml and edit it
+#     git add -f config.yaml     # the -f is required, it is an ignored file
+#     git commit -m "my config" && git push
+#
+# You do NOT need to add `state/`; the commit step below force-adds it on
+# every run. Put API keys in `config.local.yaml`, never in `config.yaml`: on a
+# public fork the committed config is readable by anyone.
+#
+# Two more things worth knowing before you rely on it:
 #
 #  * Actions runners share IP ranges with a very large number of other repos,
 #    so job boards throttle them sooner than they throttle your laptop. The
@@ -31,11 +43,11 @@ on:
   #   - cron: "0 7 * * 1-5"   # 07:00 UTC, weekdays
   workflow_dispatch:
 
-permissions:
-  contents: write     # commit state/seen.json
-  issues: write       # post new roles
-  pages: write
-  id-token: write
+# Declared per job rather than here. The scan job needs to write commits and
+# open issues; the publish job needs Pages and an OIDC token and nothing else.
+# Granting all four to both meant the step that fetches several thousand
+# third-party job boards held a token that could deploy the site.
+permissions: {}
 
 concurrency:
   group: scan
@@ -44,6 +56,18 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # commit state/seen.json
+      issues: write       # post new roles, and report a failed run
+    # A full pass over the bundled list is not quick: 2,094 of the 17,807
+    # boards are on apply.workable.com, which is paced at 0.7 requests a
+    # second, so that host alone is a 50 minute floor before anything else is
+    # counted. GitHub kills a job at 360 minutes regardless, so the useful
+    # thing is not a shorter deadline but a deadline that leaves the reporting
+    # steps room to run: the Scan step below gets 300 minutes, and if it burns
+    # them the job still has time to commit whatever state exists and to say
+    # that it failed.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
@@ -54,20 +78,52 @@ jobs:
 
       - run: pip install -e .
 
+      - name: Check there is a config to scan with
+        # `config.yaml` stopped being tracked on 2026-08-25 and is gitignored,
+        # so a fork that has not force-added its own gets a checkout with no
+        # config in it. Without this the run dies four minutes later inside the
+        # scan, on a message that tells a runner to go and run `job-radar
+        # setup` interactively, which is not a thing a runner can do.
+        run: |
+          if [ ! -f config.yaml ] && [ ! -f config.local.yaml ]; then
+            echo "::error::No config.yaml in this checkout. It is gitignored, so a fork has to commit it deliberately: job-radar setup, then git add -f config.yaml && git commit && git push. See the comment at the top of this workflow."
+            exit 1
+          fi
+
       - name: Scan
+        id: scan
+        timeout-minutes: 300
         run: job-radar scan --out out
 
       - name: Commit what we have seen
+        # always(), so that state computed by a scan that then fell over in a
+        # later step is not thrown away. The guards below decide whether the
+        # file is worth committing; the outcome of the scan step does not.
+        if: always()
         run: |
           # state/ is gitignored so that the upstream repo never carries the
           # maintainer's own search history. A fork running this DOES need it
           # committed, or every run starts blank, nothing is ever "new", and
           # no issue is ever posted. So force-add it here rather than relying
           # on a status check that ignored files can never satisfy.
+          #
+          # Named file, not the directory. `git add -f state/` force-adds
+          # whatever else has been dropped in there, and the whole point of an
+          # ignore rule is that force-adding past it should be aimed at one
+          # thing you meant.
           if [ -f state/seen.json ]; then
+            # State is written with a plain write_text, so a scan killed at the
+            # timeout can leave a half-written file. Committing that is worse
+            # than committing nothing: the loader treats unparseable JSON as an
+            # empty state, so every role looks new again on the next run and
+            # the truncated file is then overwritten as though it were correct.
+            if ! python3 -c "import json;json.load(open('state/seen.json', encoding='utf-8'))" 2>/dev/null; then
+              echo "::error::state/seen.json is not valid JSON, so it was not committed. The scan was probably killed part-way through writing it."
+              exit 1
+            fi
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -f state/
+            git add -f state/seen.json
             if git diff --cached --quiet; then
               echo "no state change"
               exit 0
@@ -76,25 +132,44 @@ jobs:
             # A scan takes minutes, and anything landing on main meanwhile
             # makes this push a non-fast-forward. Rebase and retry rather than
             # failing the run and losing the state we just computed.
+            #
+            # `pushed` tracks whether any attempt worked. Without it the loop
+            # ended on the third failure and the step exited 0 with the status
+            # of `sleep`, so three rejected pushes reported a green tick over a
+            # run whose state never left the runner.
+            pushed=
             for i in 1 2 3; do
-              git push && break
+              if git push; then pushed=yes; break; fi
               echo "push rejected, rebasing (attempt $i)"
               git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || exit 1
               sleep 3
             done
+            if [ -z "$pushed" ]; then
+              echo "::error::state was committed locally but could not be pushed after 3 attempts. This run's scan history is lost."
+              exit 1
+            fi
           else
             echo "no state file was written"
           fi
 
       - name: Post new roles as an issue
+        if: steps.scan.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          NEW=$(python3 -c "import json;print(len(json.load(open('out/roles.json'))['new']))")
+          # roles.json only exists when `json` is one of the configured output
+          # formats. An html-only config used to reach this step and die on a
+          # FileNotFoundError traceback, which reads as a broken tool rather
+          # than as a setting.
+          if [ ! -f out/roles.json ]; then
+            echo "no out/roles.json, so there is nothing to post. Add 'json' to output.formats in your config if you want issues."
+            exit 0
+          fi
+          NEW=$(python3 -c "import json;print(len(json.load(open('out/roles.json', encoding='utf-8'))['new']))")
           if [ "$NEW" -gt 0 ]; then
             python3 - > body.md <<'PY'
           import json
-          d = json.load(open("out/roles.json"))
+          d = json.load(open("out/roles.json", encoding="utf-8"))
           print(f"{len(d['new'])} new role(s) since the last run.\n")
           for j in d["new"]:
               # salary_label is computed from the figures. The raw string is
@@ -111,24 +186,71 @@ jobs:
               print(f"\n<sub>{len(m['throttled'])} sources returned nothing but have "
                     f"returned jobs before, so they may be rate limited rather than empty.</sub>")
           PY
-            gh issue create --title "New roles: $(date -u +%Y-%m-%d) ($NEW)" --body-file body.md
+            # A fork with Issues turned off answers `gh issue create` with a
+            # 410 and used to fail the whole run here, which also skipped the
+            # dashboard upload below. The roles are the output of the run, so
+            # put them somewhere that always works before deciding the step
+            # failed.
+            if ! gh issue create --title "New roles: $(date -u +%Y-%m-%d) ($NEW)" --body-file body.md; then
+              echo "::warning::could not open an issue. The roles are in the run summary and in the dashboard artifact."
+              {
+                echo "## New roles (the issue could not be opened)"
+                echo
+                cat body.md
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "nothing new"
           fi
 
       # Always kept, and private: workflow artifacts are only visible to people
       # who can see the repo. This is the default way to get your dashboard.
+      #
+      # always(), because a run that broke somewhere is exactly the run whose
+      # partial output someone wants to look at.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: dashboard
           path: out
           retention-days: 14
+          if-no-files-found: ignore
 
       # Only built when you have opted in to publishing (see below).
       - uses: actions/upload-pages-artifact@v3
-        if: vars.PUBLISH_PAGES == 'true'
+        if: vars.PUBLISH_PAGES == 'true' && steps.scan.outcome == 'success'
         with:
           path: out
+
+      - name: Report a failed run
+        # Nobody watches the Actions tab. A scheduled run that goes red there
+        # is a red mark on a page that is not opened, so the scan can stop
+        # working for weeks while looking exactly like a quiet job market.
+        # An issue reaches the person who owns the fork.
+        #
+        # continue-on-error, so that a repo with Issues disabled does not turn
+        # one failure into two. The job is already failed by whatever failed;
+        # this step only reports it.
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --title "Scan failed: run ${{ github.run_id }}" \
+            --body "The scheduled scan did not finish. Nothing was scanned, or it stopped part-way, so no new roles were reported today.
+
+          Log: ${RUN_URL}
+
+          The usual causes, in the order they happen:
+
+          1. No \`config.yaml\` in the repo. It is gitignored, so a fork has to \`git add -f config.yaml\` once.
+          2. The scan ran past its 300 minute step limit. The bundled list is 17,807 boards and apply.workable.com alone is a 50 minute floor.
+          3. The state commit could not be pushed after three tries.
+
+          This issue is filed once per failed run and is safe to close." \
+            || echo "could not file an issue"
 
   publish:
     # OFF by default, and deliberately so.
@@ -148,6 +270,7 @@ jobs:
     if: vars.PUBLISH_PAGES == 'true'
     needs: scan
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}

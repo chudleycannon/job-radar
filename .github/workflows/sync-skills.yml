@@ -16,10 +16,16 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # For the failure report at the end.
+  issues: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # A shallow clone and an rsync. If this is still going after ten minutes
+    # something is wrong, and the default 360 minute limit would hold a runner
+    # for six hours to find that out.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +39,32 @@ jobs:
           rm -rf skills/rate-cv
           mkdir -p skills/rate-cv
           rsync -a --exclude '.git' --exclude '.github' /tmp/rate-cv/ skills/rate-cv/
-          sed -i -E "s|\| \`rate-cv\` \| \[maccydee/rate-cv\]\(https://github.com/maccydee/rate-cv\) \| \`[^\`]*\` \||| \`rate-cv\` | [maccydee/rate-cv](https://github.com/maccydee/rate-cv) | \`${REV}\` ||" skills/README.md || true
+          # This was a `sed -i -E "s|...|...|"` whose replacement text was a
+          # markdown table row, so it contained the delimiter. sed read the
+          # third `|` as the end of the substitution and the rest as flags,
+          # failed with "bad flag in substitute command", and `|| true`
+          # swallowed it. The vendored copy was being updated while the row
+          # recording which revision was vendored stayed pinned at acca44e,
+          # which is the one thing that table exists to say.
+          #
+          # No `|| true` now either. If the row is not there, the table has
+          # been edited and this needs a person, not a silent pass.
+          python3 - <<'PY'
+          import os, pathlib, re
+
+          p = pathlib.Path("skills/README.md")
+          text = p.read_text(encoding="utf-8")
+          pat = re.compile(
+              r"^(\| `rate-cv` \| \[maccydee/rate-cv\]"
+              r"\(https://github\.com/maccydee/rate-cv\) \| )`[^`]*`( \|)$", re.M)
+          new, n = pat.subn(lambda m: f"{m.group(1)}`{os.environ['REV']}`{m.group(2)}",
+                            text)
+          if n != 1:
+              raise SystemExit(
+                  f"skills/README.md: expected one rate-cv revision row, found {n}. "
+                  "The table was edited; update this workflow to match it.")
+          p.write_text(new, encoding="utf-8")
+          PY
 
       - name: Open a pull request if it drifted
         uses: peter-evans/create-pull-request@v6
@@ -52,3 +83,19 @@ jobs:
             skills/**
           commit-message: "skills: sync rate-cv to ${{ env.REV }}"
           delete-branch: true
+
+      - name: Report a failed run
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --title "Vendored skill sync failed: run ${{ github.run_id }}" \
+            --body "The weekly rate-cv sync did not finish, so \`skills/rate-cv\` may now be behind its own repository.
+
+          Log: ${RUN_URL}
+
+          Nothing was committed. This issue is filed once per failed run and is safe to close." \
+            || echo "could not file an issue"
