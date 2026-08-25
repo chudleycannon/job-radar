@@ -264,6 +264,55 @@ REGISTRY: list[Platform] = [
              "pass. Twenty results a page behind an opaque cursor; `limit` is "
              "a 400 and every other page-size name is accepted and ignored",
     ),
+    # Workable is the only one. Checked 2026-08-25, every claim below is a
+    # real response and not a reading of the vendor's documentation, because
+    # the documentation was wrong about SmartRecruiters in both directions.
+    #
+    # The prize was Greenhouse: 4,078 boards on this list against Workable's
+    # 2,094. Greenhouse does run the same thing Workable does, MyGreenhouse
+    # Jobs, a search across every board it hosts. It is behind a login.
+    # my.greenhouse.io/jobs/search.json answers 401 {"error":"You need to sign
+    # in or sign up before continuing."} and the HTML route 302s to
+    # /users/sign_in. So the aggregator exists and cannot be read.
+    #
+    # The rest, in board-count order, with what they actually answered:
+    #   ashby 2,607     jobs.ashbyhq.com/ is a 404 at the root; the only
+    #                   cross-board surface is the GraphQL endpoint the boards
+    #                   use, and introspection on it is disabled, so there is
+    #                   no search operation to find. No sitemap either.
+    #   icims, workday, oracle: not looked at here, employer-scoped by design.
+    #   personio 1,258  jobs.personio.com and jobs.personio.de are NXDOMAIN.
+    #                   There is no aggregator host to search.
+    #   breezy 1,191    breezy.hr/jobs is a CloudFront 403 "Request blocked",
+    #                   which is bot protection and is left alone.
+    #                   jobs.breezy.hr is not a portal, it is an ordinary
+    #                   tenant named "jobs" whose /json is an empty array.
+    #   recruitee 993   jobs.recruitee.com looks like an aggregator and is
+    #                   not: /api/offers/ is a 200 carrying ten Tellent
+    #                   postings, i.e. Recruitee's own parent company's board.
+    #                   Everything else on that host 302s to careers.tellent.com.
+    #   smartrecruiters 910
+    #                   The one the docs lie about. api.smartrecruiters.com
+    #                   /jobs is documented with a `q` full-text search and
+    #                   reads like a global one; it is 401 without a token and
+    #                   the token is a company's, so it searches that
+    #                   company's postings. The public Posting API is
+    #                   /v1/companies/{id}/postings, which is what the
+    #                   `smartrecruiters` entry above already fetches.
+    #   jobvite 257     jobs.jobvite.com/search 302s to search.jobvite.com,
+    #                   which 302s on to a marketing page. Nothing behind it.
+    #   teamtailor 58   api.teamtailor.com/v1/jobs is 401 and the key is
+    #                   per-tenant. The one feed that does span customers is
+    #                   an XML feed handed out to approved job-board partners
+    #                   by email, so it needs a business relationship.
+    #   lever 25+40     api.lever.co/v0/postings with no company is 404
+    #                   {"ok":false,"error":"Document not found"}.
+    #   pinpoint 38     jobs.pinpointhq.com/ is a 404.
+    #   bamboohr 1      jobs.bamboohr.com/ 302s to the marketing site.
+    #   jazzhr 0        applytojob.com 301s to jazzhr.com.
+    #
+    # The practical consequence: the 4,078 Greenhouse boards and the 2,607
+    # Ashby ones stay per-employer fetches. Only Workable can be collapsed.
     Platform(
         "nhs",
         r"jobs\.nhs\.uk/candidate/search",
