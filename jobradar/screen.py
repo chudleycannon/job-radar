@@ -148,8 +148,8 @@ _SPLIT = re.compile(r"[;|/]| or |\bor\b")
 
 # ---------------------------------------------------------------- place data
 #
-# What follows is lists, not more alternations. A tagging run over 17,834
-# boards read 433,955 live postings and 94,841 of them (21.9%) carried a
+# What follows is lists, not more alternations. A tagging run over the whole
+# bundled list read 433,955 live postings and 94,841 of them (21.9%) carried a
 # location this file could not place. The shapes behind that number are not
 # exotic: countries nobody had typed in yet, towns outside the dozen biggest
 # cities, and one widespread ATS convention that writes the country as a

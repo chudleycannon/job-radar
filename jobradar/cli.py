@@ -140,12 +140,12 @@ def cmd_scan(args) -> int:
     if throttled:
         _say(f"  ! {len(throttled)} sources look throttled (returned nothing "
              f"but have before): {', '.join(throttled[:6])}")
-    # Name the host, not just the boards. "2,095 sources look throttled" is a
+    # Name the host, not just the boards. "2,094 sources look throttled" is a
     # list of employers to squint at; "apply.workable.com has blocked you for
     # another 15h" is the actual fact, and it is the one that tells you the
     # boards are unknown today rather than empty. Measured live: Workable
     # answered 429 with Retry-After 57841 after a scan aimed every worker at
-    # it, and 2,095 boards came back with nothing for the rest of the run.
+    # it, and 2,094 boards came back with nothing for the rest of the run.
     blocks: dict[str, int] = {}
     for res in results:
         if not res.throttled:

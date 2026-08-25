@@ -51,11 +51,11 @@ _local = threading.local()
 
 
 # How many requests a second one host will take without answering 429. The
-# number is per host and not per scan, because the work is bimodal: 10,017 of
-# the 17,625 bundled sources sit on eight API hosts and the remaining ~7,584
-# hosts carry one board each. A single global concurrency number cannot serve
-# both. Set low enough for eight hosts it wastes an hour on the long tail; set
-# high enough for the long tail it turns into a burst against Greenhouse.
+# number is per host and not per scan, because the work is bimodal: 10,011 of
+# the 17,809 bundled sources sit on seven API hosts and roughly 7,748 hosts
+# carry one board each. A single global concurrency number cannot serve both.
+# Set low enough for seven hosts it wastes an hour on the long tail; set high
+# enough for the long tail it turns into a burst against Greenhouse.
 DEFAULT_PER_HOST_RPS = 3.0
 
 # Hosts that need less than the default. Workable is the strict one and this
@@ -69,7 +69,7 @@ PER_HOST_RPS = {"apply.workable.com": 0.7}
 
 # Workers, not requests per second. Politeness is the limiter's job now, so
 # this number only decides how many DIFFERENT hosts are in flight at once, and
-# on a list where 7,584 hosts hold one board each, four at a time is most of an
+# on a list where 7,748 hosts hold one board each, four at a time is most of an
 # hour spent waiting on other people's latency. Sixteen is chosen so the pool
 # still has workers free while some are parked waiting for a Workable slot: at
 # 12% of the list on a 0.7/s host, roughly two workers are parked at any moment.
@@ -85,8 +85,8 @@ class HostLimiter:
     """A minimum gap between requests to the same host, across all workers.
 
     Global concurrency is the wrong dial for this list. Raising it speeds up
-    the 7,584 hosts that hold one board each, and at the same time aims the
-    whole pool at `boards-api.greenhouse.io` for the 4,079 consecutive entries
+    the 7,748 hosts that hold one board each, and at the same time aims the
+    whole pool at `boards-api.greenhouse.io` for the 4,078 consecutive entries
     that live there, because the bundled source list is sorted into contiguous
     per-platform blocks. This decouples the two: the pool can be wide because
     each host is still paced on its own clock.
@@ -125,7 +125,7 @@ class HostLimiter:
         with 429 and `Retry-After: 57841`, a sixteen hour block, after a scan
         had aimed all four of its workers at that one host for an hour. The
         old code capped the wait at 30 seconds and retried twice, so each of
-        the 2,095 Workable sources cost 60 seconds of sleeping and returned
+        the 2,094 Workable sources cost 60 seconds of sleeping and returned
         nothing: 8.7 hours of a four worker pool spent asking a host that had
         already said no for the rest of the day.
         """
@@ -157,7 +157,7 @@ class HostLimiter:
         a 429 carrying no `Retry-After` at all, or one under MAX_RETRY_AFTER,
         left the host unrecorded and every remaining source on it repeated the
         whole retry-and-sleep cycle into the same closed door. On Workable's
-        2,095 sources that is the same arithmetic as the 8.7 hour bug the long
+        2,094 sources that is the same arithmetic as the 8.7 hour bug the long
         block was added to kill: the header is the only thing that differs, and
         a host is not obliged to send it.
 
@@ -237,11 +237,11 @@ def _thread_session() -> requests.Session:
     The pool used to be thrown away after every single request. `fetch_one`
     fell back to a fresh `requests.Session()` whenever a caller passed none,
     and the ordinary dispatch path passed none, so a full scan paid
-    a TCP connect and a TLS handshake 17,625 times over. Measured on this
+    a TCP connect and a TLS handshake 17,809 times over. Measured on this
     machine against boards-api.greenhouse.io: six requests took 13.72s with a
     new Session each and 1.08s with one reused Session, which is 2.29s per
     request against 0.18s. It lands hardest exactly where the volume is,
-    because 56% of the sources sit on eight API hosts.
+    because 56% of the sources sit on seven API hosts.
 
     Thread-local rather than one Session shared by every worker: a Session
     mutates its cookie jar and its header dict per request, and sharing that
@@ -250,7 +250,7 @@ def _thread_session() -> requests.Session:
     request.
 
     pool_connections is far above urllib3's default of 10 because the host mix
-    is bimodal: eight hosts carry 10,017 of the sources and roughly 7,584
+    is bimodal: seven hosts carry 10,011 of the sources and roughly 7,748
     hosts carry one each. At the default, one stretch of long-tail hosts
     evicts the keep-alive connection to Greenhouse, and the next Greenhouse
     board pays for a fresh handshake anyway, which is the entire cost this
@@ -364,7 +364,7 @@ def fetch_one(
             # A host that has already said no for the rest of the day is not
             # asked again. Reported as throttled rather than as an error, so
             # `detect_throttling` names it and the reader is told the board is
-            # UNKNOWN today. The alternative is what it replaces: 2,095 sources
+            # UNKNOWN today. The alternative is what it replaces: 2,094 sources
             # each sleeping 60 seconds into the same closed door and every one
             # of them coming back looking like a board with nothing on it.
             if lim is not None:
@@ -1209,8 +1209,8 @@ def pinned_to_one_page(counts: dict[str, int], sources: Iterable[Source]) -> lis
 def interleave_by_host(sources: list[Source]) -> list[Source]:
     """Spread each host's sources evenly across the queue.
 
-    The bundled list is sorted into contiguous per-platform blocks: all 2,095
-    Workable boards are one unbroken run, all 4,079 Greenhouse boards another.
+    The bundled list is sorted into contiguous per-platform blocks: all 2,094
+    Workable boards are one unbroken run, all 4,078 Greenhouse boards another.
     Submitted in that order, every worker in the pool is on the same host at
     the same time, and once each host is paced separately the run costs the SUM
     of the per-host times instead of the longest one. Observed on the unpaced
@@ -1218,10 +1218,10 @@ def interleave_by_host(sources: list[Source]) -> list[Source]:
     apply.workable.com and nothing else progressing at all.
 
     Each source is keyed by its fractional position within its own host, so a
-    host with 2,095 entries lands one every ~8 slots. Each host also gets its
+    host with 2,094 entries lands one every ~8 slots. Each host also gets its
     own starting offset, which is the part that is easy to leave out and wrong
     to: without it every host holding a single board keys to exactly 0.5, and
-    7,584 of them do, so they would all pile into the middle of the queue and
+    7,748 of them do, so they would all pile into the middle of the queue and
     leave both ends as solid blocks of the busy hosts. The offset is drawn from
     a fixed seed over the sorted host names, so the order is the same on every
     run and a scan is reproducible.
@@ -1257,13 +1257,13 @@ def fetch_all(
 ) -> list[Result]:
     out: list[Result] = []
     # Queued so that consecutive tasks land on different hosts. Without this,
-    # per-host pacing and a contiguous 4,079-entry Greenhouse block combine
+    # per-host pacing and a contiguous 4,078-entry Greenhouse block combine
     # into a pool where every worker is asleep waiting for the same host.
     queue = interleave_by_host(list(sources))
     limiter = HostLimiter(per_host_rps)
     # The old opening stagger, `(i % concurrency) * 0.05`, is gone. It only
     # ever delayed the first `concurrency` tasks, so at four workers it was
-    # 0.15 seconds once and nothing at all for the other 17,621 sources. The
+    # 0.15 seconds once and nothing at all for the other 17,805 sources. The
     # burst it was meant to prevent is now prevented per host, for the whole
     # run, rather than for the first 200 milliseconds of it.
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:

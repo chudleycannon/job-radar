@@ -30,15 +30,32 @@ pip install -e .
 job-radar setup
 ```
 
+## Requirements
+
+**Python 3.10 or newer.** `install.py` checks this before it does anything else.
+
+Scanning, filtering and the dashboard need nothing beyond that. The two
+dependencies are `requests` and `PyYAML`, and the bundled boards need no API
+key, no account and no browser.
+
+**The `claude` CLI is a separate prerequisite**, and only for the features that
+write or judge something: the **screen**, **tailored CV** and **cover letter**
+buttons in the dashboard, and the `job-radar rank` and `job-radar generate`
+commands. Those shell out to headless `claude -p` (see `jobradar/runner.py`),
+so they need [Claude Code](https://claude.com/claude-code) installed and signed
+in. Install it separately if you want them. Without it, everything else works
+in full, and those features report that the CLI cannot be found rather than
+failing quietly.
+
 Setup runs the first scan itself rather than leaving you holding a config file
 and no evidence any of it works. It is also the run most likely to show up a
 mistake worth fixing now, like titles that match nothing or a salary floor that
 hides everything, while you are still sitting in front of it.
 
-**Leave that first scan the best part of an hour.** The bundled list is 17,826
-boards, and the runtime is not a fixed number: it is proportional to how many
-sources you keep and how many requests you allow in flight, and each host is
-paced on its own clock underneath that (more on that in "Being a good
+**Leave that first scan the best part of an hour.** The bundled list is 17,807
+employer boards, and the runtime is not a fixed number: it is proportional to
+how many sources you keep and how many requests you allow in flight, and each
+host is paced on its own clock underneath that (more on that in "Being a good
 citizen"), so a shorter list or a higher `fetch.concurrency` (default 16,
 capped at 64) moves it in a way a single stopwatch reading from one run would
 not honestly represent for the next one. `job-radar scan --limit 200` takes a
@@ -284,14 +301,23 @@ one live snapshot held **five** engineering-leadership titles across roughly
 
 ## What it does
 
-**Reads 17,826 employer boards** across twenty platforms. Roughly 4,100 are
+**Reads 17,807 employer boards** across 23 platforms. Roughly 4,100 are
 Greenhouse and 2,600 Ashby, then Workable, iCIMS, Workday, Personio, Breezy,
 Recruitee, SmartRecruiters and Oracle in the four figures or high hundreds,
 then Jobvite in the hundreds, then Avature, Phenom, Teamtailor, Lever on both
 its US and EU deployments, Pinpoint and SuccessFactors in the tens. LinkedIn's
 public endpoint and NHS Jobs are in there too, as keyword searches rather than
-boards. `job-radar coverage` counts the file rather than trusting this
-paragraph, and that is the number to go by.
+boards, which is what takes the file to 17,809 entries.
+
+The code carries 25 board adapters, two more than the bundled list uses: Reed
+and Adzuna are keyed aggregators you add yourself, and JazzHR is written but
+has no boards on the list yet.
+
+`job-radar coverage` counts the file rather than trusting this paragraph, and
+that is the number to go by. **Expect it to print slightly more than 17,807.**
+The two keyword sources are templates rather than boards, and each one is
+expanded into one search per job title in your config before anything is
+counted, so the total it prints moves with how many titles you are watching.
 
 Names you would recognise are on it: Barclays, Lloyds, Santander, BP, Shell,
 Unilever, Tesco, Marks & Spencer, John Lewis, Sky, Skyscanner, Accenture,
@@ -645,7 +671,7 @@ found 23 dead boards, and 19 of those had simply moved ATS and were hiding
 A weekly job in this repository revalidates every board on Sunday mornings and
 opens a pull request pruning anything dead. Growing the list is a separate job
 that does not live here: the crawl-index harvest that found most of these
-17,826 boards runs in a private maintainer repository, so that forking this
+17,807 boards runs in a private maintainer repository, so that forking this
 does not set a crawler loose. **Neither of them reaches your copy.**
 
 - **Cloned it?** Your source list is frozen at the day you cloned.
@@ -712,18 +738,18 @@ work this way and are better served elsewhere.
 
 **Fields you cannot select for, because most of the list is still unlabelled.**
 This used to read as a shortage of employers. It is now a shortage of tags. Of
-17,828 sources, **6,102 carry a sector tag and 11,726 carry none**: the harvest
+17,809 sources, **6,089 carry a sector tag and 11,720 carry none**: the harvest
 that took this list from hundreds to thousands read board addresses out of a
 public crawl index, and an address does not say what industry the employer is
-in. The tagged ones are 1,312 healthcare, 1,306 finance, 512 education, 500
-media, 410 energy, 409 retail, 406 technology, 312 construction, 241
-transport, 225 telecoms, 161 public sector, 74 hospitality, 65 charity, 43
+in. The tagged ones are 1,311 healthcare, 1,304 finance, 512 education, 498
+media, 409 energy, 407 retail, 405 technology, 311 construction, 239
+transport, 224 telecoms, 161 public sector, 74 hospitality, 65 charity, 43
 legal, 42 industry, 34 security, 34 professional services and 16 travel.
 
 That is less damaging than it sounds, because **a `sectors:` filter keeps every
 untagged source as well as the ones you asked for**. `sectors: [hospitality]`
 does not cut you to seventy-four employers; it drops the sources tagged as
-something else and leaves the 11,726 unlabelled ones in, which is where most
+something else and leaves the 11,720 unlabelled ones in, which is where most
 of any industry actually is. The cost runs the other way: you cannot ask this
 list for "every hospitality employer" and get a true answer, and `job-radar
 coverage` can only report what somebody labelled.

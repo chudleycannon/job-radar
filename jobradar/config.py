@@ -478,7 +478,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
     # between the tool and a burst against somebody's job board. It is not any
     # more: `fetch` paces each host on its own clock, so this number decides
     # how many DIFFERENT hosts are in flight, not how hard any one of them is
-    # hit. On a list where roughly 7,584 hosts hold a single board each, a low
+    # hit. On a list where roughly 7,748 hosts hold a single board each, a low
     # cap here bought no politeness at all and cost most of an hour.
     #
     # There is still a ceiling, because the sockets, file descriptors and DNS

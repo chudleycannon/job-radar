@@ -98,8 +98,15 @@ def save(sources: list[Source], path: str | Path, meta: dict | None = None) -> N
             existing = prev.get("meta", {}) if isinstance(prev, dict) else {}
         except (json.JSONDecodeError, OSError):
             existing = {}
+    # Counted here rather than passed in, because nothing was maintaining it.
+    # The weekly `validate --prune` rewrites this file and had no reason to
+    # think about a number in the header, so `meta.boards` drifted a little
+    # further from the truth every Sunday until it read 17,834 for a list of
+    # 17,807. Deriving it from what is actually being written is the only
+    # version that cannot go stale.
+    boards = sum(1 for x in sources if not x.keyword_template)
     body = {
-        "meta": {**existing, **(meta or {})},
+        "meta": {**existing, **(meta or {}), "boards": boards},
         "sources": [s.to_dict() for s in
                     sorted(sources, key=lambda x: (x.platform, x.company.lower()))],
     }

@@ -62,21 +62,21 @@ absent.
 ## sectors
 
 Which employers to watch. Empty means all of them. These are the tags that
-actually exist in the bundled list, out of 17,828 sources:
+actually exist in the bundled list, out of 17,809 sources:
 
 | sector | sources |
 |---|---|
-| `untagged` | 11,726 |
-| `healthcare` | 1,312 |
-| `finance` | 1,306 |
+| `untagged` | 11,720 |
+| `healthcare` | 1,311 |
+| `finance` | 1,304 |
 | `education` | 512 |
-| `media` | 500 |
-| `energy` | 410 |
-| `retail` | 409 |
-| `technology` | 406 |
-| `construction` | 312 |
-| `transport` | 241 |
-| `telecoms` | 225 |
+| `media` | 498 |
+| `energy` | 409 |
+| `retail` | 407 |
+| `technology` | 405 |
+| `construction` | 311 |
+| `transport` | 239 |
+| `telecoms` | 224 |
 | `public-sector` | 161 |
 | `hospitality` | 74 |
 | `charity` | 65 |
@@ -86,16 +86,16 @@ actually exist in the bundled list, out of 17,828 sources:
 | `professional-services` | 34 |
 | `travel` | 16 |
 
-**Read the first row before setting this.** Only 6,102 sources carry a tag at
+**Read the first row before setting this.** Only 6,089 sources carry a tag at
 all. The rest arrived from a crawl-index harvest that knows a board's address
-and not the employer's industry, so `healthcare` being 1,312 is a count of
+and not the employer's industry, so `healthcare` being 1,311 is a count of
 labels, not a count of healthcare employers, and `public-sector` in
 particular catches a lot of noise a name-based rule cannot filter out (US
 municipal and non-profit employers as often as UK public bodies).
 
 Setting `sectors` **keeps every untagged source as well** as the ones tagged
 with what you asked for. So it removes the labelled sources you did not ask
-for and leaves the other 11,726 in place, which is why it narrows the list far
+for and leaves the other 11,720 in place, which is why it narrows the list far
 less than the numbers above suggest. A tag that is not in this table is
 refused at load rather than quietly matching nothing. Check yours with
 `job-radar coverage`, which counts the file rather than this table.
@@ -105,7 +105,7 @@ refused at load rather than quietly matching nothing. Check yours with
 | key | type | notes |
 |---|---|---|
 | `use_bundled` | true / false | |
-| `countries` | list of codes | Only filters sources that carry a country tag, and 12,614 of 17,828 do. The rest are always fetched, and `job-radar coverage` says so when this is set. |
+| `countries` | list of codes | Only filters sources that carry a country tag, and 12,595 of 17,809 do. The rest are always fetched, and `job-radar coverage` says so when this is set. |
 | `extra` | list | Either a bare URL string, or `{company, url, platform}`. `job-radar discover <name> --add` writes these for you. |
 | `reed_api_key` | string | Free key from <https://www.reed.co.uk/developers/jobseeker>, needed only if you add the Reed source. Falls back to the `REED_API_KEY` environment variable when blank, which is the route for GitHub Actions. **Put a real key in `config.local.yaml`, never in `config.yaml`**: the second one is committed. Blank means the Reed source is skipped, with a message naming it. |
 | `adzuna_app_id`, `adzuna_app_key` | string | Free pair from <https://developer.adzuna.com/signup>, needed only if you add the Adzuna source. Both fall back to `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` in the environment when blank, which is the route for GitHub Actions. **Real values go in `config.local.yaml`, never in `config.yaml`.** Either one missing means no credentials, and the Adzuna source is skipped with a message naming it. Adzuna's free limits are 25 calls a minute, 250 a day, 1,000 a week and 2,500 a month; one scan is one call per job title per page. |

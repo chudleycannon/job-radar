@@ -51,8 +51,8 @@ def stratified(srcs: list[Source], n: int, seed: int = 0,
     boards and nothing else. That times one host's patience, not a scan.
 
     Rounding per host is the trap on the other side. At a 3% sample rate,
-    `round(1 * 0.03)` is 0 for every one of the ~7,584 hosts holding a single
-    board, so a naive proportional sample contains nothing but the eight busy
+    `round(1 * 0.03)` is 0 for every one of the ~7,748 hosts holding a single
+    board, so a naive proportional sample contains nothing but the seven busy
     hosts, which is exactly the half of the work the change is meant to speed
     up. Each host therefore gets its whole share plus a weighted coin for the
     remainder, so a host with one board is picked about 3% of the time rather

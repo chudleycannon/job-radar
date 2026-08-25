@@ -151,7 +151,7 @@ fetch:
   # How many DIFFERENT job boards are read at once. It is not how hard any one
   # of them is hit: each host is paced on its own clock (roughly 3 requests a
   # second, and slower for the strict ones), so this number can be generous
-  # without being rude. It has to be, because around 7,584 of the bundled hosts
+  # without being rude. It has to be, because around 7,748 of the bundled hosts
   # carry a single board each and reading those four at a time costs an hour.
   # Capped at 64, which is about your own sockets rather than their servers.
   concurrency: 16

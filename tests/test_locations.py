@@ -285,9 +285,10 @@ def test_a_personal_config_is_preferred_over_the_one_that_ships():
 
 # --------------------------------------------------- country resolution, 2026
 # A tagging run over the whole bundled list read 433,955 live postings and
-# 94,841 of them (21.9%) carried a location `_countries_in` could not place. Every test
-# below is a shape taken from that run's `unrecognised_samples`, weighted by
-# how many postings actually carried it, not a case anyone invented.
+# 94,841 of them (21.9%) carried a location `_countries_in` could not place.
+# Every test below is a shape taken from that run's `unrecognised_samples`,
+# weighted by how many postings actually carried it, not a case anyone
+# invented.
 
 def test_a_lowercase_country_code_at_the_end_names_the_country():
     """The single biggest fixable shape in the data: 15,915 unresolved
@@ -685,3 +686,30 @@ def test_dry_run_leaves_the_dashboard_alone():
     assert rc == 0, out.getvalue()
     assert not (d / "out").exists(), "a dry run wrote the dashboard"
     assert "left alone" in out.getvalue(), "and it should say so"
+
+
+def test_the_board_count_in_the_header_cannot_go_stale():
+    """`meta.boards` said 17,834 for a list of 17,807.
+
+    Nothing maintained it. The weekly `validate --prune` rewrites the file and
+    had no reason to think about a number in the header, so it drifted a
+    little further every Sunday. It is now counted from what is being written.
+    """
+    import json
+    from jobradar.models import Source
+    from jobradar.sources import BUNDLED, save
+
+    d = Path(tempfile.mkdtemp()) / "s.json"
+    save([Source(company="A", platform="greenhouse", url="https://a.invalid"),
+          Source(company="B", platform="greenhouse", url="https://b.invalid"),
+          Source(company="Keyword", platform="linkedin",
+                 url="https://x.invalid/{keyword}", keyword_template=True)],
+         d, meta={"boards": 999, "note": "kept"})
+    body = json.loads(d.read_text(encoding="utf-8"))
+    assert body["meta"]["boards"] == 2, "keyword templates are not boards"
+    assert body["meta"]["note"] == "kept", "the rest of the header survives"
+
+    shipped = json.loads(Path(BUNDLED).read_text(encoding="utf-8"))
+    real = sum(1 for x in shipped["sources"] if not x.get("keyword_template"))
+    assert shipped["meta"]["boards"] == real, (
+        f"header says {shipped['meta']['boards']}, list holds {real}")
