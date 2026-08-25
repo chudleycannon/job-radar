@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import sys
 from pathlib import Path
 
@@ -686,27 +687,67 @@ def test_a_clean_draft_passes_the_invention_gate_and_a_dirty_one_fails():
     a truthful one was flagged. Asserted through `_gates`, not `_invented`,
     because the inversion lived in the wiring between them."""
     import tempfile
+    from unittest import mock
+    from jobradar import runner
     from jobradar.runner import _gates
+
+    # The whole skills environment is built here rather than inherited. This
+    # test used to read whichever skills the machine running it happened to
+    # have: it passed on the author's laptop, where natural-writing is
+    # installed, and failed on all five CI runners, where it is not, because
+    # an unmeasurable gate is now correctly False and the final assertion said
+    # no gate may be False. A test that consults ~/.claude is not testing the
+    # code, it is testing the developer's home directory.
+    home = Path(tempfile.mkdtemp())
+    (home / ".claude" / "skills").mkdir(parents=True)
+    bundled = Path(tempfile.mkdtemp())        # deliberately no natural-writing
 
     d = Path(tempfile.mkdtemp())
     (d / "source-cv.txt").write_text("Ran the newsletter. Grew signups 40%.",
                                      encoding="utf-8")
 
-    (d / "CV.md").write_text("Ran the newsletter. Grew signups 40%.", encoding="utf-8")
-    clean = _gates(d, "CV.md")
-    assert clean["unsourced_specifics"] is True, "a truthful CV must pass"
-    assert "unsourced_found" not in clean
+    # USERPROFILE as well as HOME: Path.home() reads that one on Windows, and
+    # CI runs 3.12 there.
+    env = {"HOME": str(home), "USERPROFILE": str(home)}
+    with mock.patch.dict(os.environ, env), \
+            mock.patch.object(runner, "_BUNDLED_SKILLS", bundled):
+        (d / "CV.md").write_text("Ran the newsletter. Grew signups 40%.",
+                                 encoding="utf-8")
+        clean = _gates(d, "CV.md")
+        assert clean["unsourced_specifics"] is True, "a truthful CV must pass"
+        assert "unsourced_found" not in clean
 
-    (d / "CV.md").write_text("Led 45 engineers. Grew revenue 250% nationwide.",
-                             encoding="utf-8")
-    dirty = _gates(d, "CV.md")
-    assert dirty["unsourced_specifics"] is False, "an inventing CV must fail"
-    assert "45" in dirty["unsourced_found"]
+        (d / "CV.md").write_text("Led 45 engineers. Grew revenue 250% nationwide.",
+                                 encoding="utf-8")
+        dirty = _gates(d, "CV.md")
+        assert dirty["unsourced_specifics"] is False, "an inventing CV must fail"
+        assert "45" in dirty["unsourced_found"]
 
-    # And the dashboard's own rule, which is what a person actually sees.
-    failed = [k for k, v in dirty.items() if v is False]
-    assert "unsourced_specifics" in failed
-    assert [k for k, v in clean.items() if v is False] == []
+        # With no checker anywhere, that gate is False and says so. A missing
+        # checker and a passing document must never look alike.
+        assert clean["natural_writing"] is False
+        assert [k for k, v in clean.items() if v is False] == ["natural_writing"]
+
+    # Now give it a checker that passes, and the clean draft must come back
+    # with nothing failing at all. This is the half the original test meant to
+    # assert and could only assert by accident.
+    scripts = bundled / "natural-writing" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "detect.py").write_text(
+        "print('SLOP SCORE: 4')\nprint('-> PASS')\n", encoding="utf-8")
+    with mock.patch.dict(os.environ, env), \
+            mock.patch.object(runner, "_BUNDLED_SKILLS", bundled):
+        (d / "CV.md").write_text("Ran the newsletter. Grew signups 40%.",
+                                 encoding="utf-8")
+        clean = _gates(d, "CV.md")
+        assert clean["natural_writing"] is True
+        assert clean["slop_score"] == 4
+        assert [k for k, v in clean.items() if v is False] == []
+
+        (d / "CV.md").write_text("Led 45 engineers. Grew revenue 250% nationwide.",
+                                 encoding="utf-8")
+        failed = [k for k, v in _gates(d, "CV.md").items() if v is False]
+        assert failed == ["unsourced_specifics"]
 
 
 def test_empty_cv_path_does_not_look_like_a_valid_file():
