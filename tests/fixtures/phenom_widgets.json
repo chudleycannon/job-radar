@@ -1,0 +1,32 @@
+{
+ "refineSearch": {
+  "data": {
+   "jobs": [
+    {
+     "title": "Marketing Manager",
+     "jobId": "JP-006210688",
+     "jobSeqNo": "ASCAUSJP006210688ENGB",
+     "applyUrl": "https://www.ats.com?jobId=123",
+     "cityStateCountry": "London, England, United Kingdom",
+     "postedDate": "2026-08-10T13:50:24.877+0000",
+     "category": "Sales & Marketing",
+     "descriptionTeaser": "Seeking a Marketing Manager to drive multi-channel marketing campaigns and support programme and sector activities. Manage campaign planning, deliverables, and ",
+     "locale": "en_GB",
+     "type": "Contractor"
+    },
+    {
+     "title": "Business Administrator",
+     "jobId": "JP-005384453",
+     "jobSeqNo": "ASCAUSJP005384453ENGB",
+     "applyUrl": "https://www.ats.com?jobId=123",
+     "cityStateCountry": "Paddington, England, United Kingdom",
+     "postedDate": "2025-07-20T06:30:10.080+0000",
+     "category": "Communications",
+     "descriptionTeaser": "Seeking a Business Administrator to provide on-site support for our London engineering community, focusing on workplace and event coordination. Key responsibili",
+     "locale": "en_GB",
+     "type": "Contract"
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,41 @@
+{
+ "jobPostings": [
+  {
+   "title": "Engineering Manager, LLM Performance",
+   "externalPath": "/job/US-CA-Santa-Clara/Engineering-Manager--LLM-Performance_JR2019950",
+   "locationsText": "US, CA, Santa Clara",
+   "postedOn": "Posted 19 Days Ago",
+   "bulletFields": [
+    "JR2019950"
+   ]
+  },
+  {
+   "title": "Engineering Manager - OpenBMC Platform",
+   "externalPath": "/job/US-CA-Santa-Clara/Manager--Engineering---Data-Center-Management_JR1997726",
+   "locationsText": "US, CA, Santa Clara",
+   "postedOn": "Posted Today",
+   "bulletFields": [
+    "JR1997726"
+   ]
+  },
+  {
+   "title": "Software Engineering Manager, Robotics",
+   "externalPath": "/job/China-Shanghai/Software-Engineering-Manager--Robotics_JR2013560",
+   "locationsText": "China, Shanghai",
+   "postedOn": "Posted 30+ Days Ago",
+   "bulletFields": [
+    "JR2013560"
+   ]
+  },
+  {
+   "title": "Senior Engineering Manager, Object Storage - DGX Cloud",
+   "externalPath": "/job/US-CA-Santa-Clara/Senior-Engineering-Manager--Object-Storage---DGX-Cloud_JR2021079-1",
+   "locationsText": "2 Locations",
+   "postedOn": "Posted Yesterday",
+   "bulletFields": [
+    "JR2021079"
+   ]
+  }
+ ],
+ "total": 4
+}

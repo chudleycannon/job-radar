@@ -1,0 +1,170 @@
+{
+ "jobs": [
+  {
+   "id": 7695702,
+   "title": "Account Executive, FedCiv",
+   "location": {
+    "name": "Hybrid"
+   },
+   "offices": [
+    {
+     "name": "Washington, DC"
+    }
+   ],
+   "departments": [
+    {
+     "id": 70660,
+     "name": "Field Sales",
+     "child_ids": [],
+     "parent_id": 29066
+    }
+   ],
+   "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/7695702?gh_jid=7695702",
+   "company_name": "Cloudflare",
+   "first_published": "2026-03-09T16:05:19-04:00",
+   "updated_at": "2026-08-24T16:06:07-04:00",
+   "pay_input_ranges": []
+  },
+  {
+   "id": 7902104,
+   "title": "Accounting Intern (Fall 2026)",
+   "location": {
+    "name": "In-Office"
+   },
+   "offices": [
+    {
+     "name": "Austin, TX"
+    }
+   ],
+   "departments": [
+    {
+     "id": 29062,
+     "name": "Accounting and Finance",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/7902104?gh_jid=7902104",
+   "company_name": "Cloudflare",
+   "first_published": "2026-08-03T15:33:44-04:00",
+   "updated_at": "2026-08-24T16:06:07-04:00",
+   "pay_input_ranges": []
+  },
+  {
+   "id": 8023928,
+   "title": "Account Executive, Bridge (Stripe Crypto and Stablecoins)",
+   "location": {
+    "name": "London"
+   },
+   "offices": [
+    {
+     "name": "United Kingdom Locations"
+    }
+   ],
+   "departments": [
+    {
+     "id": 236787,
+     "name": "8589 Bridge - S&M",
+     "child_ids": [],
+     "parent_id": 85336
+    }
+   ],
+   "absolute_url": "https://stripe.com/jobs/search?gh_jid=8023928",
+   "company_name": "Stripe",
+   "first_published": "2026-07-30T06:59:38-04:00",
+   "updated_at": "2026-08-18T18:36:58-04:00",
+   "pay_input_ranges": []
+  },
+  {
+   "id": 7217048,
+   "title": "Backend Engineer, Billing/Tax",
+   "location": {
+    "name": "N/A"
+   },
+   "offices": [
+    {
+     "name": "Canada Locations"
+    }
+   ],
+   "departments": [
+    {
+     "id": 66154,
+     "name": "8412 Billing Products",
+     "child_ids": [],
+     "parent_id": 88204
+    }
+   ],
+   "absolute_url": "https://stripe.com/jobs/search?gh_jid=7217048",
+   "company_name": "Stripe",
+   "first_published": "2025-09-02T18:26:14-04:00",
+   "updated_at": "2026-08-18T17:59:41-04:00",
+   "pay_input_ranges": []
+  },
+  {
+   "id": 7011263002,
+   "title": "PhD GenAI Research Scientist Intern",
+   "location": {
+    "name": "San Francisco, California"
+   },
+   "offices": [
+    {
+     "name": "Mountain View, California"
+    }
+   ],
+   "departments": [
+    {
+     "id": 4001023002,
+     "name": "University Recruiting",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "absolute_url": "https://databricks.com/company/careers/open-positions/job?gh_jid=7011263002",
+   "company_name": "Databricks",
+   "first_published": "2023-11-07T16:36:32-05:00",
+   "updated_at": "2026-08-18T13:17:06-04:00",
+   "pay_input_ranges": [
+    {
+     "min_cents": 5400,
+     "max_cents": 6000,
+     "currency_type": "USD",
+     "title": "SF Bay Area Hourly Rate"
+    }
+   ],
+   "content": ""
+  },
+  {
+   "id": 7872746002,
+   "title": "Senior Staff Backline Engineer - Data & AI",
+   "location": {
+    "name": "Dallas, Texas; San Francisco, California; Vancouver, Canada"
+   },
+   "offices": [
+    {
+     "name": "United States"
+    }
+   ],
+   "departments": [
+    {
+     "id": 4003101002,
+     "name": "Support",
+     "child_ids": [],
+     "parent_id": 4001015002
+    }
+   ],
+   "absolute_url": "https://databricks.com/company/careers/open-positions/job?gh_jid=7872746002",
+   "company_name": "Databricks",
+   "first_published": "2025-02-20T11:46:49-05:00",
+   "updated_at": "2026-08-18T13:17:08-04:00",
+   "pay_input_ranges": [
+    {
+     "min_cents": 17040,
+     "max_cents": 25560,
+     "currency_type": "USD",
+     "title": "Local Pay Range"
+    }
+   ],
+   "content": ""
+  }
+ ]
+}

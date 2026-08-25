@@ -1,0 +1,34 @@
+[
+ {
+  "id": 6687,
+  "date": "2026-08-21T15:00:23",
+  "date_gmt": "2026-08-21T14:00:23",
+  "modified": "2026-08-24T18:00:27",
+  "slug": "402",
+  "status": "publish",
+  "type": "job",
+  "link": "https://www.roke.co.uk/careers/current-roles/402/",
+  "title": {
+   "rendered": "Security Advisor"
+  },
+  "content": {
+   "rendered": "<p style=\"margin-top: 0px;margin-bottom: 1em;color: #1c1c1e;font-family: 'Twemoji Country Flags', __Inter_d876f3, __Inter_Fallback_d876f3, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neu"
+  }
+ },
+ {
+  "id": 6686,
+  "date": "2026-08-21T12:00:33",
+  "date_gmt": "2026-08-21T11:00:33",
+  "modified": "2026-08-24T18:00:27",
+  "slug": "401",
+  "status": "publish",
+  "type": "job",
+  "link": "https://www.roke.co.uk/careers/current-roles/401/",
+  "title": {
+   "rendered": "Commercial Manager"
+  },
+  "content": {
+   "rendered": "<p style=\"margin: 0cm;font-size: 12pt;font-family: Aptos, sans-serif\"><span style=\"font-size: 12pt;font-family: verdana, geneva\">Great ideas come from different minds. That&rsquo;s why we bring togeth"
+  }
+ }
+]

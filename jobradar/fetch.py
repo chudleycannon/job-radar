@@ -444,6 +444,24 @@ def fetch_one(
                 # This host is serving, so whatever run of refusals it had is
                 # over. Only a run of them, unbroken, means it is shut.
                 lim.note_ok(src.url)
+            # requests falls back to ISO-8859-1 for any text/* body whose
+            # Content-Type states no charset, which is what RFC 2616 said to
+            # do and is wrong for nearly every board here. Personio serves its
+            # `/xml` feed as bare `text/xml`, and the feed's own XML
+            # declaration says UTF-8: every German board on it came back with
+            # "Düsseldorf" spelled "DÃ¼sseldorf" and "München" as "MÃ¼nchen",
+            # which no location filter or `--country` flag matches.
+            # Only overridden when the bytes really do decode as UTF-8, so a
+            # board that is genuinely Latin-1 keeps the old behaviour.
+            raw = getattr(r, "content", None)
+            if (getattr(r, "encoding", None) and "charset=" not in ctype
+                    and isinstance(raw, (bytes, bytearray))):
+                try:
+                    raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+                else:
+                    r.encoding = "utf-8"
             if "json" in ctype or r.text.lstrip()[:1] in ("[", "{"):
                 return Result(src, payload=r.json(), status=status, elapsed=time.time() - t0)
             return Result(src, payload=r.text, status=status, elapsed=time.time() - t0)

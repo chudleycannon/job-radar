@@ -1,0 +1,31 @@
+{
+ "refineSearch": {
+  "data": {
+   "jobs": [
+    {
+     "title": "Engineering Development Program - 2026 Graduates",
+     "jobId": "7409",
+     "jobSeqNo": "AHMAHMUS7409EXTERNALENUS",
+     "applyUrl": "https://career41.sapsf.com/career?company=nahondaPRD&lang=en_US&clientId=jobs2web&socialApply=false&career_ns=job_application&site=&career_job_req_id=7409",
+     "cityStateCountry": "Lincoln, Alabama, United States",
+     "postedDate": "2026-08-14T00:00:00.000+0000",
+     "category": "Entry-Level Rotational Programs",
+     "descriptionTeaser": "Seeking individuals to join Honda’s Engineering Development Program, a one-year rotational experience designed to accelerate early-career engineers. Participate",
+     "locale": "en_US",
+     "type": "Full Time"
+    },
+    {
+     "title": "Engineering Co-op/Intern - Spring 2027",
+     "jobId": "10993",
+     "jobSeqNo": "AHMAHMUS10993EXTERNALENUS",
+     "cityStateCountry": "Lincoln, Alabama, United States",
+     "postedDate": "2026-05-14T00:00:00.000+0000",
+     "category": "Co-op & Internship Program",
+     "descriptionTeaser": "Take on the role of an Engineering Co-op/Intern and contribute to manufacturing, quality, and infrastructure projects within Honda. Support equipment installati",
+     "locale": "en_US",
+     "type": ""
+    }
+   ]
+  }
+ }
+}

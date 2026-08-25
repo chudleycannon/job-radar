@@ -349,9 +349,32 @@ def from_greenhouse(ranges: list | None) -> Salary:
     cur = r.get("currency_type") or r.get("currency")
     if lo is None and hi is None:
         return parse_text(r.get("title"))
+
+    # Greenhouse states no period anywhere in `pay_input_ranges`, so this used
+    # to assume "year" for every figure in it. Databricks publish hourly rates
+    # through the same field and label them in the title: "SF Bay Area Hourly
+    # Rate", min_cents 5400. Read as annual that is a salary of $54, which is
+    # not a rounding error, it is a role that gets discarded by any floor.
+    title = str(r.get("title") or "")
+    period = "year"
+    if re.search(r"\bhourly\b|\bper hour\b|/\s*hr\b|\bhour rate\b", title, re.I):
+        period = "hour"
+    elif re.search(r"\bdaily\b|\bper day\b|/\s*day\b|\bday rate\b", title, re.I):
+        period = "day"
+    elif (hi or lo or 0) < 2000:
+        # Unlabelled and far too small to be a year's pay. Databricks send
+        # 17040 cents under the generic title "Local Pay Range", which is
+        # $170.40 and is plainly a rate, but nothing in the payload says which
+        # kind. This follows the rule the Reed adapter already states: an
+        # unlabelled figure below 2,000 is left unconfirmed rather than
+        # asserted as an annual salary, because only a confirmed figure can
+        # disqualify a role and a wrong one disqualifies it wrongly.
+        return Salary(min=lo, max=hi or lo, currency=cur, period="year",
+                      raw=title or None, confirmed=False)
+
     return Salary(
-        min=lo, max=hi or lo, currency=cur, period="year",
-        raw=(r.get("title") or f"{lo:,.0f}-{hi:,.0f}" if lo and hi else None),
+        min=lo, max=hi or lo, currency=cur, period=period,
+        raw=(title or f"{lo:,.0f}-{hi:,.0f}" if lo and hi else None),
         confirmed=True,
     )
 

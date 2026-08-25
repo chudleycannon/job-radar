@@ -13,7 +13,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 from urllib.parse import unquote, urljoin, urlparse
 
@@ -97,6 +97,24 @@ def _remote(*bits: Any) -> bool | None:
 # --------------------------------------------------------------------------
 # Greenhouse
 # --------------------------------------------------------------------------
+# Greenhouse's `location.name` is a free-text box the employer fills in, and
+# some of them fill it in with the working arrangement instead of a place.
+# Cloudflare are the clearest case: 247 of their 306 open roles state
+# "Hybrid" or "In-Office" there and nothing else, and Stripe put "N/A" on 21.
+# `offices` on those same rows names the actual city -- Washington DC, Austin
+# TX, "Canada Locations" -- and it was only consulted when `location` was
+# empty, which these are not. So four in five Cloudflare roles reached the
+# country filter with a work pattern where their location should be, and a
+# search for UK roles could neither keep them nor rule them out.
+#
+# Two sets, because the right repair differs. A work pattern is worth keeping
+# and worth siting, so the office is added to it. A placeholder says nothing
+# at all and is replaced outright.
+_GH_WORK_PATTERN = {"hybrid", "in-office", "in office", "onsite", "on-site",
+                    "in-person", "in person", "office", "office-based"}
+_GH_NO_ANSWER = {"n/a", "na", "none", "tbd", "tbc", "-", "various", "multiple"}
+
+
 def parse_greenhouse(payload: Any, src: Source) -> Iterator[Job]:
     """`pay_input_ranges` appears ONLY with `?pay_transparency=true`.
     `content=true` is a separate parameter and does not trigger it.
@@ -104,10 +122,16 @@ def parse_greenhouse(payload: Any, src: Source) -> Iterator[Job]:
     """
     for j in (payload or {}).get("jobs", []) or []:
         loc = j.get("location") or {}
-        location = loc.get("name") if isinstance(loc, dict) else _text(loc)
+        stated = loc.get("name") if isinstance(loc, dict) else _text(loc)
+        location = stated
         offices = ", ".join(
             o.get("name", "") for o in (j.get("offices") or []) if isinstance(o, dict)
         )
+        flat = (stated or "").strip().lower()
+        if offices and flat in _GH_WORK_PATTERN:
+            location = f"{stated.strip()}, {offices}"
+        elif offices and flat in _GH_NO_ANSWER:
+            location = offices
         desc = _text(j.get("content"))
         sal = from_greenhouse(j.get("pay_input_ranges"))
         if not sal.confirmed:
@@ -332,6 +356,44 @@ def parse_smartrecruiters(payload: Any, src: Source) -> Iterator[Job]:
 # --------------------------------------------------------------------------
 # Workday (CXS)
 # --------------------------------------------------------------------------
+# Workday states a posting's AGE, never its date: `postedOn` is
+# "Posted 19 Days Ago", and across 669 postings from five tenants it took
+# exactly four shapes -- "Posted Today" (76), "Posted Yesterday" (3),
+# "Posted N Days Ago" (362) and "Posted N+ Days Ago" (228). None of them is a
+# date, so `_iso` returned None for all of them and every posting from all
+# 1,489 Workday boards arrived undated and scored as though it had no
+# recency. Barclays, HSBC, Nvidia and Adobe are all on this platform.
+_WD_AGE = re.compile(r"(\d+)\s*\+?\s*days?\s+ago", re.I)
+
+
+def _workday_posted(value: Any, today=None) -> str | None:
+    """A date from Workday's relative phrasing.
+
+    "30+ Days Ago" is read as exactly thirty days, which is the oldest date
+    the phrase permits and therefore the least flattering reading of it: the
+    posting is at LEAST that old. Rounding the other way would let a role that
+    has been open for a year collect recency points.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    exact = _iso(text)
+    if exact:
+        return exact
+    low = text.lower()
+    if "today" in low:
+        days = 0
+    elif "yesterday" in low:
+        days = 1
+    else:
+        m = _WD_AGE.search(low)
+        if not m:
+            return None
+        days = int(m.group(1))
+    base = today or datetime.now(timezone.utc).date()
+    return (base - timedelta(days=days)).isoformat()
+
+
 def parse_workday(payload: Any, src: Source) -> Iterator[Job]:
     """POST, not GET. Body: {"appliedFacets":{},"limit":20,"offset":0,"searchText":""}
 
@@ -364,7 +426,7 @@ def parse_workday(payload: Any, src: Source) -> Iterator[Job]:
             location=loc,
             remote=_remote(loc, j.get("title")),
             department=None,
-            posted_at=_iso(j.get("startDate") or j.get("postedOn")),
+            posted_at=_workday_posted(j.get("startDate") or j.get("postedOn")),
             description=bullets,
             salary=parse_text(bullets),
             source_id=src.key,
@@ -416,15 +478,31 @@ def parse_linkedin(payload: Any, src: Source) -> Iterator[Job]:
 # Recruitee
 # --------------------------------------------------------------------------
 def parse_recruitee(payload: Any, src: Source) -> Iterator[Job]:
+    """Recruitee's `/api/offers/`.
+
+    `careers_url` is not the board's own address: it is whatever vanity domain
+    the employer pointed at Recruitee, and that domain outlives the board it
+    used to serve. Makersite's offers all state
+    `https://makersite.io/o/<slug>`, which is HTTP 404 today, while
+    `https://makersitegmbh.recruitee.com/o/<slug>` is 200 with the advert on it
+    (both checked live, 2026-08-25). The published field is the broken one.
+
+    So the link is rebuilt on the host we have just fetched successfully,
+    which is the only host in the exchange with evidence behind it. Falls back
+    to `careers_url` when there is no slug to build from.
+    """
+    host = urlparse(src.url).netloc
     for j in (payload or {}).get("offers", []) or []:
         loc = ", ".join(
             str(j.get(k)) for k in ("city", "country") if j.get(k)
         ) or _text(j.get("location"))
         desc = _text(j.get("description")) + " " + _text(j.get("requirements"))
+        slug = _text(j.get("slug"))
         yield Job(
             company=src.company,
             title=_text(j.get("title")),
-            url=j.get("careers_url") or j.get("careers_apply_url") or "",
+            url=(f"https://{host}/o/{slug}" if host and slug
+                 else (j.get("careers_url") or j.get("careers_apply_url") or "")),
             platform="recruitee",
             location=loc,
             remote=_remote(loc, j.get("remote")),
@@ -1306,7 +1384,21 @@ def parse_teamtailor(payload: Any, src: Source) -> Iterator[Job]:
 
 
 def parse_personio(payload: Any, src: Source) -> Iterator[Job]:
+    """Personio's `/xml` feed, which states no posting URL at all.
+
+    Every `<position>` carries an id and nothing else to link on, so the URL
+    has to be built. It used to be built from `src.company`, which is the
+    label a human typed into the source list, not an address: "Auxmoney Gmbh"
+    produced `https://Auxmoney Gmbh.jobs.personio.de/job/2727726`, a hostname
+    with a space and a capital in it, which is HTTP 400 (checked live,
+    2026-08-25). The subdomain that actually serves the board is
+    `auxmoney-gmbh`, and the one place it is reliably written down is the URL
+    we just fetched, so that is where it now comes from. Three of the four
+    boards probed were broken this way; the fourth, Meierhofer, only worked
+    because its display name happens to equal its subdomain.
+    """
     text = payload if isinstance(payload, str) else ""
+    host = urlparse(src.url).netloc
     for block in re.findall(r"<position>(.*?)</position>", text, re.S):
         def g(tag):
             m = re.search(rf"<{tag}>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</{tag}>", block, re.S)
@@ -1320,7 +1412,7 @@ def parse_personio(payload: Any, src: Source) -> Iterator[Job]:
         yield Job(
             company=src.company,
             title=title,
-            url=g("url") or f"https://{src.company}.jobs.personio.de/job/{pid}",
+            url=g("url") or (f"https://{host}/job/{pid}" if host and pid else ""),
             platform="personio",
             location=g("office") or g("location"),
             remote=_remote(g("office"), title),
@@ -1466,8 +1558,18 @@ def parse_generic(payload: Any, src: Source) -> Iterator[Job]:
                 platform=src.platform or "custom",
                 location=_text(loc),
                 remote=_remote(loc, title),
+                # `date_gmt` and `date` come last and they are WordPress's.
+                # The commonest bespoke board is a WordPress site exposing its
+                # `job` post type at /wp-json/wp/v2/job -- Roke's is one, 34
+                # live roles -- and it names its publish date `date`, so every
+                # posting from every board of that shape arrived undated and
+                # scored as though it had no recency. Last in the chain
+                # because the name is generic enough that a board using it for
+                # something else should lose to a field that says what it is.
                 posted_at=_iso(j.get("postedDate") or j.get("posted_at")
-                               or j.get("updated_at") or j.get("publishedAt")),
+                               or j.get("datePosted") or j.get("publishedAt")
+                               or j.get("updated_at") or j.get("created_at")
+                               or j.get("date_gmt") or j.get("date")),
                 description=desc,
                 salary=parse_text(desc[:1500]),
                 source_id=src.key,
@@ -1556,6 +1658,41 @@ def parse_nhs(payload: Any, src: Source) -> Iterator[Job]:
 _PHENOM_DDO = re.compile(r"phApp\.ddo\s*=\s*(\{.*?\});\s*(?:phApp|</script>|window\.)", re.S)
 
 
+# Phenom lets each employer type in the apply URL, so some of them have not:
+# Aston Carter's board answers with Phenom's own demo placeholder,
+# `https://www.ats.com?jobId=123`, on every single posting. That is HTTP 403
+# (checked live, 2026-08-25), and because `Job.uid` is keyed on the URL, six
+# distinct roles also collapsed into one entry in the seen-set, so five of
+# them could never be alerted on at all.
+#
+# Phenom always serves its own advert page as well, at
+# `<board>/job/<jobSeqNo>/<title-slug>`, and that page is the full advert
+# rather than an apply form. Verified 200 for Aston Carter, Honda and Advance
+# Auto Parts. So it is used whenever the stated apply link cannot be a real
+# per-posting address: either it repeats across postings, or it is the known
+# placeholder host.
+_PH_PLACEHOLDER = re.compile(r"^https?://(?:www\.)?ats\.com\b", re.I)
+_PH_SLUG = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _phenom_url(j: dict, src: Source, counts: dict[str, int]) -> str:
+    stated = j.get("applyUrl") or j.get("imApplyUrl") or ""
+    usable = bool(stated) and counts.get(stated, 0) < 2 and not _PH_PLACEHOLDER.match(stated)
+    if usable:
+        return stated
+    seq = _text(j.get("jobSeqNo"))
+    title = _text(j.get("title"))
+    parts = urlparse(src.url)
+    # The locale lives in the path of the board URL ("/gb/en/search-results"),
+    # and it is not guessable: Serco's is `gb/en` and Thales's `global/en`.
+    prefix = parts.path.rsplit("/search-results", 1)[0].strip("/")
+    if not (seq and title and parts.netloc):
+        return stated
+    slug = _PH_SLUG.sub("-", title).strip("-")
+    root = f"https://{parts.netloc}" + (f"/{prefix}" if prefix else "")
+    return f"{root}/job/{seq}/{slug}"
+
+
 def parse_phenom(payload: Any, src: Source) -> Iterator[Job]:
     """Phenom renders in the browser, but it also embeds the whole result set
     as JSON in the page under `phApp.ddo`, so there is no need to render
@@ -1581,27 +1718,35 @@ def parse_phenom(payload: Any, src: Source) -> Iterator[Job]:
             blocks.append((er.get("data") or {}).get("jobs") or er.get("jobs") or [])
             break
 
-    for jobs in blocks:
-        for j in jobs:
-            title = _text(j.get("title"))
-            url = j.get("applyUrl") or j.get("imApplyUrl") or ""
-            if not (title and url):
-                continue
-            loc = _text(j.get("cityStateCountry") or j.get("location") or j.get("country"))
-            teaser = _text(j.get("descriptionTeaser"))
-            yield Job(
-                company=src.company,
-                title=title,
-                url=url,
-                platform="phenom",
-                location=loc,
-                remote=_remote(loc, title, j.get("jobType")),
-                department=_text(j.get("category")) or None,
-                posted_at=_iso(j.get("postedDate") or j.get("dateCreated")),
-                description=teaser,
-                salary=parse_text(teaser),
-                source_id=src.key,
-            )
+    rows = [j for jobs in blocks for j in jobs if isinstance(j, dict)]
+    # An apply link that two postings share is not a per-posting link, so it
+    # cannot be the address of either of them. See `_phenom_url`.
+    counts: dict[str, int] = {}
+    for j in rows:
+        u = j.get("applyUrl") or j.get("imApplyUrl") or ""
+        if u:
+            counts[u] = counts.get(u, 0) + 1
+
+    for j in rows:
+        title = _text(j.get("title"))
+        url = _phenom_url(j, src, counts)
+        if not (title and url):
+            continue
+        loc = _text(j.get("cityStateCountry") or j.get("location") or j.get("country"))
+        teaser = _text(j.get("descriptionTeaser"))
+        yield Job(
+            company=src.company,
+            title=title,
+            url=url,
+            platform="phenom",
+            location=loc,
+            remote=_remote(loc, title, j.get("jobType")),
+            department=_text(j.get("category")) or None,
+            posted_at=_iso(j.get("postedDate") or j.get("dateCreated")),
+            description=teaser,
+            salary=parse_text(teaser),
+            source_id=src.key,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -1610,6 +1755,65 @@ def parse_phenom(payload: Any, src: Source) -> Iterator[Job]:
 _RMK_LINK = re.compile(
     r'<a[^>]*class="[^"]*jobTitle-link[^"]*"[^>]*href="([^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S)
 _RMK_ANY = re.compile(r'href="((?:/[a-z0-9_-]+)?/job/[^"?]+)"[^>]*>\s*(.*?)\s*</a>', re.S | re.I)
+# One result row. The table is the whole board, so splitting on it is what
+# keeps a row's location and date attached to that row's title rather than to
+# whichever one happened to be nearest in the document.
+_RMK_ROW = re.compile(r'<tr[^>]+class="[^"]*data-row[^"]*"[^>]*>(.*?)</tr>', re.S | re.I)
+# The location cell, not any `jobLocation` span: the same span is repeated
+# inside the title cell for the phone layout, and matching that one first
+# would work by luck rather than by rule.
+_RMK_LOC = re.compile(
+    r'<td[^>]+class="[^"]*colLocation[^"]*"[^>]*>(.*?)</td>', re.S | re.I)
+_RMK_DATE = re.compile(
+    r'<td[^>]+class="[^"]*colDate[^"]*"[^>]*>(.*?)</td>', re.S | re.I)
+_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _rmk_slug_location(path: str, title: str) -> str:
+    """Where the row says, read out of the href when the page has no location
+    column.
+
+    The slug is `<place>-<title>` and the old rule was to find the title in it
+    verbatim and keep what came before. That rule fails whenever the title
+    contains a character the slug drops, which is most of them: adidas's
+    "ALTERNANCE - Vendeur Polyvalent adidas (H/F/D)" is slugged
+    "ALTERNANCE-Vendeur-Polyvalent-adidas-(HFD)", so `title in slug` was False
+    and the location became the entire slug, title included. Live proof before
+    this changed: adidas reported a location of "Ile Saint Denis ALTERNANCE
+    Vendeur Polyvalent adidas (HFD)" and Scotiabank one of "Toronto Senior
+    Manager, Global Connectivity, International Wealth Management Toronto, ON
+    ON M5H 0B4". Neither is a place, and a location filter can do nothing with
+    either.
+
+    So both sides are compared with punctuation removed, and the match is
+    mapped back to an index in the original. A title that still cannot be
+    found means the slug's shape is not the one assumed, and then nothing is
+    returned: no location at all is honest, whereas the whole slug is page
+    furniture wearing a location's clothes.
+    """
+    slug = path.rsplit("/job/", 1)[-1]
+    slug = re.sub(r"/\d+/?$", "", slug)
+    slug = _text(unquote(slug).replace("-", " "))
+    # Twice, because some tenants escape the href twice: Burberry serve
+    # `Women&amp;apos;s`, which one pass leaves as `&apos;` and the comparison
+    # below then reads as the four letters "apos", so the title stops matching
+    # its own slug and the location is lost.
+    for _ in range(2):
+        if "&" not in slug:
+            break
+        slug = html.unescape(slug)
+    # Index of each kept character in the original, so a hit in the
+    # punctuation-free copy can be turned back into a cut point.
+    keep, back = [], []
+    for i, ch in enumerate(slug.lower()):
+        if ch.isalnum():
+            keep.append(ch)
+            back.append(i)
+    flat_slug = "".join(keep)
+    flat_title = _ALNUM.sub("", title.lower())
+    if not flat_title or flat_title not in flat_slug:
+        return ""
+    return slug[: back[flat_slug.rindex(flat_title)]].strip(" ,-")
 
 
 def parse_rmk(payload: Any, src: Source) -> Iterator[Job]:
@@ -1618,35 +1822,55 @@ def parse_rmk(payload: Any, src: Source) -> Iterator[Job]:
 
     Transport for London sit here, and so do many public bodies that look like
     they have no machine-readable board at all. The href carries a tenant
-    prefix (`/tfl/job/...`) rather than a bare `/job/`, and the location is in
-    the slug ahead of the title rather than in its own field.
+    prefix (`/tfl/job/...`) rather than a bare `/job/`.
+
+    The result table has its own location and date columns and they were both
+    being thrown away: location was being reconstructed out of the href slug,
+    badly (see `_rmk_slug_location`), and the date was not read at all, so
+    every posting from all 93 boards on this platform arrived undated and
+    scored as though it had no recency. Both are plain text in the row --
+    `<td class="colLocation"><span class="jobLocation">Ile Saint-Denis, FR` and
+    `<td class="colDate"><span class="jobDate">Aug 25, 2026` -- so both are now
+    read from there, and the slug is only consulted when a tenant has switched
+    the location column off. Which they do: the columns are configured per
+    tenant, the same way Taleo's are.
     """
     text = payload if isinstance(payload, str) else ""
     base = f"https://{urlparse(src.url).netloc}"
 
-    pairs = _RMK_LINK.findall(text) or _RMK_ANY.findall(text)
+    rows = [(m.group(1)) for m in _RMK_ROW.finditer(text)]
+    # A tenant whose markup this does not recognise still gets the old
+    # whole-document scan rather than an empty board.
+    pairs: list[tuple[str, str, str, str]] = []
+    for row in rows:
+        link = _RMK_LINK.search(row) or _RMK_ANY.search(row)
+        if not link:
+            continue
+        lo = _RMK_LOC.search(row)
+        da = _RMK_DATE.search(row)
+        pairs.append((link.group(1), link.group(2),
+                      _text(lo.group(1)) if lo else "",
+                      _text(da.group(1)) if da else ""))
+    if not pairs:
+        pairs = [(p, t, "", "")
+                 for p, t in (_RMK_LINK.findall(text) or _RMK_ANY.findall(text))]
+
     seen = set()
-    for path, title in pairs:
-        title = _text(title)
+    for path, raw_title, place, date in pairs:
+        title = _text(raw_title)
         if not title or path in seen:
             continue
         seen.add(path)
         # "/tfl/job/Palestra-House,-Southwark,-SE1-Assistant-Safety-Manager/1349"
-        slug = path.rsplit("/job/", 1)[-1]
-        slug = re.sub(r"/\d+/?$", "", slug)
-        slug = _text(unquote(slug).replace("-", " "))
-        # The title repeats at the end of the slug; what precedes it is where.
-        loc = slug
-        low, tl = slug.lower(), title.lower()
-        if tl and tl in low:
-            loc = slug[: low.rindex(tl)].strip(" ,-")
+        loc = place or _rmk_slug_location(path, title)
         yield Job(
             company=src.company,
             title=title,
-            url=path if path.startswith("http") else base + path,
+            url=path if path.startswith("http") else base + html.unescape(path),
             platform="rmk",
             location=loc,
             remote=_remote(loc, title),
+            posted_at=_iso(date),
             description="",
             salary=Salary(),
             source_id=src.key,
@@ -1689,21 +1913,52 @@ _AV_KIND = re.compile(r"/((?:Job|Pipeline)Detail)/")
 # Job" button. Keeping the first would be luck; the labelled one is the title.
 _AV_NOT_A_TITLE = re.compile(
     r"^(?:view|apply|details?|read more|learn more|see)\b", re.I)
+# The card's subtitle strip. Avature names each field in the class, so these
+# are read by name and never by position: which of them a board emits, and in
+# what order, is the tenant's choice.
+_AV_LOC = re.compile(r'list-item-location[^>]*>\s*(.*?)\s*</span>', re.S | re.I)
+_AV_POSTED = re.compile(r'list-item-posted[^>]*>\s*(.*?)\s*</span>', re.S | re.I)
+_AV_WORK = re.compile(r'list-item-workplace[^>]*>\s*(.*?)\s*</span>', re.S | re.I)
 
 
 def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
-    """Avature's hosted careers site. Server-rendered links to /JobDetail/,
-    with the location usually in the slug rather than a separate field.
+    """Avature's hosted careers site. Server-rendered links to /JobDetail/.
+
+    The card under each link carries a subtitle strip of labelled spans, and
+    two of them were being thrown away. `list-item-location` holds a real
+    place -- "Richmond, VIC" for Australia Post, "Barcelona, Chicago, Madrid,
+    Mexico City, Sao Paulo" for Baker McKenzie -- and this parser used to hard
+    code `location=""` for every Avature posting on the grounds that the
+    location was only ever in the slug. It is in the markup on the boards that
+    emit the column, and empty is what a location filter sees when a role has
+    no location at all, so those roles were being judged as placeless.
+    `list-item-posted` holds "Posted 13-Aug-2026", and dropping it left every
+    posting from all 95 Avature boards undated and unable to score for
+    recency.
+
+    Both spans are optional -- Bravura's board emits neither -- so both fall
+    back to nothing rather than to a guess. The strip is read from the window
+    that follows the title link and is cut at the next card, so a board where
+    one row omits the location cannot borrow the next row's.
     """
     text = payload if isinstance(payload, str) else ""
     best: dict[str, str] = {}
     order: list[str] = []
-    for url, raw in _AV_LINK.findall(text):
-        title = _text(raw)
+    card: dict[str, str] = {}
+    for m in _AV_LINK.finditer(text):
+        title = _text(m.group(2))
         if not title or _AV_NOT_A_TITLE.match(title):
             continue
+        url = m.group(1)
         if url not in best:
             order.append(url)
+            # Wide enough to reach the end of the subtitle strip through the
+            # markup's indentation -- Australia Post's `list-item-posted` sits
+            # 2,596 characters past its title link -- and cut at the next card
+            # regardless, so one row can never borrow the next row's fields.
+            window = text[m.end():m.end() + 9000]
+            edge = window.find("article--result")
+            card[url] = window[:edge] if edge > 0 else window
         # Longest wins: a card sometimes labels the same link twice and the
         # fuller one is the job title rather than a truncated repeat.
         if len(title) > len(best.get(url, "")):
@@ -1717,13 +1972,20 @@ def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
         # The slug carries the location on the path form. The `?jobId=` form
         # carries nothing, so there is no pseudo-description to invent.
         slug = "" if tail.startswith("?") else tail.lstrip("/").replace("-", " ")
+        blk = card.get(url, "")
+        lm, pm, wm = (_AV_LOC.search(blk), _AV_POSTED.search(blk),
+                      _AV_WORK.search(blk))
+        loc = _text(lm.group(1)) if lm else ""
+        # "Posted 13-Aug-2026" -- the label is part of the span's text.
+        posted = re.sub(r"^posted\s+", "", _text(pm.group(1)), flags=re.I) if pm else ""
         yield Job(
             company=src.company,
             title=title,
             url=url,
             platform="avature",
-            location="",
-            remote=_remote(slug, title),
+            location=loc,
+            remote=_remote(loc, _text(wm.group(1)) if wm else "", slug, title),
+            posted_at=_iso(posted),
             description=_text(slug),
             salary=Salary(),
             source_id=src.key,

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<workzag-jobs>
+
+<position>
+    <id>2632185</id>
+    <office>Remote / Düsseldorf</office>
+    <department>IT</department>
+    <recruitingCategory>Festangestellte (IT)</recruitingCategory>
+    <name>Information Security Officer / Information Security Manager (m/f/d)</name>
+    <jobDescriptions></jobDescriptions>
+    <employmentType>permanent</employmentType>
+    <seniority>experienced</seniority>
+    <schedule>full-time</schedule>
+    <yearsOfExperience>2-5</yearsOfExperience>
+    <keywords>Information Security,ISO,Cyber Security ,Security,ISMS,Compliance,Threat Monitoring,Incident response,SIEM,Infrastructure,Awareness ,Cloud,Leadership,Risk Management,AWS,Azure,Deutschland,Germany,remote,Homeoffice</keywords>
+    <occupation>software_quality_assurance</occupation>
+    <occupationCategory>quality_assurance_and_saftey</occupationCategory>
+    <createdAt>2026-05-12T13:50:48+00:00</createdAt>
+</position>
+
+<position>
+    <id>2727726</id>
+    <office>Amsterdam</office>
+    <department>L&amp;S Finance</department>
+    <recruitingCategory>Festangestellte (Finance)</recruitingCategory>
+    <name>Financial Accountant &amp; Controller (m/f/d)</name>
+    <jobDescriptions></jobDescriptions>
+    <employmentType>permanent</employmentType>
+    <seniority>experienced</seniority>
+    <schedule>full-time</schedule>
+    <yearsOfExperience>2-5</yearsOfExperience>
+    <keywords>Finance,Controlling,Controller,Accountant,Accounting,Netherlands,Remote,Germany,Homeoffice</keywords>
+    <occupation>financial_control</occupation>
+    <occupationCategory>accounting_and_finance</occupationCategory>
+    <createdAt>2026-07-24T13:19:09+00:00</createdAt>
+</position>
+
+</workzag-jobs>
