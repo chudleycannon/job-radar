@@ -62,25 +62,49 @@ _FONT = ('<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri" '
 _STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles {_W}>
 <w:docDefaults><w:rPrDefault><w:rPr>
-  {_FONT}<w:sz w:val="21"/><w:szCs w:val="21"/>
+  {_FONT}<w:sz w:val="20"/><w:szCs w:val="20"/>
 </w:rPr></w:rPrDefault></w:docDefaults>
+
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>
-  <w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr>
-  <w:rPr>{_FONT}<w:sz w:val="21"/></w:rPr></w:style>
+  <w:pPr><w:spacing w:after="100" w:line="252" w:lineRule="auto"/></w:pPr>
+  <w:rPr>{_FONT}<w:sz w:val="20"/></w:rPr></w:style>
+
 <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:pPr>
-  <w:spacing w:after="60"/></w:pPr>
-  <w:rPr>{_FONT}<w:b/><w:sz w:val="36"/><w:color w:val="1A1A1A"/></w:rPr></w:style>
+  <w:spacing w:after="40"/></w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:sz w:val="40"/><w:color w:val="111111"/>
+  <w:spacing w:val="-10"/></w:rPr></w:style>
+
+<w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:pPr>
+  <w:spacing w:after="40"/></w:pPr>
+  <w:rPr>{_FONT}<w:sz w:val="21"/><w:color w:val="444444"/></w:rPr></w:style>
+
+<!-- The rule is what separates one section from the next. Without it the
+     headings sat at nearly body weight and the page read as one column of
+     grey: a reader skimming for Experience had nothing to aim at. -->
 <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr>
-  <w:spacing w:before="260" w:after="80"/></w:pPr>
-  <w:rPr>{_FONT}<w:b/><w:sz w:val="24"/><w:color w:val="1A1A1A"/></w:rPr></w:style>
+  <w:spacing w:before="260" w:after="100"/>
+  <w:pBdr><w:bottom w:val="single" w:sz="6" w:space="3" w:color="C8C8C8"/></w:pBdr>
+  </w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:sz w:val="23"/><w:color w:val="111111"/></w:rPr></w:style>
+
 <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr>
-  <w:spacing w:before="160" w:after="40"/></w:pPr>
-  <w:rPr>{_FONT}<w:b/><w:sz w:val="22"/><w:color w:val="1A1A1A"/></w:rPr></w:style>
+  <w:spacing w:before="180" w:after="20"/><w:keepNext/></w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:sz w:val="21"/><w:color w:val="111111"/></w:rPr></w:style>
+
+<!-- Three levels, because a CV has three: section, employer, role. The
+     sub-roles under Deloitte were bold body text, which put them at the same
+     weight as the employer above them and flattened seven years into a list
+     of equals. -->
+<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr>
+  <w:spacing w:before="140" w:after="20"/><w:keepNext/></w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:i/><w:sz w:val="20"/><w:color w:val="333333"/></w:rPr></w:style>
+
 <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/>
-  <w:pPr><w:ind w:left="360" w:hanging="180"/>
-  <w:spacing w:after="60" w:line="276" w:lineRule="auto"/></w:pPr>
+  <w:pPr><w:ind w:left="340" w:hanging="200"/>
+  <w:spacing w:after="60" w:line="252" w:lineRule="auto"/></w:pPr>
   <w:rPr>{_FONT}</w:rPr></w:style>
 </w:styles>"""
+
 
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 
@@ -105,27 +129,38 @@ def _para(text: str, style: str | None = None) -> str:
 
 def markdown_to_docx(md: str, out_path: Path) -> Path:
     body = []
+    # The two lines under the name are the strapline and the contact details.
+    # They are not body paragraphs and were rendered as though they were, so
+    # the top of the CV had no shape to it at all.
+    seen_title, after_title = False, 0
     for raw in md.splitlines():
         line = raw.rstrip()
         if not line.strip():
             continue
-        if line.startswith("### "):
+        if line.startswith("#### "):
+            body.append(_para(line[5:], "Heading3"))
+        elif line.startswith("### "):
             body.append(_para(line[4:], "Heading2"))
         elif line.startswith("## "):
             body.append(_para(line[3:], "Heading1"))
         elif line.startswith("# "):
             body.append(_para(line[2:], "Title"))
+            seen_title = True
+            continue
         elif re.match(r"^\s*[-*+]\s+", line):
             body.append(_para("• " + re.sub(r"^\s*[-*+]\s+", "", line), "ListParagraph"))
         elif set(line.strip()) <= {"-", "="} and len(line.strip()) > 2:
             continue                       # a horizontal rule
+        elif seen_title and after_title < 2:
+            body.append(_para(line, "Subtitle"))
+            after_title += 1
         else:
             body.append(_para(line))
 
     doc = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            f'<w:document {_W}><w:body>{"".join(body)}'
            f'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
-           f'<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/>'
+           f'<w:pgMar w:top="900" w:right="1000" w:bottom="900" w:left="1000"/>'
            f'</w:sectPr></w:body></w:document>')
 
     out_path = Path(out_path)

@@ -71,3 +71,68 @@ def test_the_document_still_says_what_the_markdown_said():
                  "A bullet"):
         assert want in doc
     assert "<w:b/>" in doc, "bold was dropped"
+
+
+MD_CV = """# Callum McDonald
+
+Engineering Manager · CrowdStrike
+
+07369 241441 · x@y.co.uk
+
+## Experience
+
+### Deloitte, London · 2015 - 2022
+
+Seven years.
+
+#### Vulnerability Lead · 2021 - 2022
+
+Built the function.
+"""
+
+
+def _cv() -> str:
+    out = Path(tempfile.mkdtemp()) / "cv.docx"
+    markdown_to_docx(MD_CV, out)
+    return zipfile.ZipFile(out).read("word/document.xml").decode("utf-8")
+
+
+def _cv_styles() -> str:
+    out = Path(tempfile.mkdtemp()) / "cv.docx"
+    markdown_to_docx(MD_CV, out)
+    return zipfile.ZipFile(out).read("word/styles.xml").decode("utf-8")
+
+
+def test_a_cv_has_three_levels_because_it_has_three():
+    """Section, employer, role. The sub-roles under a long employer were bold
+    body text, which put them at the same weight as the employer above them
+    and flattened seven years into a list of equals."""
+    doc = _cv()
+    for style in ("Heading1", "Heading2", "Heading3"):
+        assert f'w:val="{style}"' in doc, f"{style} never used"
+    assert 'w:styleId="Heading3"' in _cv_styles()
+
+
+def test_a_section_heading_is_separated_from_what_came_before_it():
+    """Headings sat at close to body weight and the page read as one column of
+    grey. A reader skimming for Experience had nothing to aim at."""
+    styles = _cv_styles()
+    assert "<w:pBdr>" in styles, "no rule under section headings"
+    assert 'w:val="single"' in styles
+
+
+def test_the_two_lines_under_the_name_are_not_body_text():
+    """The strapline and the contact details were rendered as ordinary
+    paragraphs, so the top of the CV had no shape at all."""
+    doc = _cv()
+    assert doc.count('w:val="Subtitle"') == 2
+    assert 'w:styleId="Subtitle"' in _cv_styles()
+    # And only the two: the first real paragraph stays a paragraph.
+    assert "Seven years." in doc
+
+
+def test_margins_leave_room_for_a_two_page_cv():
+    """A 955 word CV came out at three pages on inch margins, and a third page
+    holding only Education reads as padding."""
+    doc = _cv()
+    assert 'w:top="900"' in doc and 'w:left="1000"' in doc
