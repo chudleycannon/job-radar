@@ -59,6 +59,37 @@ DRUM_ROLL = CLEAN_CV.replace(
     "Not a trial: the platform takes real payments every day.")
 
 
+def _skills(detect_report: str) -> Path:
+    """A skills tree this test controls, holding a stub linter.
+
+    natural-writing is not in this repo and is not on a CI runner, so a test
+    that calls the real one is testing whether the developer happens to have
+    it installed. That exact mistake was fixed once today in test_core.py and
+    made again here, in the tests written to check that documents get checked.
+
+    What is under test is the wiring: does `_quality` read the linter's output,
+    pull out the failing lines, and hand them back in a form a revision prompt
+    can use. Whether the linter itself is right is the linter's own business.
+    """
+    root = Path(tempfile.mkdtemp())
+    nw = root / "natural-writing" / "scripts"
+    nw.mkdir(parents=True)
+    (nw / "detect.py").write_text(
+        "import sys\nprint(%r)\n" % detect_report, encoding="utf-8")
+    # rate-cv ships in this repo, so the real one is used for the CV checks.
+    repo = Path(__file__).resolve().parent.parent / "skills"
+    if (repo / "rate-cv").exists():
+        import shutil
+        shutil.copytree(repo / "rate-cv", root / "rate-cv")
+    return root
+
+
+CLEAN_REPORT = "  SLOP SCORE: 6/100   (bar: <= 20, and no FAILs)   ->  PASS"
+DIRTY_REPORT = (
+    "  [x] negation-colon           FAIL   1 denial-then-colon drum-roll(s)\n"
+    "  SLOP SCORE: 31/100   (bar: <= 20, and no FAILs)   ->  NEEDS WORK")
+
+
 def _dir(text: str, name: str = "CV.md") -> Path:
     d = Path(tempfile.mkdtemp())
     (d / name).write_text(text, encoding="utf-8")
@@ -67,16 +98,22 @@ def _dir(text: str, name: str = "CV.md") -> Path:
 
 
 def test_a_draft_that_fails_a_check_is_reported_with_the_reason():
-    """Not a score. "colon-reveal FAIL" tells the model what to change;
-    "34/100" leaves it guessing."""
-    ok, problems, scores = runner._quality(_dir(DRUM_ROLL), "CV.md", "cv")
+    """Not a score. The failing line tells the model what to change;
+    "31/100" leaves it guessing."""
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(DIRTY_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, scores = runner._quality(_dir(DRUM_ROLL), "CV.md", "cv")
     assert ok is False
-    assert any("natural-writing" in p for p in problems), problems
-    assert any("negation-colon" in p or "Not a trial" in p for p in problems), problems
+    assert any("negation-colon" in p for p in problems), problems
+    assert any("slop score 31" in p for p in problems), problems
 
 
 def test_a_clean_draft_passes_without_a_revision():
-    ok, problems, scores = runner._quality(_dir(CLEAN_CV), "CV.md", "cv")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, scores = runner._quality(_dir(CLEAN_CV), "CV.md", "cv")
     assert ok is True, problems
     assert scores.get("slop", 99) <= 20
 
@@ -85,15 +122,18 @@ def test_the_cv_checks_catch_what_the_prose_check_cannot():
     """natural-writing has nothing to say about a missing Education section or
     a date range an applicant tracking system cannot parse. Both were
     regressions introduced by hand on a real CV."""
-    no_edu = CLEAN_CV.replace(
-        "## Education\n\nBTEC Level 3 Extended National Diploma in IT\n", "")
-    ok, problems, _ = runner._quality(_dir(no_edu), "CV.md", "cv")
-    assert not ok and any("education" in p.lower() for p in problems), problems
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        no_edu = CLEAN_CV.replace(
+            "## Education\n\nBTEC Level 3 Extended National Diploma in IT\n", "")
+        ok, problems, _ = runner._quality(_dir(no_edu), "CV.md", "cv")
+        assert not ok and any("education" in p.lower() for p in problems), problems
 
-    prose_dates = (CLEAN_CV.replace("2022 - Present", "2022 to present")
-                   .replace("2018 - 2022", "2018 to 2022"))
-    ok, problems, _ = runner._quality(_dir(prose_dates), "CV.md", "cv")
-    assert not ok and any("date range" in p for p in problems), problems
+        prose_dates = (CLEAN_CV.replace("2022 - Present", "2022 to present")
+                       .replace("2018 - 2022", "2018 to 2022"))
+        ok, problems, _ = runner._quality(_dir(prose_dates), "CV.md", "cv")
+        assert not ok and any("date range" in p for p in problems), problems
 
 
 def test_an_uncheckable_document_is_a_failure_not_a_pass():
