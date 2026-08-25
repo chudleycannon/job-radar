@@ -28,7 +28,11 @@ def load_file(path: str | Path) -> list[Source]:
             d = d["json"]
         if not isinstance(d, dict) or not d.get("url"):
             continue
-        out.append(adapters.prepare(Source.from_dict(d)))
+        s = adapters.prepare(Source.from_dict(d))
+        # One spelling, decided here, so no consumer has to know the file once
+        # held two of them.
+        s.country = normalise_country_tag(s.country)
+        out.append(s)
     return out
 
 
@@ -49,8 +53,97 @@ def dropped_titles(titles: list[str]) -> list[str]:
     return list(titles[MAX_KEYWORD_TITLES:])
 
 
+# The only placeholders a source URL may carry: one of your titles, and one of
+# the places you would work. Nothing else is known here, so nothing else can
+# be filled in.
+TEMPLATE_FIELDS = ("keyword", "country")
+_FIELD_LIST = " and ".join("{" + f + "}" for f in TEMPLATE_FIELDS)
+
+
+class UnusableSourceURL(ValueError):
+    """A source URL that cannot be turned into a real one."""
+
+
+def fill_template(url: str, keyword: str, country: str = "") -> str:
+    """Fill a templated source URL, or say plainly why it cannot be filled.
+
+    `str.format` raises on any placeholder it was not given, and one source
+    carrying `&loc={location}` was enough to kill a whole `validate` run: the
+    KeyError came back out of `ThreadPoolExecutor.map`, so every source after
+    it went unchecked and the health check reported nothing about them either
+    way. A literal `{` in a query string does the same thing, and a
+    hand-written `sources.extra` entry is exactly where one turns up.
+
+    One unusable URL is a fact about one source. Raising a named error lets
+    the caller report that source and carry on with the rest.
+    """
+    try:
+        return url.format(keyword=keyword, country=country)
+    except KeyError as e:
+        raise UnusableSourceURL(
+            f"the URL asks for {{{e.args[0]}}}, which nothing here can fill "
+            f"in; only {_FIELD_LIST} are known") from e
+    except IndexError as e:
+        raise UnusableSourceURL(
+            f"the URL has an empty or numbered {{}} placeholder; only "
+            f"{_FIELD_LIST} are known") from e
+    except ValueError as e:
+        raise UnusableSourceURL(f"the URL has a malformed placeholder: {e}") from e
+
+
+def url_template_error(src: Source) -> str | None:
+    """Why this source's URL cannot be turned into a real one, or None.
+
+    Asked only of the sources something actually formats, which is the same
+    condition `discover.validate_source` uses. A plain board URL is never
+    formatted, so a literal brace in one is harmless and must not be reported
+    as a fault.
+    """
+    if not (src.keyword_template or "{keyword}" in src.url):
+        return None
+    try:
+        fill_template(src.url, keyword="test")
+    except UnusableSourceURL as e:
+        return str(e)
+    return None
+
+
+# One spelling for "this board is not in a single country".
+#
+# The bundled list carried both `multi` and `multiple`, and `cli.py` read both,
+# so nothing was broken and nothing said which was right. That is a trap for
+# the next reader and for the next consumer, which will handle whichever one
+# it happened to see. `unknown` is the other non-country tag and means the
+# harvester could not tell; neither may ever be stored as a country.
+MULTI_COUNTRY = "multi"
+NON_COUNTRY_TAGS = frozenset({MULTI_COUNTRY, "unknown"})
+_COUNTRY_TAG_SYNONYMS = {
+    "multiple": MULTI_COUNTRY, "multi": MULTI_COUNTRY,
+    "global": MULTI_COUNTRY, "worldwide": MULTI_COUNTRY,
+    "international": MULTI_COUNTRY, "various": MULTI_COUNTRY,
+    "unknown": "unknown", "": "",
+}
+
+
+def normalise_country_tag(tag: str | None) -> str:
+    """The one spelling of a board's country tag.
+
+    A two-letter code is upper-cased and kept. Anything meaning "more than one
+    country" becomes `multi`. Anything else unrecognised becomes `unknown`
+    rather than being passed through, because a tag that is not a country and
+    is not one of these two is a country to every reader downstream.
+    """
+    t = (tag or "").strip()
+    if not t:
+        return ""
+    if len(t) == 2 and t.isalpha():
+        return t.upper()
+    return _COUNTRY_TAG_SYNONYMS.get(t.lower(), "unknown")
+
+
 def expand_templates(srcs: list[Source], titles: list[str],
-                     countries: list[str] | None = None) -> list[Source]:
+                     countries: list[str] | None = None,
+                     problems: list | None = None) -> list[Source]:
     """Turn one templated source into one search per thing you care about.
 
     Some platforms are searches, not employer boards: NHS Jobs and LinkedIn
@@ -69,6 +162,11 @@ def expand_templates(srcs: list[Source], titles: list[str],
 
     A source with no `{country}` in it is unaffected, so NHS Jobs and LinkedIn
     keep expanding by title alone.
+
+    `problems` collects `(company, why)` for the templates that cannot be
+    filled in at all, so the caller can name them. They are skipped rather
+    than raised: one hand-added source with `&loc={location}` in it used to
+    take the whole scan down before a single board was read.
     """
     out: list[Source] = []
     for s in srcs:
@@ -77,6 +175,11 @@ def expand_templates(srcs: list[Source], titles: list[str],
             continue
         if not titles:
             continue          # nothing to search for; a frozen guess is worse
+        bad = url_template_error(s)
+        if bad:
+            if problems is not None:
+                problems.append((s.company, bad))
+            continue
         wants_country = "{country}" in s.url
         # An unrecognised code would put a literal "XX" in the query and
         # return nothing, which reads as "no jobs there" rather than "that is
@@ -87,7 +190,8 @@ def expand_templates(srcs: list[Source], titles: list[str],
         for title in titles[:MAX_KEYWORD_TITLES]:
             kw = quote_plus(title)
             for place in places:
-                url = s.url.format(keyword=kw, country=quote_plus(place))
+                url = fill_template(s.url, keyword=kw,
+                                    country=quote_plus(place))
                 label = f"{s.company}: {title}"
                 if place:
                     label += f" in {place}"
@@ -105,14 +209,16 @@ def expand_templates(srcs: list[Source], titles: list[str],
     return out
 
 
-def load(cfg: Config) -> list[Source]:
+def load(cfg: Config, problems: list | None = None) -> list[Source]:
     srcs: list[Source] = []
     if cfg.use_bundled_sources:
         srcs.extend(load_file(BUNDLED))
     for d in cfg.extra_sources:
         if isinstance(d, str):
             d = {"company": d, "url": d}
-        srcs.append(adapters.prepare(Source.from_dict(d)))
+        s = adapters.prepare(Source.from_dict(d))
+        s.country = normalise_country_tag(s.country)
+        srcs.append(s)
 
     if cfg.sectors:
         want = {s.lower() for s in cfg.sectors}
@@ -125,7 +231,7 @@ def load(cfg: Config) -> list[Source]:
     # narrowed to where the user already is cannot find the roles that
     # `relocate_to` exists to find.
     places = list(dict.fromkeys(list(cfg.countries) + list(cfg.relocate_to)))
-    srcs = expand_templates(srcs, cfg.titles_include, places)
+    srcs = expand_templates(srcs, cfg.titles_include, places, problems)
 
     seen, uniq = set(), []
     for s in srcs:

@@ -3811,16 +3811,20 @@ def test_a_reed_repost_does_not_beat_the_employers_own_board():
     assert out[0].platform == "greenhouse", "the employer's own board wins"
     assert directness("reed") <= directness("greenhouse")
 
-    # KNOWN GAP, and it lives in screen.py, which this change did not touch.
-    # directness() is {"linkedin": 0, "nhs": 1} with everything else 2, so
-    # "reed" currently TIES with a real applicant tracking system and the
-    # winner above is settled by the next key, description length. Reed's
-    # search endpoint does return advert text, so a Reed repost carrying a
-    # fuller description than the employer's own board would take the row and
-    # the reader would follow a reed.co.uk redirect instead of the real apply
-    # form. The fix is one line: {"linkedin": 0, "nhs": 1, "reed": 1}. This
-    # test keeps passing either way; it is the assertion above that gets
-    # stronger once that lands.
+    # That gap is closed. It used to read KNOWN GAP here: directness() was
+    # {"linkedin": 0, "nhs": 1} with everything else 2, so "reed" TIED with a
+    # real applicant tracking system and the winner was settled by the next
+    # key, description length. Reed's search endpoint returns advert text, so
+    # a Reed repost with a fuller description took the row and handed the
+    # reader a reed.co.uk redirect instead of the real apply form. screen.py
+    # now lists every aggregator, so the assertion is the strict one: Reed
+    # loses to an employer's own board on directness alone, whatever the two
+    # descriptions say.
+    assert directness("reed") < directness("greenhouse")
+    # Below 2 is also what `_fold_aggregators` reads as "this is an
+    # aggregator", so a Reed row folds into the employer's own posting rather
+    # than showing beside it.
+    assert directness("reed") < 2
 
 
 def test_reed_is_skipped_with_a_message_when_there_is_no_api_key():

@@ -1691,6 +1691,58 @@ def _same_employer(name: str) -> str:
     return " ".join(n.split()) or (name or "").strip().lower()
 
 
+# How the offices of one role are written on a single line, and how many of
+# them are named before the line turns into a count.
+LOCATION_JOIN = " / "
+MAX_SHOWN_LOCATIONS = 6
+_MORE_SUFFIX = re.compile(r"\s*\+\s*\d+\s+more\s*$", re.I)
+
+
+def location_parts(text: str) -> list[str]:
+    """The individual places in a location line, joined or not.
+
+    Undoes `merged_location`, so merging a row that was already merged does
+    not nest one joined line inside another and produce "London / Berlin /
+    London / Berlin". The "+N more" tail is dropped rather than parsed: the
+    names behind it are gone and inventing a count for them would be worse
+    than under-reporting one.
+    """
+    text = _MORE_SUFFIX.sub("", (text or "").strip())
+    return [p.strip() for p in text.split(LOCATION_JOIN) if p.strip()]
+
+
+def merged_location(locations, cfg: Config | None = None) -> tuple[str, int]:
+    """One location line for a role that is open in several places, and how
+    many places that is.
+
+    Shared with `store.merge_duplicates` deliberately. Both functions collapse
+    the same role posted once per office, and for a while only one of them
+    kept the other offices: this pass joined the locations onto the survivor,
+    and the database pass deleted the losing row outright. So a Greenhouse
+    role open in London and in New York showed both cities when both copies
+    arrived in one scan, and lost New York when the second copy arrived a day
+    later. Same input, two answers, decided by timing.
+    """
+    locs: list[str] = []
+    seen: set[str] = set()
+    for raw in locations:
+        for part in location_parts(raw):
+            if part.lower() in seen:
+                continue
+            seen.add(part.lower())
+            locs.append(part)
+    # Show the locations the reader can actually take first. A role open in
+    # twenty countries should not lead with the nineteen that are no use.
+    if cfg:
+        wanted = set(cfg.countries) | set(cfg.relocate_to)
+        locs.sort(key=lambda l: 0 if (_countries_in(l) & wanted) else 1)
+    shown = locs[:MAX_SHOWN_LOCATIONS]
+    text = LOCATION_JOIN.join(shown)
+    if len(locs) > len(shown):
+        text += f" +{len(locs) - len(shown)} more"
+    return text, len(locs)
+
+
 def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
     """Collapse the same role posted once per location, or once per source.
 
@@ -1717,25 +1769,13 @@ def dedupe(jobs: list[Job], cfg: Config | None = None) -> list[Job]:
         best = max(members, key=lambda x: (directness(x.platform),
                                            x.salary.confirmed,
                                            len(x.description or "")))
-        locs, seen_loc = [], set()
-        for m in members:
-            l = (m.location or "").strip()
-            if l and l.lower() not in seen_loc:
-                seen_loc.add(l.lower())
-                locs.append(l)
-        # Show the locations the reader can actually take first. A role open in
-        # twenty countries should not lead with the nineteen that are no use.
-        if cfg:
-            wanted = set(cfg.countries) | set(cfg.relocate_to)
-            locs.sort(key=lambda l: 0 if (_countries_in(l) & wanted) else 1)
-        shown = locs[:6]
-        best.location = " / ".join(shown) + (f" +{len(locs) - len(shown)} more"
-                                             if len(locs) > len(shown) else "")
+        best.location, n_locs = merged_location(
+            [m.location or "" for m in members], cfg)
         if len({m.platform for m in members}) > 1:
             others = sorted({m.platform for m in members} - {best.platform})
             best.flags.append("also listed on " + ", ".join(others))
         if len({(m.location or "").lower() for m in members}) > 1:
-            best.flags.append(f"posted in {len(locs)} locations")
+            best.flags.append(f"posted in {n_locs} locations")
         out.append(best)
     return _fold_aggregators(out)
 

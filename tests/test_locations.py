@@ -193,9 +193,15 @@ def test_a_postings_own_location_beats_the_boards_country_tag():
     location said US."""
     from jobradar.screen import _countries_in
 
+    from jobradar.sources import NON_COUNTRY_TAGS, normalise_country_tag
+
     def resolve(location, tag):
         here = _countries_in(location or "")
-        if tag in ("multiple", "multi", "unknown"):
+        # As cli.py does it: the list is normalised onto one spelling as it is
+        # loaded, and the tag is only a country if it is not one of the two
+        # tags that mean "not a country".
+        tag = normalise_country_tag(tag)
+        if tag in NON_COUNTRY_TAGS:
             tag = ""
         if len(here) == 1:
             return here.pop()

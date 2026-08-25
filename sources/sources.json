@@ -98467,7 +98467,7 @@
    "platform": "workable_search",
    "url": "https://jobs.workable.com/api/v1/jobs?query={keyword}&location={country}",
    "keyword_template": true,
-   "country": "multiple"
+   "country": "multi"
   },
   {
    "company": "0104 Clifton Park Hospital",

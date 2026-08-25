@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from . import adapters, output, sources as src_mod
 from .config import Config, ConfigError, load as load_cfg
-from .discover import discover as run_discover, validate_source
+from .discover import discover as run_discover, prunable as row_prunable, validate_source
 from . import fetch as fetch_defaults
 from .fetch import (HostLimiter, detect_throttling, fetch_all,
                     interleave_by_host, pace_this_thread,
@@ -26,10 +26,28 @@ def _say(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+def _load_sources(cfg: Config) -> list[Source]:
+    """The configured sources, saying out loud which ones were unusable.
+
+    A templated URL asking for a placeholder this tool cannot supply used to
+    raise straight out of `sources.load`, so one bad line in `sources.extra`
+    stopped every command that reads the list. It is now skipped, and skipping
+    something silently is the other half of that bug, so it is named here.
+    """
+    problems: list = []
+    srcs = src_mod.load(cfg, problems=problems)
+    for company, why in problems[:10]:
+        _say(f"  ! skipped {company}: {why}")
+    if len(problems) > 10:
+        _say(f"  ! and {len(problems) - 10} more source(s) with URLs that "
+             f"cannot be filled in")
+    return srcs
+
+
 # ---------------------------------------------------------------- scan
 def cmd_scan(args) -> int:
     cfg = load_cfg(args.config)
-    srcs = src_mod.load(cfg)
+    srcs = _load_sources(cfg)
     # Whether the limit actually cut anything, rather than merely whether one
     # was asked for. `--limit 20000` against a 13,440-source config read every
     # one of them and still announced "only 20000 sources were read".
@@ -123,7 +141,12 @@ def cmd_scan(args) -> int:
             if not j.country:
                 here = _countries_in(j.location or "")
                 tag = res.source.country or ""
-                if tag in ("multiple", "multi", "unknown"):
+                # One spelling, defined in sources.py and normalised as the
+                # list is loaded. This used to accept both `multi` and
+                # `multiple` because the shipped list held both, which meant
+                # neither was the right one and the next consumer would handle
+                # whichever it happened to meet.
+                if tag in src_mod.NON_COUNTRY_TAGS:
                     tag = ""            # not a country, never store it as one
                 if len(here) == 1:
                     j.country = here.pop()
@@ -290,7 +313,7 @@ def cmd_scan(args) -> int:
         fixed = store.repair_smartrecruiters_urls(con)
         if fixed:
             _say(f"  repaired {fixed} broken apply link(s)")
-        dupes = store.merge_duplicates(con)
+        dupes = store.merge_duplicates(con, cfg)
         if dupes:
             _say(f"  merged {dupes} duplicate(s) into the employer's own listing")
 
@@ -733,7 +756,7 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> int:   # used by disco
 # ---------------------------------------------------------------- validate
 def cmd_validate(args) -> int:
     cfg = _cfg_or_default(args.config)
-    srcs = src_mod.load_file(args.file) if args.file else src_mod.load(cfg)
+    srcs = src_mod.load_file(args.file) if args.file else _load_sources(cfg)
     if args.limit:
         srcs = srcs[: args.limit]
     _say(f"Validating {len(srcs)} sources...")
@@ -750,6 +773,21 @@ def cmd_validate(args) -> int:
 
     def paced(src):
         pace_this_thread(limiter)
+        # A URL with a placeholder nothing can fill in raises inside
+        # `validate_source`, and that exception comes back out of `ex.map`
+        # below and ends the run: one odd source in `sources.extra` meant the
+        # thousands after it were never checked and nothing said so. Report it
+        # as its own row instead. "unreachable" is the honest verdict -- it
+        # was never read -- and unreachable rows are never pruned, which is
+        # right, because a URL this tool cannot build is not evidence that the
+        # employer stopped hiring.
+        bad = src_mod.url_template_error(src)
+        if bad:
+            return {"company": src.company, "url": src.url,
+                    "platform": src.platform, "live_jobs": 0,
+                    "verdict": "unreachable", "transport": None,
+                    "prunable": False,
+                    "note": f"could not be read: {bad}"}
         return validate_source(src)
 
     with ThreadPoolExecutor(max_workers=max(1, cfg.concurrency)) as ex:
@@ -810,7 +848,19 @@ def cmd_validate(args) -> int:
                  "if the list really has collapsed.")
             if not args.force_prune:
                 return 1
-        dead_urls = {r["url"] for r in dead}
+        # Deleted on the row's own `prunable` flag, not on its verdict.
+        # `discover` sets that flag, and it is stricter than "the verdict says
+        # dead": a row that never reached HTTP, or that came back with a TLS
+        # alert, can never be deletable however the verdict reads. Arguing
+        # from the verdict here happened to agree with the flag today, which
+        # is not the same as being right, and the day they disagree the cost
+        # is a live employer deleted from the shipped list.
+        prunable_rows = [r for r in rows if row_prunable(r)]
+        held = len([r for r in dead if not row_prunable(r)])
+        if held:
+            _say(f"  {held} source(s) read as dead but are not deletable "
+                 f"(nothing reached the board), so they are kept.")
+        dead_urls = {r["url"] for r in prunable_rows}
         keep = [s for s in srcs if s.url not in dead_urls]
         src_mod.save(keep, args.file, meta={"pruned": len(srcs) - len(keep),
                                             "checked": datetime.now().date().isoformat()})
@@ -821,7 +871,7 @@ def cmd_validate(args) -> int:
 # ---------------------------------------------------------------- coverage
 def cmd_coverage(args) -> int:
     cfg = _cfg_or_default(args.config)
-    srcs = src_mod.load_file(args.file) if args.file else src_mod.load(cfg)
+    srcs = src_mod.load_file(args.file) if args.file else _load_sources(cfg)
     cov = src_mod.coverage(srcs)
     _say(f"{cov['total']} sources\n")
     for label, key in (("By sector", "by_sector"), ("By country", "by_country"),

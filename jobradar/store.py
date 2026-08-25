@@ -423,7 +423,41 @@ def repair_smartrecruiters_urls(con) -> int:
     return n
 
 
-def merge_duplicates(con) -> int:
+def _keep_locations(con, keep, members, cfg=None) -> None:
+    """Join the offices of the merged copies onto the row that survives.
+
+    Both halves of the line come from `screen.merged_location`, so the row a
+    merge leaves behind is written the same way as the row `dedupe` produces
+    at scan time. The "posted in N locations" flag is added the same way too,
+    and only once: this runs on every scan, and a flag appended per run would
+    grow a list of identical strings on the dashboard.
+    """
+    from .screen import merged_location
+    locations = [(m["location"] or "") for m in members]
+    text, n_locs = merged_location(locations, cfg)
+    if not text:
+        return
+    try:
+        flags = json.loads(keep["flags"] or "[]")
+        if not isinstance(flags, list):
+            flags = []
+    except (TypeError, ValueError):
+        flags = []
+    # Replace rather than append: a third copy arriving next week makes the
+    # count from last week wrong, and two contradictory counts on one row is
+    # worse than the one that is out of date.
+    kept_flags = [f for f in flags
+                  if not (isinstance(f, str) and f.startswith("posted in ")
+                          and f.endswith(" locations"))]
+    if n_locs > 1:
+        kept_flags.append(f"posted in {n_locs} locations")
+    if text == (keep["location"] or "") and kept_flags == flags:
+        return
+    con.execute("UPDATE roles SET location=?, flags=? WHERE uid=?",
+                (text, json.dumps(kept_flags), keep["uid"]))
+
+
+def merge_duplicates(con, cfg=None) -> int:
     """Collapse rows that are the same job from more than one source.
 
     `dedupe` runs over one scan's results and then those are written to the
@@ -436,13 +470,27 @@ def merge_duplicates(con) -> int:
     employer speaking and it carries the description the search does not. Any
     status, note or generated document on the losing row moves across first:
     the whole point of the merge is that you keep what you did.
+
+    The locations move across too, and that is a decision rather than a
+    detail. Company plus title is deliberately the same key `dedupe` uses,
+    which means it treats one role advertised in London and in New York as one
+    role: several applicant tracking systems publish a posting per office, and
+    keying the merge on location instead would put those six rows back on the
+    board and would still not separate genuinely different vacancies, because
+    "London", "London, UK" and "London, England" are three spellings of one
+    place. So the same-job question is answered the same way in both passes,
+    and the cities are joined onto the survivor exactly as `dedupe` joins
+    them, by the same function. Deleting the losing row outright, which is
+    what this used to do, was the one place the two passes disagreed: a role
+    open in two cities kept both when the copies arrived in one scan and lost
+    the second city when they arrived a day apart.
     """
     from .screen import directness
     _ensure_columns(con)
     groups: dict[tuple, list] = {}
     for r in con.execute(
             "SELECT uid, company, title, platform, description, salary_confirmed, "
-            "fit, fit_why FROM roles").fetchall():
+            "fit, fit_why, location, flags FROM roles").fetchall():
         key = (r["company"].strip().lower(), r["title"].strip().lower())
         groups.setdefault(key, []).append(r)
 
@@ -454,6 +502,7 @@ def merge_duplicates(con) -> int:
                                     r["salary_confirmed"] or 0,
                                     len(r["description"] or "")), reverse=True)
         keep, losers = members[0], members[1:]
+        _keep_locations(con, keep, members, cfg)
         for lose in losers:
             st = con.execute("SELECT status,note FROM role_state WHERE uid=?",
                              (lose["uid"],)).fetchone()
