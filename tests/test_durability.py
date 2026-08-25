@@ -78,18 +78,25 @@ class _DiesHalfway:
 class kill_writes_under:
     """Kill every write opened for writing inside `root`, half way through.
 
-    Both `builtins.open` and `io.open` are swapped. They are the same function
-    but they are reached by two different names: the writers in this package
-    call the builtin, while `Path.write_text` goes through `io.open`, and
-    patching only one of them would leave half the tests passing for no
-    reason. `test_the_interruption_harness_really_interrupts` is what catches
-    that if it ever stops being true.
+    Three names are swapped, because one file can be opened by three routes.
+    The writers in this package call the builtin. `Path.write_text` goes
+    through `io.open` on 3.11 and later, and on 3.10 and earlier it goes
+    through `Path.open`, which binds `io.open` when the class is defined, so
+    a patch applied afterwards can never reach it. Patching `Path.open` as
+    well covers both, and covers any future rearrangement of pathlib's
+    internals, because it is the public name either way.
+
+    That is not a hypothetical. The first version of this harness patched two
+    of the three, and the meta-test below caught it on 3.10 and only on 3.10:
+    the plain write it is supposed to destroy came through untouched. Which is
+    the whole reason the meta-test exists.
     """
 
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
         self._real = builtins.open
         self._real_io = io.open
+        self._real_path_open = Path.open
 
     def _patched(self, file, mode="r", *a, **kw):
         f = self._real(file, mode, *a, **kw)
@@ -106,14 +113,19 @@ class kill_writes_under:
             return _DiesHalfway(f)
         return f
 
+    def _patched_path_open(self, path_self, mode="r", *a, **kw):
+        return self._patched(path_self, mode, *a, **kw)
+
     def __enter__(self):
         builtins.open = self._patched
         io.open = self._patched
+        Path.open = lambda s_, mode="r", *a, **kw: self._patched(s_, mode, *a, **kw)
         return self
 
     def __exit__(self, *exc):
         builtins.open = self._real
         io.open = self._real_io
+        Path.open = self._real_path_open
         return False
 
 
