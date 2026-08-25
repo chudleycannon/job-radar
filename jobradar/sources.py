@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 from . import adapters
 from .config import Config
 from .models import Source
+from .screen import country_name
 
 BUNDLED = Path(__file__).parent.parent / "sources" / "sources.json"
 
@@ -30,14 +31,26 @@ def load_file(path: str | Path) -> list[Source]:
     return out
 
 
-def expand_templates(srcs: list[Source], titles: list[str]) -> list[Source]:
-    """Turn one templated source into one search per title you care about.
+def expand_templates(srcs: list[Source], titles: list[str],
+                     countries: list[str] | None = None) -> list[Source]:
+    """Turn one templated source into one search per thing you care about.
 
     Some platforms are searches, not employer boards: NHS Jobs and LinkedIn
     return whatever keyword you give them. Shipping those as fixed URLs shipped
     the author's own job titles, so a nurse running this got eight searches for
     "engineering manager" inside the NHS and zero results out of 24,719
     postings. The keywords have to come from the user.
+
+    `{country}` is the same argument one step further out. Workable's search
+    covers every country it hosts, and "software engineer" worldwide is 4,220
+    postings, 211 pages behind an opaque cursor. The same search narrowed to
+    the United Kingdom is 322. Narrowing at the query is the difference
+    between reading what the user asked for and reading the world and throwing
+    almost all of it away, and it is the same reasoning that put
+    `postedByDirectEmployer` in the Reed builder.
+
+    A source with no `{country}` in it is unaffected, so NHS Jobs and LinkedIn
+    keep expanding by title alone.
     """
     out: list[Source] = []
     for s in srcs:
@@ -46,12 +59,25 @@ def expand_templates(srcs: list[Source], titles: list[str]) -> list[Source]:
             continue
         if not titles:
             continue          # nothing to search for; a frozen guess is worse
+        wants_country = "{country}" in s.url
+        # An unrecognised code would put a literal "XX" in the query and
+        # return nothing, which reads as "no jobs there" rather than "that is
+        # not a country". Falling back to one unfiltered search is honest: it
+        # returns too much rather than nothing.
+        names = [n for n in (country_name(c) for c in (countries or [])) if n]
+        places = names if (wants_country and names) else [""]
         for title in titles[:6]:
             kw = quote_plus(title)
-            out.append(Source(
-                company=f"{s.company}: {title}", url=s.url.format(keyword=kw),
-                platform=s.platform, sector=s.sector, country=s.country,
-                domain=s.domain, method=s.method, body=s.body))
+            for place in places:
+                url = s.url.format(keyword=kw, country=quote_plus(place))
+                label = f"{s.company}: {title}"
+                if place:
+                    label += f" in {place}"
+                out.append(Source(
+                    company=label, url=url,
+                    platform=s.platform, sector=s.sector,
+                    country=s.country, domain=s.domain,
+                    method=s.method, body=s.body))
     return out
 
 
@@ -71,7 +97,11 @@ def load(cfg: Config) -> list[Source]:
         want = {c.upper() for c in cfg.source_countries}
         srcs = [s for s in srcs if not s.country or s.country.upper() in want]
 
-    srcs = expand_templates(srcs, cfg.titles_include)
+    # The relocation countries too, not just the home one: a search
+    # narrowed to where the user already is cannot find the roles that
+    # `relocate_to` exists to find.
+    places = list(dict.fromkeys(list(cfg.countries) + list(cfg.relocate_to)))
+    srcs = expand_templates(srcs, cfg.titles_include, places)
 
     seen, uniq = set(), []
     for s in srcs:

@@ -219,6 +219,83 @@ def parse_workable(payload: Any, src: Source) -> Iterator[Job]:
 
 
 # --------------------------------------------------------------------------
+# Workable, the other way round
+#
+# The 2,094 Workable boards on the bundled list are read one employer at a
+# time, which is 2,094 requests to one host every scan. Workable's own answer
+# to that was a 429 with `Retry-After: 57841`, a sixteen hour refusal, and the
+# per-host pacing that stopped it costing 8.7 hours now costs fifty minutes
+# instead: 2,094 requests at 0.7 a second is the floor of the whole scan, and
+# nothing about a wider worker pool changes it.
+#
+# jobs.workable.com is Workable's own aggregator over every board it hosts,
+# and it has a search API. One query for "engineering manager" in the United
+# Kingdom returns 110 postings in six requests, each carrying the company, a
+# structured location with a country name, the workplace mode and the full
+# description HTML. Six requests against 2,094.
+#
+# It is also strictly more than the boards give. The bundled 2,094 are the
+# Workable employers a Common Crawl harvest happened to find; the search
+# reaches every Workable employer, including the ones nobody has crawled.
+#
+# What it does not give is salary, which no Workable board gives either, so
+# `parse_text` reads the description exactly as the board parser does.
+# --------------------------------------------------------------------------
+def parse_workable_search(payload: Any, src: Source) -> Iterator[Job]:
+    """jobs.workable.com/api/v1/jobs, the aggregator rather than one board.
+
+    The company is the payload's own, not the source's. Every other parser
+    here takes `src.company`, because for a board the source IS the employer.
+    Here the source is a search, so taking `src.company` would file all 110
+    results under the literal string "Workable search: engineering manager"
+    and dedupe would then treat unrelated employers as one.
+    """
+    for j in (payload or {}).get("jobs", []) or []:
+        co = j.get("company") or {}
+        company = _text(co.get("title")) if isinstance(co, dict) else _text(co)
+        if not company:
+            # No employer name is not a role we can show: the dashboard groups
+            # by employer and the dedupe rule that prefers a direct board over
+            # an aggregator cannot run without one.
+            continue
+        loc = j.get("location") or {}
+        if isinstance(loc, dict):
+            location = ", ".join(
+                str(loc.get(k)) for k in ("city", "subregion", "countryName")
+                if loc.get(k))
+        else:
+            location = _text(loc)
+        # `workplace` is Workable's own flag and is one of remote, hybrid or
+        # on-site. Trusted over reading the location text, which is what
+        # `_remote` falls back to, because a hybrid role in London reads as
+        # neither and guessing it wrong either hides a role or offers one that
+        # cannot be done from where the user lives.
+        workplace = (_text(j.get("workplace")) or "").lower()
+        desc = _text(j.get("description"))
+        yield Job(
+            company=company,
+            title=_text(j.get("title")),
+            url=j.get("url") or "",
+            # "workable_search", not "workable". They are the same company's
+            # data, but the URL here is a jobs.workable.com view page, not the
+            # employer's own board, and `directness` has to be able to tell
+            # them apart so a role found both ways keeps the employer's link
+            # and not the aggregator's. dedupe groups on employer and title,
+            # so they still meet; this only decides which one wins.
+            platform="workable_search",
+            location=location,
+            remote=True if workplace == "remote" else (
+                False if workplace in ("hybrid", "on-site", "onsite")
+                else _remote(location)),
+            department=_text(j.get("department")) or None,
+            posted_at=_iso(j.get("created") or j.get("updated")),
+            description=desc,
+            salary=parse_text(desc[:1500]),
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
 # SmartRecruiters
 # --------------------------------------------------------------------------
 def parse_smartrecruiters(payload: Any, src: Source) -> Iterator[Job]:

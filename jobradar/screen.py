@@ -387,6 +387,19 @@ for _line in _ISO_TABLE.strip().splitlines():
 
 _ISO_CODES = {l.split(" ", 1)[0] for l in _ISO_TABLE.strip().splitlines()}
 
+# code -> the first, canonical name. The table is written name-first because
+# everything else here reads a location string and wants a code; this is the
+# one caller going the other way, a search API that takes a country by name.
+_CANONICAL_NAME: dict[str, str] = {
+    _l.split(" ", 1)[0]: _l.split(" ", 1)[1].split("|")[0]
+    for _l in _ISO_TABLE.strip().splitlines()
+}
+
+
+def country_name(code: str) -> str:
+    """"UK" -> "United Kingdom". Empty for anything not in the table."""
+    return _CANONICAL_NAME.get((code or "").strip().upper(), "")
+
 _US_STATE_CODES = frozenset(
     "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
     "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV "
@@ -1381,7 +1394,14 @@ def directness(platform: str) -> int:
     default is treated as an employer's own board: it will not fold, and its
     repost shows as a second row beside the real vacancy.
     """
-    return {"linkedin": 0, "nhs": 1, "reed": 1, "adzuna": 1}.get(
+    return {"linkedin": 0, "nhs": 1, "reed": 1, "adzuna": 1,
+            # jobs.workable.com is Workable's aggregator over the boards it
+            # hosts, so it sits with Reed for the same reason: it carries the
+            # full advert, and left at the default it would beat the
+            # employer's own apply.workable.com board on description length
+            # and hand the reader Workable's view page instead of the real
+            # one. 36% of what it finds is an employer already on the list.
+            "workable_search": 1}.get(
         (platform or "").lower(), 2)
 
 

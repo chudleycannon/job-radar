@@ -241,6 +241,29 @@ REGISTRY: list[Platform] = [
              "NOTE: LinkedIn's robots.txt is Disallow:/ for all agents, so this "
              "source is fetched in spite of it. See the README before using it.",
     ),
+    # Workable twice: 2,094 employer boards on apply.workable.com, and this,
+    # Workable's own aggregator over every board it hosts. A separate platform
+    # NAME, because `parse` dispatches on the name and the two payloads are
+    # different shapes. dedupe groups on employer and title rather than on
+    # platform, so a role found both ways still meets itself; the separate
+    # name is what lets `directness` give the employer's own board the win.
+    # See parse_workable_search for why the search is worth having when the
+    # boards are already on the list.
+    Platform(
+        "workable_search",
+        r"jobs\.workable\.com/api/v1/jobs",
+        platforms.parse_workable_search,
+        build=lambda kw: (
+            "https://jobs.workable.com/api/v1/jobs?query="
+            + kw.replace(" ", "%20")
+        ),
+        verified=True,
+        note="the aggregator, not a board: one search reaches every Workable "
+             "employer rather than the 2,094 a crawl happened to find, and "
+             "carries the full description, so these roles need no enrichment "
+             "pass. Twenty results a page behind an opaque cursor; `limit` is "
+             "a 400 and every other page-size name is accepted and ignored",
+    ),
     Platform(
         "nhs",
         r"jobs\.nhs\.uk/candidate/search",

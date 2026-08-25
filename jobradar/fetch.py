@@ -26,7 +26,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
-from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
+from urllib.parse import (parse_qsl, quote_plus, urlencode, urlparse,
+                          urlsplit, urlunsplit)
 
 import requests
 
@@ -515,6 +516,72 @@ def fetch_workday(
     if not merged and first_error is not None:
         return first_error
     return Result(src, payload={"jobPostings": list(merged.values()), "total": total})
+
+
+def fetch_workable_search(
+    src: Source,
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 15,
+) -> Result:
+    """Walk jobs.workable.com's search, which pages twenty at a time.
+
+    Same hard cap as Workday: `limit=100` is a 400, and pageSize, size,
+    per_page and page_size are all accepted and all ignored. Unlike Workday
+    the cursor is opaque, a `nextPageToken` that has to come back from the
+    previous page, so the pages cannot be requested in parallel and the walk
+    is strictly sequential.
+
+    max_pages of 15 is 300 postings per title, which covered every query
+    tried here with the token exhausted before the cap. It is a guard against
+    a very broad title, not a sample: when it does bite, the scan says so
+    rather than quietly returning the first 300.
+
+    Deliberately a different host from apply.workable.com, so the per-host
+    pacing that exists for the 2,094 boards does not also throttle this, and
+    a block on one does not silently take out the other.
+    """
+    session = _thread_session()
+    merged: dict[str, dict] = {}
+    first_error: Result | None = None
+    total = 0
+    token = None
+    truncated = False
+
+    for page in range(max_pages):
+        url = src.url
+        if token:
+            url += ("&" if "?" in url else "?") + "pageToken=" + quote_plus(token)
+        probe = Source(company=src.company, url=url, platform="workable",
+                       sector=src.sector, country=src.country)
+        res = fetch_one(probe, timeout=timeout, retries=retries,
+                        user_agent=user_agent, session=session)
+        if not res.ok or not isinstance(res.payload, dict):
+            # Carried, not flattened to a string, for the same reason as every
+            # other paged fetcher here: a 429 has to stay distinguishable from
+            # a broken search or `detect_throttling` will not count it.
+            if first_error is None:
+                first_error = Result(src, error=res.error or "bad payload",
+                                     status=res.status, throttled=res.throttled)
+            break
+        jobs = res.payload.get("jobs") or []
+        total = max(total, int(res.payload.get("totalSize") or 0))
+        for j in jobs:
+            key = j.get("id") or j.get("url")
+            if key:
+                merged.setdefault(key, j)
+        token = res.payload.get("nextPageToken")
+        if not token or not jobs:
+            break
+    else:
+        truncated = bool(token)
+
+    if not merged and first_error is not None:
+        return first_error
+    return Result(src, payload={"jobs": list(merged.values()),
+                                "totalSize": total, "truncated": truncated})
 
 
 def fetch_nhs(
@@ -1295,6 +1362,9 @@ def _fetch_dispatch(src, limiter, timeout, retries, ua, terms, keys=None) -> Res
                              user_agent=ua)
     if src.platform == "nhs":
         return fetch_nhs(src, timeout=timeout, retries=retries, user_agent=ua)
+    if src.platform == "workable_search":
+        return fetch_workable_search(src, timeout=timeout, retries=retries,
+                                     user_agent=ua)
     if src.platform == "phenom":
         return fetch_phenom(src, terms, timeout=timeout, retries=retries,
                             user_agent=ua)
