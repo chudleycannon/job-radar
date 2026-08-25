@@ -1755,6 +1755,12 @@ def _reed_location(name: str) -> str:
     name one, because Reed does carry a handful of overseas roles and
     "Dublin, United Kingdom" would file an Irish job as British: the UK marker
     is tested first, and screen.py does not split a location on the comma.
+
+    The test is `names_a_country`, not `_countries_in`. `_countries_in`
+    answers on city evidence as well as on country names, so it claimed a bare
+    "Perth" for Australia and a bare "Boston" for the United States. Both are
+    UK towns with live Reed adverts, both were left without the suffix, and
+    both then disappeared for every user filtering on `countries: [UK]`.
     """
     name = (name or "").strip()
     if not name:
@@ -1764,7 +1770,7 @@ def _reed_location(name: str) -> str:
         # its own is read downstream as "the employer named no country",
         # which sends the role past the country filter untested.
         return "Remote, United Kingdom"
-    if _screen()._countries_in(name):
+    if _screen().names_a_country(name):
         return name
     return f"{name}, United Kingdom"
 
@@ -1907,15 +1913,17 @@ def _adzuna_location(display: str, country: str) -> str:
     Same treatment as `_reed_location`, and for the same reason: screen.py
     resolves a country from a city list that cannot hold every town in
     Britain, and an unplaceable location is a dropped posting. The country is
-    only added where the string does not already name one, so a listing on the
-    British index that says "Dublin, Ireland" is not relabelled as British.
+    only added where the string does not already NAME one, so a listing on the
+    British index that says "Dublin, Ireland" is not relabelled as British,
+    while "Perth" on that index keeps the suffix instead of being handed to
+    Australia by the city list.
     """
     display = (display or "").strip()
     if not country:
         return display
     if not display:
         return country
-    if _screen()._countries_in(display):
+    if _screen().names_a_country(display):
         return display
     return f"{display}, {country}"
 

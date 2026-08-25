@@ -404,7 +404,37 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
                                 for n, r in enumerate(chunk, 1)) + tail
 
     def stopping() -> bool:
-        return limit_hit is not None or bool(should_stop and should_stop())
+        nonlocal first_failure
+        if limit_hit is not None:
+            return True
+        if not should_stop:
+            return False
+        try:
+            return bool(should_stop())
+        except Exception as e:
+            # The dashboard's `should_stop` reads `meta` through this same
+            # sqlite connection, so it can fail for reasons that have nothing
+            # to do with the model. Stopping is the honest answer: a run
+            # nobody can cancel is not a run worth paying for. The batches
+            # already in flight are already paid for and are still applied.
+            first_failure = first_failure or e
+            return True
+
+    def paid_for(e: BaseException) -> BaseException:
+        """Stamp an exception with how many roles this run actually wrote.
+
+        The connection is in autocommit, so scores written before a failure
+        are in the database whatever happens next. Without this the dashboard
+        reported "Nothing was scored; the roles are unchanged" over a run that
+        had paid for four batches and written two roles, which is both wrong
+        and expensive to believe: the obvious response is to run it again and
+        pay for them a second time.
+        """
+        try:
+            e.scored = done
+        except Exception:
+            pass                 # some builtins refuse attributes; not fatal
+        return e
 
     with ThreadPoolExecutor(max_workers=width,
                             thread_name_prefix="jobradar-rank") as ex:
@@ -445,7 +475,14 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
                     continue
                 try:
                     scored = _apply(con, chunk, out)
-                except CallFailed as e:
+                except Exception as e:
+                    # Was `except CallFailed`, which left everything else
+                    # `_apply` can raise travelling straight out of the loop:
+                    # a sqlite error from its own `con.execute`, or a reply
+                    # whose shape trips it up. That discarded every OTHER
+                    # batch in flight, all of them already paid for, and the
+                    # run then reported as if nothing had been written at all.
+                    # Money already spent is the thing being protected here.
                     first_failure = first_failure or e
                     continue
                 done += scored
@@ -457,18 +494,25 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
                 # and the dashboard's Rank button went green.
                 ok += bool(scored)
                 if on_batch:
-                    # `done`, not the batch index. Reporting the index meant a
-                    # run where every call failed still counted up to
-                    # "5/5 scored".
-                    on_batch(done, len(rows), done)
+                    try:
+                        # `done`, not the batch index. Reporting the index
+                        # meant a run where every call failed still counted up
+                        # to "5/5 scored".
+                        on_batch(done, len(rows), done)
+                    except Exception as e:
+                        # Progress reporting is not the work. The dashboard's
+                        # `on_batch` writes to the same sqlite connection, so
+                        # a locked database there would otherwise throw away
+                        # the batches still in flight over a counter.
+                        first_failure = first_failure or e
             # Only after applying, so `should_stop` and the limit flag are
             # both current before anything else is paid for.
             fill()
 
     if limit_hit is not None:
-        raise limit_hit
+        raise paid_for(limit_hit)
     if first_failure is not None and ok == 0:
-        raise first_failure
+        raise paid_for(first_failure)
     return done
 
 

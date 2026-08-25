@@ -3539,14 +3539,23 @@ def test_a_reed_role_outside_the_uk_is_not_relabelled_as_british():
     """The country is only added where the location does not already name one.
     screen.py does not split a location on the comma and tests the UK marker
     first, so "Dublin, United Kingdom" would file an Irish role as British and
-    walk it straight through a UK-only filter."""
+    walk it straight through a UK-only filter.
+
+    The fixture names the country, because that is now what "already names
+    one" means. It used to say a bare "Dublin" and pass on the strength of
+    screen.py's city list, and keying this on the city list is what filed
+    Perth (Scotland) as Australian and Boston (Lincolnshire) as American on a
+    UK-only job site. The cost of the narrower rule is that a bare foreign
+    city typed into Reed now picks up ", United Kingdom"; the benefit is every
+    UK town that shares a name with a bigger city abroad. Reed is a UK site,
+    so the second group is far larger than the first."""
     from jobradar.adapters.platforms import parse_reed
     from jobradar.screen import enrich
 
     payload = {"results": [dict(REED_SEARCH["results"][0], jobId=1,
-                                locationName="Dublin")]}
+                                locationName="Dublin, Ireland")]}
     job = enrich(next(iter(parse_reed(payload, _reed_src()))))
-    assert job.location == "Dublin", job.location
+    assert job.location == "Dublin, Ireland", job.location
     assert job.country == "IE", job.country
 
 
@@ -6200,6 +6209,457 @@ def test_a_run_whose_only_readable_reply_was_empty_still_raises():
     raise AssertionError(
         "a run that scored nothing must say why, even when one call came back "
         "empty rather than failing outright")
+
+
+
+def test_a_board_that_could_not_be_read_survives_discover():
+    """`discover` computed the diagnosis and then deleted it.
+
+    `f.note = "could not be read: ..."` was set, and the very next statement,
+    `[f for f in checked if f.live_jobs > 0 or not validate]`, dropped the row
+    because an errored board counts zero postings. The user was then told
+    "nothing found ... either it is rendered by JavaScript, or the platform
+    has no adapter yet" about a board that had been located, named and fetched.
+    Keeping unreachable boards apart from absent ones is the whole point of
+    9d74c68, and it was being undone one line after it was done."""
+    from unittest import mock
+    from jobradar import discover as disc
+
+    class Page:
+        status_code = 200
+        url = "https://example.com/careers"
+        text = '<a href="https://job-boards.greenhouse.io/exampleco">Jobs</a>'
+
+    def throttled(src, timeout=25):
+        return (0, [], "rate limited (HTTP 429)")
+
+    with mock.patch.object(disc, "_get", lambda url, timeout=12: Page()), \
+         mock.patch.object(disc, "count_jobs", throttled):
+        found = disc.discover("https://example.com/careers")
+
+    assert found, ("a board we located and failed to fetch must not be "
+                   "reported as no board at all")
+    assert found[0].identity == "unreadable", found[0].identity
+    assert "429" in found[0].note
+    assert "greenhouse" == found[0].platform
+
+
+def test_discover_add_refuses_to_write_a_board_it_could_not_read():
+    """An unread board is an unverified board. Reporting it is right; banking
+    it in the config is banking a guess, and `--add` would have written a
+    board whose identity was never checked against the domain asked for."""
+    import argparse
+    from unittest import mock
+    from jobradar import cli
+    from jobradar.discover import Found
+
+    unreadable = Found(company="Example", url="https://x/api", platform="greenhouse",
+                       token="exampleco", domain="example.com",
+                       identity="unreadable", note="could not be read: HTTP 429")
+    live = Found(company="Other", url="https://y/api", platform="greenhouse",
+                 token="other", domain="other.com", live_jobs=4, identity="ok")
+
+    written = []
+    said = []
+    args = argparse.Namespace(targets=["example.com"], company=None,
+                              no_validate=False, add=True, config=None)
+
+    with mock.patch.object(cli, "run_discover", lambda *a, **k: [unreadable, live]), \
+         mock.patch.object(cli, "_say", lambda msg="": said.append(msg)), \
+         mock.patch.object(cli, "_cfg_path", lambda c: Path(__file__)), \
+         mock.patch.object(cli, "_append_sources",
+                           lambda path, new: written.extend(new) or len(new)):
+        rc = cli.cmd_discover(args)
+
+    assert rc == 0
+    assert [s.company for s in written] == ["Other"], (
+        "only boards we actually read may be added")
+    blob = "\n".join(said)
+    assert "could not read" in blob and "try again later" in blob
+    assert "no adapter yet" not in blob, (
+        "a located board must not be described as a missing adapter")
+
+
+def test_a_vendor_hostname_word_is_not_applied_to_an_employer_slug():
+    """`_JUNK_TOKENS` grew from 8 words to 26 and was applied to group 1 of
+    every signature, but group 1 is a vendor hostname label on Breezy and the
+    employer's own slug on Greenhouse. "Help" is a real company in the bundled
+    list at boards-api.greenhouse.io/v1/boards/help/jobs, and adding "help"
+    for Breezy's sake made its live board undiscoverable."""
+    from jobradar.discover import _scan
+
+    tokens = {t for _p, t, _u in _scan("", "https://job-boards.greenhouse.io/help")}
+    assert tokens == {"help"}, (
+        "Help is a real Greenhouse employer and must stay findable")
+
+    # The same word on a hostname is still the vendor's own host.
+    assert _scan("", "https://help.breezy.hr") == []
+    assert _scan("", "https://support.teamtailor.com") == []
+
+    # And the two patterns that no word list can express stay rejected.
+    assert _scan("", "https://rmk-map-12.jobs2web.com/prefix") == []
+    assert _scan("", "https://cookie-policy-scripts.icims.com") == []
+
+    # A path capture is exempt from the vendor pattern too: Stagecoach and
+    # Policy Expert are real employers and "stage"/"policy" are real slugs.
+    for slug in ("stage", "policy", "scripts", "consent"):
+        got = {t for _p, t, _u in
+               _scan("", f"https://job-boards.greenhouse.io/{slug}")}
+        assert got == {slug}, slug
+
+
+def test_every_bundled_board_is_still_findable_by_a_scan():
+    """The junk-token split is only safe if it loses nothing. Measured across
+    the whole bundled list: one board recovered (Help), none lost."""
+    import json as _j
+    from jobradar.discover import _scan
+
+    bundled = _j.loads(
+        Path("sources/sources.json").read_text(encoding="utf-8"))["sources"]
+    for s in bundled:
+        if s["platform"] != "greenhouse":
+            continue
+        if not _scan("", s["url"]):
+            raise AssertionError(f"scan no longer finds {s['company']}: {s['url']}")
+
+
+
+def test_a_uk_town_named_after_a_foreign_city_stays_in_the_uk():
+    """Perth is in Scotland and Boston is in Lincolnshire, and both have live
+    Reed adverts. `_reed_location` asked `_countries_in` whether the string
+    "already names a country", but that helper also answers on city evidence,
+    so a bare "Perth" came back {AU} and a bare "Boston" came back {US}. The
+    suffix was skipped, screen.py then placed them abroad, and both vanished
+    for every user with `countries: [UK]` on a site that only lists UK jobs.
+
+    The rule is now "does this string NAME a country", which a city hint does
+    not. The case it still has to protect is the overseas listing that says so
+    outright."""
+    from jobradar.adapters.platforms import _adzuna_location, _reed_location
+    from jobradar.screen import _countries_in, names_a_country
+
+    for town in ("Perth", "Boston"):
+        # The old test really did answer with a foreign country.
+        assert _countries_in(town) and _countries_in(town) != {"UK"}, town
+        assert not names_a_country(town), town
+        assert _reed_location(town) == f"{town}, United Kingdom"
+        assert _countries_in(_reed_location(town)) == {"UK"}, town
+        assert _adzuna_location(town, "United Kingdom") == f"{town}, United Kingdom"
+
+    # A named country is still a named country, on both adapters.
+    assert names_a_country("Dublin, Ireland")
+    assert _reed_location("Dublin, Ireland") == "Dublin, Ireland"
+    assert _adzuna_location("Dublin, Ireland", "United Kingdom") == "Dublin, Ireland"
+    assert _countries_in(_reed_location("Dublin, Ireland")) == {"IE"}
+
+    # So is a US state, which is why "Boston, MA" is left alone even though a
+    # bare "Boston" is not.
+    assert names_a_country("Boston, MA")
+    assert _reed_location("Boston, MA") == "Boston, MA"
+
+    # And "Remote" names nothing at all, so it keeps the country that says
+    # which market the advert was on.
+    assert not names_a_country("Remote")
+
+
+
+def test_an_ordinary_429_eventually_shuts_the_host():
+    """`lim.block()` was reachable only from the huge-`Retry-After` branch.
+
+    A 429 with no `Retry-After` at all, or one under MAX_RETRY_AFTER, spent
+    its retries and returned without the host ever being recorded, so every
+    remaining source on that host repeated the same retry-and-sleep cycle into
+    the same closed door. On Workable's 2,095 sources that is the arithmetic
+    of the 8.7 hour bug, reached by a host that simply omitted a header it was
+    never obliged to send."""
+    from unittest import mock
+
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    calls = {"n": 0}
+
+    class Refusing:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            calls["n"] += 1
+
+            class R:
+                status_code = 429
+                headers = {}            # no Retry-After, which is the point
+                text = ""
+            return R()
+
+    lim = fetch_mod.HostLimiter(rps=0)
+    srcs = [Source(company=f"c{i}", url=f"https://busy.example.com/api/{i}",
+                   platform="workable") for i in range(12)]
+
+    with mock.patch.object(fetch_mod, "_sleep_backoff", lambda *a, **k: None):
+        results = [fetch_mod.fetch_one(x, session=Refusing(), limiter=lim,
+                                       retries=2) for x in srcs]
+
+    armed = fetch_mod.CONSECUTIVE_429_LIMIT
+    assert calls["n"] == armed * 3, (
+        f"{calls['n']} requests sent; the breaker should arm after {armed} "
+        f"sources have each spent three attempts, and spare the other 9")
+    assert 0 < lim.blocked_for("https://busy.example.com/x") <= \
+        fetch_mod.BREAKER_BLOCK_SECONDS
+    assert all(r.throttled for r in results), (
+        "throttled, not empty: `validate --prune` deletes the second kind")
+    assert all(not r.ok for r in results)
+
+    # `cmd_scan` reads the seconds back out of the error string to name the
+    # HOST that is rate-limiting, rather than listing the employers on it.
+    import re as _re
+    blocked = [r for r in results if "blocked" in (r.error or "")]
+    assert blocked, "the skipped sources must say the host was blocked"
+    assert _re.search(r"(\d+)s", blocked[-1].error), blocked[-1].error
+
+
+def test_a_board_the_breaker_skipped_is_unreachable_not_dead():
+    """The whole point of blocking the host is that its boards go unread, and
+    an unread board that `validate` calls dead is one `--prune` deletes. The
+    breaker must not become a way to lose 2,095 employers quietly."""
+    from jobradar import discover as disc
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    lim = fetch_mod.HostLimiter(rps=0)
+    lim.block("https://apply.workable.com/x", fetch_mod.BREAKER_BLOCK_SECONDS)
+    fetch_mod.pace_this_thread(lim)
+    try:
+        row = disc.validate_source(Source(
+            company="Contentful", platform="workable",
+            url="https://apply.workable.com/api/v1/widget/accounts/x"))
+    finally:
+        fetch_mod.pace_this_thread(None)
+
+    assert row["verdict"] == "unreachable", row
+    assert row["live_jobs"] == 0
+    # `--prune` deletes rows whose verdict is "dead" and nothing else.
+    assert row["verdict"] != "dead"
+
+
+def test_the_breaker_needs_a_run_of_refusals_not_a_scattered_few():
+    """A host that is serving between 429s is busy, not shut. Counting a
+    total rather than a consecutive run would eventually arm the breaker
+    against a healthy host on a long scan, and a block that is not deserved
+    silently skips boards that would have answered."""
+    from unittest import mock
+
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    seq = iter([429, 429, 200, 429, 429, 200, 429, 429, 200])
+
+    class Flaky:
+        def mount(self, prefix, adapter): pass
+
+        def get(self, url, headers=None, timeout=None):
+            code = next(seq)
+
+            class R:
+                status_code = code
+                headers = {"Content-Type": "application/json"}
+                text = "[]"
+
+                @staticmethod
+                def json():
+                    return []
+            return R()
+
+    lim = fetch_mod.HostLimiter(rps=0)
+    with mock.patch.object(fetch_mod, "_sleep_backoff", lambda *a, **k: None):
+        for i in range(3):
+            res = fetch_mod.fetch_one(
+                Source(company=f"c{i}", url=f"https://flaky.example.com/{i}",
+                       platform="greenhouse"),
+                session=Flaky(), limiter=lim, retries=2)
+            assert res.ok, "a source that answered on its third attempt is fine"
+
+    assert lim.blocked_for("https://flaky.example.com/x") == 0, (
+        "a host that keeps answering must not be shut out")
+
+
+def test_the_breakers_block_is_short_enough_to_re_probe():
+    """Err toward a short block. Too long is the dangerous direction: it skips
+    boards that would have answered and nothing in the output says so, whereas
+    too short costs at most the handful of sources it takes to re-arm."""
+    from jobradar import fetch as fetch_mod
+
+    assert fetch_mod.CONSECUTIVE_429_LIMIT >= 2, (
+        "one flaky board must not be able to shut a host")
+    assert fetch_mod.BREAKER_BLOCK_SECONDS <= 600, (
+        "a self-imposed block longer than ten minutes hides live boards")
+    # A real `Retry-After` still wins where it is longer, so the sixteen-hour
+    # refusal is not shortened to five minutes by a later breaker trip.
+    lim = fetch_mod.HostLimiter(rps=0)
+    lim.block("https://busy.example.com/x", 57841)
+    for _ in range(fetch_mod.CONSECUTIVE_429_LIMIT):
+        lim.note_refusal("https://busy.example.com/x")
+    assert lim.blocked_for("https://busy.example.com/x") > 3600
+
+
+
+def test_a_failure_while_applying_one_batch_keeps_the_others():
+    """An exception from `on_batch` or from `_apply`'s own `con.execute` was
+    uncaught, so it travelled straight out of the loop and took every other
+    batch's answer with it. Those calls were already paid for the moment the
+    subprocess started. Measured before the fix: four batches paid for, two
+    roles written, and the dashboard reporting "Nothing was scored; the roles
+    are unchanged" over the two that were."""
+    from unittest import mock
+    from jobradar import rank
+
+    con, cfg, rows = _rank_fixture(8)
+    seen = {"n": 0}
+
+    def fake_call(prompt, timeout=None):
+        cos = _companies_in(prompt)
+        return [{"role": n, "fit": 70, "why": f"about {c}"}
+                for n, c in enumerate(cos, 1)]
+
+    def flaky_progress(done, total, scored):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            raise RuntimeError("database is locked")
+
+    with mock.patch.object(rank, "BATCH", 2), \
+         mock.patch.object(rank, "_call", fake_call):
+        written = rank.rank(con, cfg, rows, width=1, on_batch=flaky_progress)
+
+    scored = con.execute("SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"]
+    assert scored == 8, f"one bad progress call must not lose 6 paid-for roles: {scored}"
+    assert written == 8, written
+
+
+def test_a_run_that_dies_says_how_many_roles_it_had_already_written():
+    """The connection is in autocommit, so scores written before a failure are
+    in the database whatever happens next. Reporting "the roles are unchanged"
+    over them invites paying for the same roles a second time."""
+    from unittest import mock
+    from jobradar import rank
+
+    con, cfg, rows = _rank_fixture(8)
+    seen = {"n": 0}
+
+    def fake_call(prompt, timeout=None):
+        cos = _companies_in(prompt)
+        seen["n"] += 1
+        if seen["n"] > 2:
+            raise rank.CallFailed("invalid api key")
+        return [{"role": n, "fit": 70, "why": f"about {c}"}
+                for n, c in enumerate(cos, 1)]
+
+    stop = {"n": 0}
+
+    def should_stop():
+        stop["n"] += 1
+        if stop["n"] > 3:
+            raise RuntimeError("database is locked")
+        return False
+
+    with mock.patch.object(rank, "BATCH", 2), \
+         mock.patch.object(rank, "_call", fake_call):
+        written = rank.rank(con, cfg, rows, width=1, should_stop=should_stop)
+
+    # Whatever went wrong afterwards, the roles that were scored stayed scored.
+    scored = con.execute("SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"]
+    assert scored == written and scored >= 4, (scored, written)
+
+
+def test_the_rank_button_recovers_from_a_worker_that_raises_systemexit():
+    """`rank._call` raises SystemExit when the `claude` binary is missing.
+
+    SystemExit is a BaseException, so it walked straight past the `except
+    Exception` in `_spawn_rank`, whose own comment says it is there to "never
+    leave it stuck on running". `rank_state` then stayed "running" for the life
+    of the database and the dashboard disabled the Rank button permanently,
+    with no error text anywhere to say why. A missing binary bricked the
+    dashboard."""
+    import tempfile
+    from unittest import mock
+    from jobradar import serve as serve_mod
+    from jobradar import store
+
+    db = Path(tempfile.mkdtemp()) / "r.db"
+    con = store.connect(str(db))
+    store.set_meta(con, "rank_state", "running")
+    store.set_meta(con, "rank_cancel", "1")
+    con.close()
+
+    for boom in (SystemExit("No `claude` binary on PATH"),
+                 KeyboardInterrupt(),
+                 RuntimeError("something else entirely")):
+        con = store.connect(str(db))
+        store.set_meta(con, "rank_state", "running")
+        con.close()
+
+        def explode(*a, **k):
+            raise boom
+
+        # Run the worker body on this thread, which is what `_spawn_rank`
+        # hands to `threading.Thread`.
+        with mock.patch("jobradar.rank.rank", explode), \
+             mock.patch("jobradar.rank.candidates", lambda con, refresh=False: []), \
+             mock.patch("jobradar.config.load", lambda *a, **k: _cfg()), \
+             mock.patch("threading.Thread") as thread:
+            serve_mod._spawn_rank(str(db), None)
+            work = thread.call_args.kwargs["target"]
+            try:
+                work()
+            except (SystemExit, KeyboardInterrupt):
+                pass            # honoured after the state is cleared, which is fine
+
+        con = store.connect(str(db))
+        try:
+            assert store.get_meta(con, "rank_state", "") == "idle", (
+                f"a worker raising {type(boom).__name__} left the button "
+                f"stuck on running for ever")
+            assert store.get_meta(con, "rank_cancel", "") == "", (
+                "a stale cancel flag stops the next run before its first batch")
+            err = store.get_meta(con, "rank_error", "")
+            assert err, "the reader has to be told why it stopped"
+            assert str(boom) in err or type(boom).__name__ in err or "failed" in err, err
+        finally:
+            con.close()
+
+
+def test_a_partly_written_rank_run_is_not_reported_as_nothing_written():
+    """`serve` said "Nothing was scored; the roles are unchanged" whenever the
+    worker raised, which is false for every run that failed part way: the
+    connection is in autocommit. `rank` stamps the count it wrote onto the
+    exception and `serve` reads it back."""
+    import tempfile
+    from unittest import mock
+    from jobradar import serve as serve_mod
+    from jobradar import store
+
+    db = Path(tempfile.mkdtemp()) / "r.db"
+    con = store.connect(str(db))
+    store.set_meta(con, "rank_state", "running")
+    con.close()
+
+    def explode(*a, **k):
+        e = RuntimeError("database is locked")
+        e.scored = 2
+        raise e
+
+    with mock.patch("jobradar.rank.rank", explode), \
+         mock.patch("jobradar.rank.candidates", lambda con, refresh=False: []), \
+         mock.patch("jobradar.config.load", lambda *a, **k: _cfg()), \
+         mock.patch("threading.Thread") as thread:
+        serve_mod._spawn_rank(str(db), None)
+        thread.call_args.kwargs["target"]()
+
+    con = store.connect(str(db))
+    try:
+        err = store.get_meta(con, "rank_error", "")
+    finally:
+        con.close()
+    assert "2 role(s) were scored and saved" in err, err
+    assert "roles are unchanged" not in err, err
 
 
 # This block MUST stay at the END of the file. It collects `globals()` at

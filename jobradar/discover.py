@@ -120,27 +120,62 @@ WORKDAY_RE = re.compile(
     re.I,
 )
 
-# "app", "help" and "support" are here for Breezy: a careers page that embeds a
-# Breezy board also links app.breezy.hr and help.breezy.hr, and each of those
+# Junk tokens come in two kinds, and applying one kind to the other cost a
+# real board. The set used to be one list applied to group 1 of EVERY
+# signature, but group 1 means different things on different platforms:
+#
+#   help.breezy.hr                       a vendor hostname. Never an employer.
+#   boards-api.greenhouse.io/v1/boards/help/jobs
+#                                        an employer slug. "Help" is a real
+#                                        company in the bundled list, and once
+#                                        "help" joined the shared set `_scan`
+#                                        on job-boards.greenhouse.io/help
+#                                        returned nothing at all.
+#
+# So the vendor-infrastructure words below are only ever tested against a
+# capture that IS a hostname label. A path capture is the employer's own
+# choice of slug and only the words that can never be one are excluded.
+#
+# Path words: these are structural pieces of the vendor's own URL grammar
+# (`/embed/job_board?for=`, `/v1/boards/`, `/api/`, `?search=`), so a capture
+# equal to one of them means the regex matched the scaffolding rather than a
+# token. No employer slug can be one of these, because the vendor's own routing
+# would shadow it.
+_JUNK_PATH_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api",
+                     "search"}
+
+# Hostname words: subdomains the vendor runs for itself. A careers page that
+# embeds a Breezy board also links app.breezy.hr and help.breezy.hr, and each
 # would otherwise be offered as a separate employer board to go and validate.
 # "career", "careers", "partner" and "dashboard" are the same problem on
 # Teamtailor: support.teamtailor.com and partner.teamtailor.com are the
 # vendor's own, and career.teamtailor.com is Teamtailor recruiting for itself,
 # which is a real board but never the board of the employer whose page we just
-# read. The cost of listing it is that Teamtailor-the-employer has to be added
-# by hand; the cost of not listing it is offering their board as every
-# customer's board.
-_JUNK_TOKENS = {"embed", "job_board", "v1", "boards", "jobs", "api", "www",
-                "search", "app", "help", "support", "blog",
-                "career", "careers", "partner", "dashboard", "developers",
-                # A live BambooHR board page links four of the vendor's own
-                # hosts alongside the employer's: staticfe (assets), images4,
-                # bhrpendo (analytics) and resources (marketing). Each would
-                # otherwise be handed to a maintainer as an employer board.
-                "staticfe", "images4", "bhrpendo", "resources", "documentation",
-                "static", "images", "assets", "cdn"}
+# read. "staticfe", "images4", "bhrpendo" and "resources" are four hosts a
+# live BambooHR board page links alongside the employer's own.
+#
+# The cost of listing a word here is that an employer whose Breezy subdomain
+# is literally that word has to be added by hand; the cost of not listing it
+# is offering the vendor's own board as every customer's board. That trade is
+# only acceptable on a hostname, which is why this set stops there.
+_JUNK_HOST_LABELS = _JUNK_PATH_TOKENS | {
+    "www", "app", "help", "support", "blog", "status", "docs",
+    "career", "careers", "partner", "dashboard", "developers",
+    "documentation", "resources",
+    "staticfe", "images4", "bhrpendo",
+    "static", "images", "img", "assets", "cdn", "scripts", "styles",
+    "policy", "cookies", "privacy", "consent",
+}
 
-# `_JUNK_TOKENS` matches whole tokens out of a set, which cannot express the
+# Signatures whose first capture is a path segment the EMPLOYER chose, not a
+# hostname label the vendor chose. These get `_JUNK_PATH_TOKENS` only, and are
+# exempt from `_VENDOR_INFRA` below for the same reason: "policy", "stage" and
+# "scripts" are all plausible company slugs, and none of them can be a vendor
+# subdomain here because the host is fixed by the signature itself.
+_PATH_CAPTURE_PLATFORMS = {"greenhouse", "ashby", "lever", "lever_eu",
+                           "workable", "smartrecruiters", "jobvite"}
+
+# `_JUNK_HOST_LABELS` matches whole tokens out of a set, which cannot express the
 # shape that did the damage: vendor infrastructure hostnames that carry a
 # deployment number or a purpose in the name, so no fixed list of words ever
 # catches them.
@@ -216,7 +251,10 @@ class Found:
     token: str
     domain: str | None = None
     live_jobs: int = 0
-    identity: str = "unchecked"   # ok | mismatch | unchecked
+    # ok | mismatch | unchecked | unreadable | blocked | unsupported.
+    # "unreadable" means we found the board and could not fetch it, which
+    # is never a reason to drop it from the result or to call it dead.
+    identity: str = "unchecked"
     note: str = ""
 
     def to_source(self) -> Source:
@@ -463,14 +501,23 @@ def _scan(text: str, final_url: str) -> list[tuple[str, str, str]]:
             # Avature site is actually called.
             tok = "|".join(g or "" for g in m.groups())
             head = m.group(1) or ""
-            if not head or head.lower() in _JUNK_TOKENS or len(head) < 2:
+            # Which set applies depends on what group 1 actually is. On
+            # Greenhouse it is the employer's own slug, so the vendor's
+            # subdomain words must not be tested against it: "help" is a real
+            # company in the bundled list and testing it as a hostname label
+            # made its live board undiscoverable.
+            path_capture = platform in _PATH_CAPTURE_PLATFORMS
+            junk = _JUNK_PATH_TOKENS if path_capture else _JUNK_HOST_LABELS
+            if not head or head.lower() in junk or len(head) < 2:
                 continue
             # Whole-host platforms (Oracle, Avature, RMK) capture the host in
             # the first group, subdomain platforms capture just the label, so
             # the vendor test has to run on the first label either way:
             # `rmk-map-12.jobs2web.com` and `cookie-policy-scripts` are the
-            # same fault wearing two shapes.
-            if _VENDOR_INFRA.fullmatch(head.split(".")[0]):
+            # same fault wearing two shapes. It is skipped for path captures,
+            # where the first "label" is an employer slug and Stagecoach or
+            # Policy Expert would be thrown away by it.
+            if not path_capture and _VENDOR_INFRA.fullmatch(head.split(".")[0]):
                 continue
             p = adapters.by_name(platform)
             if not p or not p.build:
@@ -673,6 +720,15 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
             n, jobs, err = count_jobs(f.to_source())
             f.live_jobs = n
             if err:
+                # "We could not read this board" is not "this board does not
+                # exist", and the whole point of keeping the two apart (9d74c68)
+                # was lost one line further down, where the `live_jobs > 0`
+                # filter dropped it and the caller then printed "nothing found
+                # ... either it is rendered by JavaScript, or the platform has
+                # no adapter yet". Every clause of that is false about a board
+                # we located and then failed to fetch. So it is marked and
+                # kept; `cmd_discover` prints it and refuses to `--add` it.
+                f.identity = "unreadable"
                 f.note = f"could not be read: {err}"
             elif n == 0:
                 f.note = "responded but published no postings"
@@ -681,8 +737,10 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
         checked.append(f)
 
     # Empty boards are noise when they came from guessing rather than from a
-    # link the company actually published.
-    found = [f for f in checked if f.live_jobs > 0 or not validate]
+    # link the company actually published. A board that errored is not empty:
+    # its count is zero because the fetch failed, so it is kept and flagged.
+    found = [f for f in checked
+             if f.live_jobs > 0 or f.identity == "unreadable" or not validate]
 
     if not found:
         if unsupported:

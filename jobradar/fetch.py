@@ -101,6 +101,9 @@ class HostLimiter:
         self.overrides = dict(PER_HOST_RPS if overrides is None else overrides)
         self._next_ok: dict[str, float] = defaultdict(float)
         self._blocked_until: dict[str, float] = {}
+        # Consecutive sources on a host that spent all their retries and still
+        # got 429. See `note_refusal`.
+        self._refusals: dict[str, int] = defaultdict(int)
         self._lock = threading.Lock()
 
     def gap_for(self, host: str) -> float:
@@ -131,6 +134,50 @@ class HostLimiter:
             until = time.monotonic() + seconds
             if until > self._blocked_until.get(host, 0.0):
                 self._blocked_until[host] = until
+
+    def note_ok(self, url: str) -> None:
+        """This host answered. Forget any run of refusals against it.
+
+        A host that is serving is not rate-limiting, so the breaker's count
+        has to be a run of CONSECUTIVE refusals rather than a total. Without
+        this, a long scan would eventually accumulate enough scattered 429s
+        from an otherwise healthy host to arm the breaker against it.
+        """
+        host = urlparse(url).netloc
+        with self._lock:
+            if self._refusals.get(host):
+                self._refusals[host] = 0
+
+    def note_refusal(self, url: str) -> float:
+        """One source has now spent all its retries and still got 429.
+
+        Returns the seconds it just blocked the host for, or 0.0.
+
+        `block` was only ever reachable from the huge-`Retry-After` branch, so
+        a 429 carrying no `Retry-After` at all, or one under MAX_RETRY_AFTER,
+        left the host unrecorded and every remaining source on it repeated the
+        whole retry-and-sleep cycle into the same closed door. On Workable's
+        2,095 sources that is the same arithmetic as the 8.7 hour bug the long
+        block was added to kill: the header is the only thing that differs, and
+        a host is not obliged to send it.
+
+        Deliberately conservative in both directions. It takes
+        CONSECUTIVE_429_LIMIT different sources to arm, so one flaky board
+        cannot, and the block it sets is BREAKER_BLOCK_SECONDS rather than
+        anything open-ended, because a block that outlives the rate limiting
+        skips boards that would have answered, and that failure is silent.
+        """
+        host = urlparse(url).netloc
+        with self._lock:
+            self._refusals[host] += 1
+            if self._refusals[host] < CONSECUTIVE_429_LIMIT:
+                return 0.0
+            self._refusals[host] = 0
+            until = time.monotonic() + BREAKER_BLOCK_SECONDS
+            if until <= self._blocked_until.get(host, 0.0):
+                return 0.0       # already blocked for longer, by a real header
+            self._blocked_until[host] = until
+        return BREAKER_BLOCK_SECONDS
 
     def blocked_for(self, url: str) -> float:
         """Seconds left on this host's block, or 0 if it is not blocked."""
@@ -231,6 +278,24 @@ def _thread_session() -> requests.Session:
 # host has not asked for a pause, it has said no for the rest of the day, and
 # the right answer is to stop asking rather than to sleep in 30 second slices.
 MAX_RETRY_AFTER = 60.0
+
+# The circuit breaker for a host that is rate-limiting us without saying for
+# how long. See `HostLimiter.note_refusal`.
+#
+# Three, because it has to be a number no single bad source can reach: three
+# DIFFERENT sources on one host, each having exhausted its retries on a 429,
+# is a fact about the host. One or two is a board with a problem of its own.
+# It costs about twenty seconds to reach on a busy host, against the hours it
+# saves there.
+CONSECUTIVE_429_LIMIT = 3
+
+# Five minutes, and short on purpose. A block that is too long is the
+# dangerous direction: it silently skips boards that would have answered, and
+# nothing in the output distinguishes that from a quiet day. Five minutes means
+# a host that recovers mid-scan is re-probed roughly twelve times an hour, and
+# each re-probe costs at most the three sources it takes to re-arm. A header
+# that asks for longer still wins: `block` keeps the later of the two.
+BREAKER_BLOCK_SECONDS = 300.0
 
 
 def retry_after_seconds(value: str | None) -> float | None:
@@ -343,6 +408,25 @@ def fetch_one(
                 if attempt < retries:
                     _sleep_backoff(attempt, r.headers.get("Retry-After"))
                     continue
+                # Out of retries and still refused. An ordinary 429 arrives
+                # with no usable `Retry-After` and so never reached `block`
+                # above; count it, and let the breaker shut the host if this
+                # is the third source in a row to end up here.
+                if r.status_code == 429 and lim is not None:
+                    secs = lim.note_refusal(src.url)
+                    if secs:
+                        # Worded like the long block, and with the seconds in
+                        # it, because `cmd_scan` reads the number back out of
+                        # this string to tell the reader which HOST is
+                        # rate-limiting them. Without that they get a list of
+                        # employers to squint at instead of the one fact that
+                        # explains all of them.
+                        return Result(
+                            src, error=f"HTTP 429, host blocked for another "
+                                       f"{int(secs)}s after "
+                                       f"{CONSECUTIVE_429_LIMIT} refusals",
+                            status=status, elapsed=time.time() - t0,
+                            throttled=True)
                 return Result(src, error=last, status=status,
                               elapsed=time.time() - t0, throttled=r.status_code == 429)
 
@@ -355,6 +439,10 @@ def fetch_one(
             # empty 200 body took the JSON branch, raised JSONDecodeError and
             # was retried twice before being reported as a transport error
             # rather than as the empty page it was.
+            if lim is not None:
+                # This host is serving, so whatever run of refusals it had is
+                # over. Only a run of them, unbroken, means it is shut.
+                lim.note_ok(src.url)
             if "json" in ctype or r.text.lstrip()[:1] in ("[", "{"):
                 return Result(src, payload=r.json(), status=status, elapsed=time.time() - t0)
             return Result(src, payload=r.text, status=status, elapsed=time.time() - t0)

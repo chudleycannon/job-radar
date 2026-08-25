@@ -766,7 +766,7 @@ for _code, _names in _MORE_CITIES.items():
         _CITY_HINTS[_code] = _alt(_names)
 
 
-def _country_of(location: str) -> str | None:
+def _country_of(location: str, *, cities: bool = True) -> str | None:
     """Best single guess at the country a location string refers to.
 
     Tiered deliberately: an explicit country code or name beats a US state
@@ -774,6 +774,11 @@ def _country_of(location: str) -> str | None:
     callers treat as unknown rather than as a match, and None stays a real
     answer: "Remote", "2 Locations" and "EMEA" name no country, and 17% of
     everything this file cannot place is of exactly that kind.
+
+    `cities=False` drops the tiers that answer on city evidence alone, so the
+    result means "this string names a country" rather than "we can attribute
+    this string to a country". Callers that add a country to a location need
+    that narrower question: see `names_a_country`.
     """
     if not location:
         return None
@@ -817,7 +822,7 @@ def _country_of(location: str) -> str | None:
     # Georgia the country before Georgia the state, and only ever on the
     # evidence of a Georgian city. "Tbilisi, Georgia" used to resolve to US,
     # because the spelled-out state rule matched the last word of it.
-    if _GEORGIA_COUNTRY.search(fold):
+    if cities and _GEORGIA_COUNTRY.search(fold):
         return "GE"
 
     # Twenty state codes are also country codes. "Berlin, DE" read as Delaware
@@ -870,10 +875,33 @@ def _country_of(location: str) -> str | None:
     # than towns for a large share of its adverts.
     if _SHIRE.search(fold):
         return "UK"
-    for code, pat in _CITY_HINTS.items():
-        if hit(pat):
-            return code
+    if cities:
+        for code, pat in _CITY_HINTS.items():
+            if hit(pat):
+                return code
     return None
+
+
+def names_a_country(location: str) -> bool:
+    """Does this string explicitly NAME a country?
+
+    Not the same question as "can we work out which country this is", and the
+    difference is a whole country's worth of listings. `_countries_in` answers
+    on city evidence too, so it says yes to a bare "Perth" (Australia) and a
+    bare "Boston" (United States). `_reed_location` asked it whether to append
+    ", United Kingdom" to a location typed into a UK-only job site, so Perth in
+    Scotland was filed as Australian and Boston in Lincolnshire as American,
+    and both then vanished for anyone with `countries: [UK]`.
+
+    A city hint must not suppress the suffix; only a country marker may. The
+    case the suffix has to keep protecting is a real overseas listing that
+    names its country outright, "Dublin, Ireland", which must never become
+    "Dublin, Ireland, United Kingdom".
+    """
+    for part in _SPLIT.split(location or ""):
+        if _country_of(part, cities=False):
+            return True
+    return bool(_country_of(location or "", cities=False))
 
 
 def _countries_in(location: str) -> set[str]:

@@ -157,8 +157,13 @@ def cmd_scan(args) -> int:
     for host, secs in sorted(blocks.items(), key=lambda kv: -kv[1]):
         n = sum(1 for r in results
                 if r.throttled and urlparse(r.source.url).netloc == host)
-        _say(f"  ! {host} is rate-limiting this connection and asked for "
-             f"{secs // 3600}h {secs % 3600 // 60}m before the next request. "
+        # Formatted rather than hard-coded to hours: the breaker's own block
+        # is five minutes, and "0h 5m" reads like a bug in the tool.
+        gap = (f"{secs // 3600}h {secs % 3600 // 60}m" if secs >= 3600
+               else f"{secs // 60}m {secs % 60}s" if secs >= 60
+               else f"{secs}s")
+        _say(f"  ! {host} is rate-limiting this connection, so the next "
+             f"request there waits {gap}. "
              f"{n} source(s) there are UNKNOWN today, not empty. They are "
              f"left alone rather than recorded as having no jobs.")
     # The other silent failure, and the harder one to see. A throttled source
@@ -331,6 +336,19 @@ def cmd_discover(args) -> int:
             if f.identity == "unsupported":
                 _say(f"  found their board: {f.note}")
                 continue
+            if f.identity == "unreadable":
+                # The board exists; the fetch failed. Saying "nothing found,
+                # either it is rendered by JavaScript or the platform has no
+                # adapter yet" about a board we located and named is three
+                # false statements at once. Counted as a result so the exit
+                # code is a success, but never handed to `--add`: an unread
+                # board is unverified, and writing it into the config would
+                # bank a guess we could not check.
+                _say(f"  {f.platform:<16}    ?  jobs  [could not read]  {f.url}")
+                _say(f"                   found, but {f.note}")
+                _say(f"                   not added; try again later")
+                results.append(f)
+                continue
             mark = {"ok": "verified", "mismatch": "WRONG COMPANY?",
                     "unchecked": "unverified"}.get(f.identity, f.identity)
             _say(f"  {f.platform:<16} {f.live_jobs:>4} jobs  [{mark}]  {f.url}")
@@ -338,7 +356,8 @@ def cmd_discover(args) -> int:
                 _say(f"                   {f.note}")
             results.append(f)
 
-    good = [f for f in results if f.live_jobs > 0 and f.identity != "mismatch"]
+    good = [f for f in results if f.live_jobs > 0
+            and f.identity not in ("mismatch", "unreadable")]
     if args.add and good:
         cfg_path = _cfg_path(args.config)
         if not cfg_path.exists():

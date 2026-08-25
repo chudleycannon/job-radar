@@ -417,18 +417,45 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
                 should_stop=lambda: store.get_meta(con, "rank_cancel", "") == "1")
             store.set_meta(con, "rank_state", "idle")
             store.set_meta(con, "rank_cancel", "")
-        except Exception as e:
+        except BaseException as e:
             # Never leave it stuck on "running": the button would spin for
             # ever and refuse every later attempt.
+            #
+            # `BaseException`, not `Exception`, and the comment above is the
+            # reason. `rank._call` raises SystemExit when the `claude` binary
+            # is missing, SystemExit is a BaseException, and it walked straight
+            # past the handler that exists to stop exactly this. `rank_state`
+            # then stayed "running" for the life of the database, the button
+            # was disabled for ever, and no error text ever reached the page:
+            # a missing binary bricked the dashboard. Whatever a worker raises,
+            # the state gets cleared and the reader gets a sentence.
             from .runner import LimitReached
             store.set_meta(con, "rank_state", "idle")
-            store.set_meta(con, "rank_error", (
-                f"stopped: out of credit or rate limited ({e}). Everything "
-                f"scored so far is saved; run it again when the limit resets "
-                f"and it picks up where it left off."
-                if isinstance(e, LimitReached) else
-                f"ranking failed: {e}. Nothing was scored; the roles are "
-                f"unchanged.")[:300])
+            # A cancel flag left set would stop the next run before its first
+            # batch, which reads as the button doing nothing at all.
+            store.set_meta(con, "rank_cancel", "")
+            # What was actually written, which is not always nothing. The
+            # connection is in autocommit, so a failure part way through the
+            # apply loop leaves real scores in the database, and saying "the
+            # roles are unchanged" about them sends someone looking for a bug
+            # that is not there. `rank` stamps the count onto the exception.
+            saved = int(getattr(e, "scored", 0) or 0)
+            if isinstance(e, LimitReached):
+                msg = (f"stopped: out of credit or rate limited ({e}). "
+                       f"Everything scored so far is saved; run it again when "
+                       f"the limit resets and it picks up where it left off.")
+            else:
+                what = (f"{saved} role(s) were scored and saved before it "
+                        f"stopped." if saved else
+                        "Nothing was scored; the roles are unchanged.")
+                msg = f"ranking failed: {e}. {what}"
+            store.set_meta(con, "rank_error", msg[:300])
+            # Cleared first, then honoured. A KeyboardInterrupt or a
+            # SystemExit still means what it says; `finally` below releases the
+            # lock and closes the connection on the way out, and this runs on a
+            # daemon thread where re-raising ends the thread and nothing else.
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
         finally:
             store.release(con, "rank")
             con.close()
