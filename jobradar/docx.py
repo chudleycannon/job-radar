@@ -36,21 +36,50 @@ _DOC_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 _W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
+# One typeface, declared on every style, and no shouting.
+#
+# Three things were wrong with the old block and all three were visible the
+# moment somebody opened the file.
+#
+# `<w:caps/>` on Heading1 rendered every section as PROFILE, EXPERIENCE,
+# SELECTED ACHIEVEMENTS. On a CV already carrying 28 distinct acronyms that
+# is a page of capitals, and it is the generator shouting rather than
+# anything the writer asked for.
+#
+# Only docDefaults named a font, and only for `ascii` and `hAnsi`. A style
+# that does not name one inherits from the theme, and this file ships no
+# theme part, so a word processor falls back to its own default for those
+# runs: headings in one face and body text in another, in a document that
+# never asked for two. Every style now names the font, and `cs` and
+# `eastAsia` are set too so a single non-Latin character does not switch
+# face mid-line.
+#
+# The maroon heading colour was a decision nobody made. Headings are near
+# black; a CV is not the place for the generator to have an opinion.
+_FONT = ('<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri" '
+         'w:eastAsia="Calibri"/>')
+
 _STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles {_W}>
 <w:docDefaults><w:rPrDefault><w:rPr>
-  <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="21"/>
+  {_FONT}<w:sz w:val="21"/><w:szCs w:val="21"/>
 </w:rPr></w:rPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>
+  <w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr>
+  <w:rPr>{_FONT}<w:sz w:val="21"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:pPr>
-  <w:spacing w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/></w:rPr></w:style>
+  <w:spacing w:after="60"/></w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:sz w:val="36"/><w:color w:val="1A1A1A"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr>
-  <w:spacing w:before="240" w:after="80"/></w:pPr>
-  <w:rPr><w:b/><w:caps/><w:sz w:val="24"/><w:color w:val="7B2D42"/></w:rPr></w:style>
+  <w:spacing w:before="260" w:after="80"/></w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:sz w:val="24"/><w:color w:val="1A1A1A"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr>
-  <w:spacing w:before="160" w:after="60"/></w:pPr>
-  <w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style>
+  <w:spacing w:before="160" w:after="40"/></w:pPr>
+  <w:rPr>{_FONT}<w:b/><w:sz w:val="22"/><w:color w:val="1A1A1A"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/>
-  <w:pPr><w:ind w:left="360" w:hanging="180"/><w:spacing w:after="60"/></w:pPr></w:style>
+  <w:pPr><w:ind w:left="360" w:hanging="180"/>
+  <w:spacing w:after="60" w:line="276" w:lineRule="auto"/></w:pPr>
+  <w:rPr>{_FONT}</w:rPr></w:style>
 </w:styles>"""
 
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
