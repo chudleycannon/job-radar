@@ -521,7 +521,7 @@ def running_count(con) -> int:
     return con.execute("SELECT COUNT(*) c FROM jobs WHERE state='running'").fetchone()["c"]
 
 
-def reap_orphans(con, timeout_s: int = 900) -> int:
+def reap_orphans(con, timeout_s: int = 900, restarted: bool = True) -> int:
     """Fail jobs whose worker is gone, and say why.
 
     A generation runs on a daemon thread inside the server process, so it
@@ -534,18 +534,34 @@ def reap_orphans(con, timeout_s: int = 900) -> int:
     Anything still marked running or pending when the server starts belongs to
     a process that no longer exists. Anything older than the generation
     timeout is dead whatever started it.
+
+    The two sweeps have to run in that order, and did not. The blanket one
+    went first and matched every running and pending row unconditionally, so
+    the timeout below it could never match anything: it was dead code, and
+    the `timeout_s` the server passes was inert. A job that had been running
+    for forty minutes and one that started ten seconds ago were both told
+    "the server restarted while this was running", which for the first is the
+    wrong explanation and for a reader chasing a stuck generation is a
+    misleading one.
+
+    `restarted` is what separates them. At startup both are true and every
+    unfinished row is orphaned. Called while the server is up, only the
+    timeout applies, because a job that is genuinely running must not be
+    killed by the sweep that exists to clean up after a crash.
     """
-    n = con.execute(
-        "UPDATE jobs SET state='failed', finished_at=?, error=? "
-        "WHERE state IN ('running','pending')",
-        (_now(), "interrupted: the server restarted while this was running. "
-                 "Nothing was charged for the unfinished part; click again."),
-    ).rowcount
     stale = con.execute(
         "UPDATE jobs SET state='failed', finished_at=?, error=? "
         "WHERE state='running' AND "
         "replace(started_at,'T',' ') < datetime('now','localtime',?)",
         (_now(), f"gave up after {timeout_s // 60} minutes", f"-{timeout_s} seconds"),
+    ).rowcount
+    if not restarted:
+        return stale
+    n = con.execute(
+        "UPDATE jobs SET state='failed', finished_at=?, error=? "
+        "WHERE state IN ('running','pending')",
+        (_now(), "interrupted: the server restarted while this was running. "
+                 "Nothing was charged for the unfinished part; click again."),
     ).rowcount
     return n + stale
 

@@ -174,3 +174,39 @@ def test_a_scan_pointed_at_another_database_does_not_import_this_one():
             == "Previous Employer"
     finally:
         os.chdir(cwd)
+
+
+def test_a_job_that_ran_too_long_is_told_so_and_not_blamed_on_a_restart():
+    """The timeout sweep was dead code.
+
+    The blanket sweep ran first and matched every running and pending row
+    unconditionally, so the one below it could never match: `runner.TIMEOUT`,
+    which the server passes in, did nothing at all. A job that had been
+    running forty minutes and one that started ten seconds ago were both told
+    "the server restarted while this was running", which is the wrong
+    explanation for the first and a misleading one for anybody chasing a
+    generation that had stuck.
+    """
+    con = _con()
+    con.execute("INSERT INTO jobs (uid,kind,state,requested_at,started_at) "
+                "VALUES ('u1','cv','running','2020-01-01T00:00:00',"
+                "'2020-01-01T00:00:00')")
+    con.execute("INSERT INTO jobs (uid,kind,state,requested_at,started_at) "
+                "VALUES ('u1','screen','running',datetime('now','localtime'),"
+                "datetime('now','localtime'))")
+
+    # Mid-flight: only the genuinely old one dies, because the young one is
+    # a job that is actually running.
+    assert store.reap_orphans(con, timeout_s=900, restarted=False) == 1
+    rows = {r["kind"]: r for r in con.execute("SELECT kind,state,error FROM jobs")}
+    assert rows["cv"]["state"] == "failed"
+    assert "gave up after 15 minutes" in rows["cv"]["error"]
+    assert rows["screen"]["state"] == "running", "killed a job that was running"
+
+    # At startup the survivor is orphaned too, with the accurate reason.
+    assert store.reap_orphans(con, timeout_s=900) == 1
+    rows = {r["kind"]: r for r in con.execute("SELECT kind,state,error FROM jobs")}
+    assert rows["screen"]["state"] == "failed"
+    assert "server restarted" in rows["screen"]["error"]
+    assert "gave up after 15 minutes" in rows["cv"]["error"], (
+        "the old job's real reason was overwritten by the blanket sweep")

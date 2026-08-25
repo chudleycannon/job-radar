@@ -11,6 +11,7 @@ buttons live, from the same database, so the two cannot disagree.
 from __future__ import annotations
 
 import json
+import sqlite3
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import html as _h
@@ -19,6 +20,11 @@ from urllib.parse import urlparse
 
 from . import runner, store
 from .output import interactive
+
+# Nothing this dashboard posts is large: the biggest body is a status plus a
+# note. A Content-Length beyond this is a mistake, and reading it would be
+# blocking on bytes that are not coming.
+MAX_BODY = 1 << 20
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -29,6 +35,7 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------- helpers
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
+        self._answered = True
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -37,6 +44,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _html(self, text):
         body = text.encode("utf-8")
+        self._answered = True
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -44,18 +52,73 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        if not n:
+        """The posted JSON object, or {} if there is not one.
+
+        Everything here is defensive for the same reason: an exception thrown
+        out of a handler is not an error message, it is a dropped connection.
+        The browser's `fetch` rejects, the click does nothing, and the page
+        says nothing, which is indistinguishable from a button that is not
+        wired up. So a body that is not an object, or a Content-Length that is
+        not a number, becomes {} and the handler's own validation answers with
+        a sentence.
+        """
+        raw = self.headers.get("Content-Length") or "0"
+        try:
+            n = int(raw)
+        except ValueError:
+            return {}
+        if n <= 0 or n > MAX_BODY:
             return {}
         try:
-            return json.loads(self.rfile.read(n) or b"{}")
-        except json.JSONDecodeError:
+            data = json.loads(self.rfile.read(n) or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
             return {}
+        # `json.loads('[]')` and `json.loads('"hi"')` are both valid JSON and
+        # neither has `.get`. Reaching `data.get("uid")` on one raised
+        # AttributeError inside the handler and dropped the connection.
+        return data if isinstance(data, dict) else {}
 
     def log_message(self, *a):
         pass                      # the scan output is the interesting log
 
     # ------------------------------------------------------------- routing
+    #
+    # Every request runs inside this. Four separate defects here all had the
+    # same shape and the same symptom -- a malformed body, an unhashable
+    # `kind`, a note that was not a string, and a write that lost a race with
+    # a scan -- and each one killed the connection instead of answering:
+    # http.server writes no status line when a handler raises, so the
+    # browser's `fetch` rejected and the page said nothing at all. A click
+    # that did nothing and a click that failed looked identical, and the one
+    # that failed had usually just lost a status change.
+    #
+    # Wrapped here rather than around each `do_*` so there is one place that
+    # cannot be forgotten, and so a handler added later gets it for free.
+    def handle_one_request(self):
+        self._answered = False
+        try:
+            super().handle_one_request()
+        except Exception as e:
+            if getattr(self, "_answered", False):
+                raise            # too late to answer; let the server log it
+            locked = (isinstance(e, sqlite3.OperationalError)
+                      and ("locked" in str(e).lower() or "busy" in str(e).lower()))
+            if locked:
+                # The one failure here with an obvious cause and an obvious
+                # thing to do about it: a scan holds the write lock while it
+                # updates the board, and 15 seconds was not long enough.
+                msg = ("the database is busy, most likely a scan is writing "
+                       "to it. Nothing was saved. Try again in a moment.")
+                code = 503
+            else:
+                msg = f"{type(e).__name__}: {e}"[:300]
+                code = 500
+            self.close_connection = True
+            try:
+                self._json({"ok": False, "error": msg}, code)
+            except OSError:
+                pass             # the client went away mid-answer
+
     def do_GET(self):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
@@ -291,27 +354,40 @@ class Handler(BaseHTTPRequestHandler):
                 if not store.claim(con, "rank"):
                     return self._json(
                         {"ok": False, "error": "already ranking"}, 429)
-                from . import rank as rank_mod
-                rows = rank_mod.candidates(con, refresh=bool(data.get("refresh")))
-                if not rows:
-                    store.release(con, "rank")
-                    return self._json(
-                        {"ok": False,
-                         "error": "every role with a description already has a "
-                                  "fit score"}, 409)
-                from datetime import datetime
-                store.set_meta(con, "rank_state", "running")
-                store.set_meta(con, "rank_total", str(len(rows)))
-                store.set_meta(con, "rank_done", "0")
-                store.set_meta(con, "rank_cancel", "")
-                store.set_meta(con, "rank_error", "")
-                # Where the scored count stood before this run, so progress can
-                # be read live off the database rather than only advancing when
-                # a batch finishes.
-                store.set_meta(con, "rank_base", str(con.execute(
-                    "SELECT COUNT(*) c FROM roles WHERE fit>=0").fetchone()["c"]))
-                store.set_meta(con, "rank_started",
-                               datetime.now().isoformat(timespec="seconds"))
+                # Everything from here to the spawn has to give the lock back
+                # if it throws. `candidates` is a query and the `set_meta`
+                # calls are writes, so any of them can lose a race with a scan
+                # and raise "database is locked" -- and a lock left taken
+                # refuses every later rank with "already ranking" until the
+                # server is restarted, which is the exact wedge `clear_locks`
+                # exists to undo.
+                try:
+                    from . import rank as rank_mod
+                    rows = rank_mod.candidates(
+                        con, refresh=bool(data.get("refresh")))
+                    if not rows:
+                        store.release(con, "rank")
+                        return self._json(
+                            {"ok": False,
+                             "error": "every role with a description already "
+                                      "has a fit score"}, 409)
+                    from datetime import datetime
+                    store.set_meta(con, "rank_state", "running")
+                    store.set_meta(con, "rank_total", str(len(rows)))
+                    store.set_meta(con, "rank_done", "0")
+                    store.set_meta(con, "rank_cancel", "")
+                    store.set_meta(con, "rank_error", "")
+                    # Where the scored count stood before this run, so progress
+                    # can be read live off the database rather than only
+                    # advancing when a batch finishes.
+                    store.set_meta(con, "rank_base", str(con.execute(
+                        "SELECT COUNT(*) c FROM roles WHERE fit>=0")
+                        .fetchone()["c"]))
+                    store.set_meta(con, "rank_started",
+                                   datetime.now().isoformat(timespec="seconds"))
+                except BaseException:
+                    _abandon_rank(con)
+                    raise
             finally:
                 con.close()
             _spawn_rank(self.db_path, self.config_path,
@@ -331,14 +407,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "no such role"}, 404)
             if path == "/api/status":
                 status = data.get("status", "")
-                if status not in store.STATUSES:
+                if not isinstance(status, str) or status not in store.STATUSES:
                     return self._json({"ok": False, "error": "bad status"}, 400)
-                store.set_status(con, uid, status, data.get("note"))
+                # None means "not supplied, keep the note that is there"; a
+                # string means "use this one, even if it is empty". Anything
+                # else is neither, and sqlite refused to bind it: the request
+                # died with no response and the click did nothing.
+                note = data.get("note")
+                if note is not None and not isinstance(note, str):
+                    return self._json(
+                        {"ok": False, "error": "a note has to be text"}, 400)
+                store.set_status(con, uid, status, note)
                 return self._json({"ok": True, "uid": uid, "status": status})
 
             if path == "/api/generate":
                 kind = data.get("kind")
-                if kind not in runner.KINDS:
+                # `kind not in runner.KINDS` hashes `kind`, so a list or a
+                # dict raised TypeError rather than answering "bad kind".
+                if not isinstance(kind, str) or kind not in runner.KINDS:
                     return self._json({"ok": False, "error": "bad kind"}, 400)
                 # The cover letter needs the CV to check itself against.
                 if kind == "cover_letter" and not store.has_artifact(con, uid, "cv"):
@@ -395,6 +481,29 @@ def _rank_elapsed(con) -> int:
         return 0
 
 
+def _abandon_rank(con, error: str = "") -> None:
+    """Put the rank button back, from whatever state a failure left it in.
+
+    Called on every path that gives up after the lock was taken. Each write is
+    separately guarded because this runs when something is already wrong with
+    the database, and a second failure here must not stop the remaining
+    writes: leaving `rank_state` on "running" or the lock in place is a wedge
+    that lasts until the next restart.
+    """
+    for k, v in (("rank_state", "idle"), ("rank_cancel", ""),
+                 ("rank_error", error[:300] if error else None)):
+        if v is None:
+            continue
+        try:
+            store.set_meta(con, k, v)
+        except Exception:
+            pass
+    try:
+        store.release(con, "rank")
+    except Exception:
+        pass
+
+
 def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
     """Rank on a background thread so the click returns at once.
 
@@ -406,7 +515,22 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
     def work():
         from . import rank as rank_mod
         from .config import load as load_cfg
-        con = store.connect(db_path)
+        try:
+            con = store.connect(db_path)
+        except Exception as e:
+            # This sat outside the try below, so a connection that failed --
+            # a scan holding the write lock, a full disk -- killed the thread
+            # before any of the recovery underneath could run. `rank_state`
+            # stayed "running" with no error text and the "rank" lock stayed
+            # taken, so the dashboard showed a run in progress that would
+            # never move and refused every later click with "already ranking"
+            # for the life of the server. Same failure, one line higher up.
+            try:
+                with store.open_db(db_path) as c2:
+                    _abandon_rank(c2, f"could not open the database: {e}")
+            except Exception:
+                pass
+            raise
         try:
             cfg = load_cfg(config_path) if config_path else load_cfg()
             rows = rank_mod.candidates(con, refresh=refresh)

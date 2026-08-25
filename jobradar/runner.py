@@ -467,19 +467,30 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         # path comes from the config, which validates it exists on load, so a
         # CV that has been moved fails loudly instead of being invented.
         cv_cfg = ""
+        cfg_err = ""
         try:
             from .config import load as _load
             cv_cfg = _load(config_path).cv_path
-        except Exception:
-            pass
+        except Exception as e:
+            # Swallowing this reported a config that will not parse as "No CV
+            # configured", which sends someone to fix a `cv.path` that is
+            # already correct. A malformed `titles:` block failed here and the
+            # dashboard said the CV was missing.
+            cfg_err = f"{type(e).__name__}: {e}"[:200]
         # Path("") is PosixPath("."), which exists, so the "no CV configured"
         # guard below never fired and shutil.copy2 raised IsADirectoryError.
         chosen = cv_source or cv_cfg or os.environ.get("JOB_RADAR_CV") or ""
         src = Path(chosen) if chosen else None
         if src is None or not src.exists() or src.is_dir():
-            store.mark_job(con, job_id, "failed",
-                           error="No CV configured. Set `cv.path` in your "
-                                 "config, or run `job-radar setup`.")
+            why = (f"could not read your config ({cfg_err}), so the CV path "
+                   f"is unknown. Fix the config and click again."
+                   if cfg_err and not chosen else
+                   "No CV configured. Set `cv.path` in your config, or run "
+                   "`job-radar setup`."
+                   if not chosen else
+                   f"the CV at {src} is not a readable file. Check `cv.path` "
+                   f"in your config.")
+            store.mark_job(con, job_id, "failed", error=why)
             return
 
         # Every kind needs it. Screening was previously asked to separate hard
@@ -723,10 +734,34 @@ def _gates(d: Path, name: str) -> dict:
     The phrase-overlap defect survived three consecutive packs because the
     check was somebody reading it again. A script catches it every time.
     """
-    f = d / name
-    if not f.exists():
+    if not name:
+        # An artifact row with an empty path resolves to the directory itself,
+        # and `read_text` on a directory raises. One such row stopped `serve`
+        # before it bound a port, because `regate` runs at startup.
         return {"written": False}
-    text = f.read_text(encoding="utf-8", errors="ignore")
+    f = d / name
+    if not f.exists() or f.is_dir():
+        return {"written": False}
+    # Gate the document, not the container.
+    #
+    # `_record` calls this with "CV.md", but the row it writes points at
+    # "CV.docx", so `regate` -- which runs on every `serve` start -- called it
+    # with the .docx and read a deflate-compressed zip as text. Every gate
+    # then came back wrong, in both directions: a CV containing an em-dash
+    # scored `no_em_dash: True` because the character is inside the
+    # compressed stream, and a perfectly clean CV scored
+    # `unsourced_specifics: False` with "20", "7%", "0b" in `unsourced_found`,
+    # which are bytes of the zip. The dashboard reported invented figures that
+    # were not in the document and passed a rule that the document broke.
+    if f.suffix.lower() == ".docx":
+        md = f.with_suffix(".md")
+        f = md if md.exists() else f
+    if f.suffix.lower() == ".docx":
+        text = docx_to_text(f)          # no markdown left beside it
+        if not text:
+            return {"written": True, "unreadable": True, "natural_writing": False}
+    else:
+        text = f.read_text(encoding="utf-8", errors="ignore")
     gates = {"written": True, "no_em_dash": "—" not in text}
     srcs = list(d.glob("source-cv.txt")) or list(d.glob("source-cv.*"))
     if srcs:
@@ -750,7 +785,12 @@ def _gates(d: Path, name: str) -> dict:
                 for r in _skill_roots()
                 if (r / "natural-writing" / "scripts" / "detect.py").exists()),
                None)
-    if det is not None:
+    if f.suffix.lower() == ".docx":
+        # Only reachable when the markdown is gone. detect.py reads text, and
+        # running it on a zip produces a verdict about nothing. Unmeasurable
+        # is failed, the same rule as a missing skill.
+        gates["natural_writing"] = False
+    elif det is not None:
         try:
             # sys.executable, not "python3": that name does not exist on a
             # standard Windows install, so the gate reported None and the
@@ -793,38 +833,80 @@ def regate(con) -> int:
     """
     n = 0
     for a in con.execute("SELECT * FROM artifacts WHERE kind IN ('cv','cover_letter')"):
-        path = Path(a["path"] or "")
-        if not path.exists():
-            continue
-        d = path.parent
-        gates = _gates(d, path.name)
-        summary = a["summary"] or ""
-        if a["kind"] == "cover_letter":
-            cv_f = d / "CV.md"
-            if cv_f.exists():
-                shared = shared_ngram(cv_f.read_text(encoding="utf-8", errors="ignore"),
-                                      path.read_text(encoding="utf-8", errors="ignore"))
-                gates["no_overlap_with_cv"] = not shared
-                summary = f'shares "{shared}" with the CV' if shared else ""
-        con.execute("UPDATE artifacts SET gates=?, summary=? WHERE id=?",
-                    (json.dumps(gates), summary, a["id"]))
-        n += 1
+        # One unreadable row must not stop the dashboard from starting, which
+        # is what happened: `serve` calls this before it binds a port, and an
+        # artifact row with an empty path made `read_text` raise on a
+        # directory. The row is skipped and the others are still rechecked.
+        try:
+            if not (a["path"] or "").strip():
+                continue
+            path = Path(a["path"])
+            if not path.exists() or path.is_dir():
+                continue
+            d = path.parent
+            gates = _gates(d, path.name)
+            summary = a["summary"] or ""
+            if a["kind"] == "cover_letter":
+                cv_f = d / "CV.md"
+                # The letter's own markdown, not the .docx the row points at.
+                letter_f = (path.with_suffix(".md")
+                            if path.suffix.lower() == ".docx" else path)
+                if cv_f.exists() and letter_f.exists():
+                    shared = shared_ngram(
+                        cv_f.read_text(encoding="utf-8", errors="ignore"),
+                        letter_f.read_text(encoding="utf-8", errors="ignore"))
+                    gates["no_overlap_with_cv"] = not shared
+                    summary = f'shares "{shared}" with the CV' if shared else ""
+                else:
+                    # `_record` writes False here when it cannot measure the
+                    # overlap. This left the key out instead, so a restart
+                    # turned a known-unchecked gate into an absent one, and
+                    # the dashboard counts only `is False`: a letter nothing
+                    # had ever compared to a CV rendered exactly like one that
+                    # passed. Same rule in both places.
+                    gates["no_overlap_with_cv"] = False
+                    summary = "overlap not checked: no CV.md alongside the letter"
+            con.execute("UPDATE artifacts SET gates=?, summary=? WHERE id=?",
+                        (json.dumps(gates), summary, a["id"]))
+            n += 1
+        except OSError as e:
+            print(f"  ! could not recheck {a['path']}: {e}", flush=True)
     return n
 
 
 def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
     """Run a job on a daemon thread so the click returns immediately."""
     def work():
+        failure = ""
         try:
             run_job(job_id, db_path=db_path, base=base, config_path=config_path)
+        except BaseException as e:
+            # `run_job` opens its own connection before its try block, so a
+            # connection that failed threw straight out of here. The row was
+            # left on 'pending' with nothing behind it: the dashboard spun on
+            # it for ever, and nothing clears that state until the next
+            # restart, because `reap_orphans` only runs when `serve` starts.
+            failure = f"{type(e).__name__}: {e}"[:400]
+            raise
         finally:
             # However it ended. A lock left behind refuses every later
             # generation until the server restarts, which is the same wedge
             # the orphan reaper exists to undo.
-            con = store.connect(db_path)
             try:
-                store.release(con, "generate")
-            finally:
-                con.close()
+                con = store.connect(db_path)
+            except Exception:
+                con = None
+            if con is not None:
+                try:
+                    if failure:
+                        row = con.execute("SELECT state FROM jobs WHERE id=?",
+                                          (job_id,)).fetchone()
+                        if row and row["state"] in ("pending", "running"):
+                            store.mark_job(con, job_id, "failed",
+                                           error=f"the generation stopped "
+                                                 f"before it started: {failure}")
+                    store.release(con, "generate")
+                finally:
+                    con.close()
 
     threading.Thread(target=work, daemon=True).start()

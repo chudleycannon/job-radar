@@ -14,6 +14,7 @@ what it did, and every dropped one carries why.
 
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 
@@ -34,8 +35,13 @@ from .salary import clears_floor
 
 # Tier 1: the location says which country outright.
 _COUNTRY_MARKERS = {
-    "UK": r"united kingdom|\buk\b|\bg\.?b\.?\b|\bengland\b|\bscotland\b|\bwales\b|"
-          r"northern ireland|\bbritain\b",
+    # "New England" is not England and "New South Wales" is not Wales. The
+    # word-boundary form claimed both: "Sydney, New South Wales" resolved to
+    # the UK, and so did "New England, Texas". For a UK user that is a US and
+    # an Australian role shown as British; for an Australian one it is a
+    # Sydney job filed abroad and dropped.
+    "UK": r"united kingdom|\buk\b|\bg\.?b\.?\b|(?<!new )\bengland\b|\bscotland\b|"
+          r"(?<!new south )\bwales\b|northern ireland|\bbritain\b",
     # The old form required the trailing "a", so "U.S. Remote" and "Remote
     # U.S." matched nothing at all and 170 postings written that way arrived
     # with no country. "U.S." on its own has to be enough.
@@ -133,9 +139,20 @@ _CITY_HINTS = {
 # "Remote" with nothing else attached. Anything more specific than this names
 # a place, and a place has to clear the country filter even when it is remote:
 # a US-remote role is not open to someone in the UK.
+# Every word here means "we have not told you where". "Remote - Worldwide",
+# "Hybrid", "HQ", "Various Locations" and "Multiple" all name no place, and a
+# posting that names no place must be treated as one that named none: 75
+# postings in a 13,588-posting sample were dropped as "location not
+# recognised" for saying nothing at all, which is the opposite of what the
+# rule below it does with an EMPTY location field.
+_NOWHERE = (r"remote|anywhere|global(?:ly)?|worldwide|distributed|hybrid|"
+            r"on[- ]?site|onsite|various|multiple|all|company[- ]?wide|"
+            r"flexible|tbc|tba|n/?a|hq|head office|headquarters|office|"
+            r"virtual|unspecified|locations?")
 _GENERIC_REMOTE = re.compile(
-    r"^\s*(?:fully\s+|100%\s+)?(?:remote|anywhere|global(?:ly)?|worldwide|distributed)"
-    r"[\s,\-/]*$",
+    rf"^\s*(?:(?:fully|100%|mostly|primarily)\s+)?(?:{_NOWHERE})"
+    rf"(?:(?:\s*[,\-–—/&]\s*|\s+(?:or|and)\s+|\s+)(?:{_NOWHERE}))*"
+    r"[\s,\-–—/]*$",
     re.I,
 )
 
@@ -917,13 +934,85 @@ def names_a_country(location: str) -> bool:
     return bool(_country_of(location or "", cities=False))
 
 
+# A comma-separated segment that can only be a qualifier of the place in
+# front of it, never a place in its own right: a US state, a Canadian
+# province, an Australian state. "Cambridge, MA" is one location and
+# "London, New York" is two, and this is what tells them apart -- "MA" is a
+# subdivision and nothing else, while "New York" is also a city, so it does
+# not swallow the London before it.
+_SUBDIVISION_ONLY = re.compile(
+    r"^(?:"
+    r"[a-z]{2}|"
+    r"new south wales|western australia|south australia|"
+    r"northern territory|australian capital territory|"
+    r"british columbia|newfoundland(?: and labrador)?|nova scotia|"
+    r"prince edward island|saskatchewan|manitoba|alberta|quebec|ontario|"
+    r"alabama|alaska|arizona|arkansas|colorado|connecticut|delaware|"
+    r"florida|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|"
+    r"maryland|massachusetts|michigan|minnesota|mississippi|missouri|"
+    r"montana|nebraska|nevada|new hampshire|new jersey|new mexico|"
+    r"north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|"
+    r"rhode island|south carolina|south dakota|tennessee|utah|vermont|"
+    r"virginia|west virginia|wisconsin|wyoming|california|texas|hawaii|"
+    r"washington"
+    r")$", re.I)
+# Deliberately absent: "new york" and "georgia". Both are also a city and a
+# country respectively, so treating them as pure qualifiers would swallow the
+# segment in front of them -- "London, New York" is two cities, not one.
+
+
+def _looks_like_one_place(segs: list[str]) -> bool:
+    """Is this comma list a single address rather than a list of places?
+
+    An address is short and gets broader left to right, ending in the thing
+    that identifies the country: "Cambridge, MA", "Toronto, Ontario, Canada",
+    "Benin, Nigeria". A list of places does not end that way: "London, New
+    York", "Germany, Cyprus, Poland, London, Portugal".
+
+    Getting this wrong in the address direction re-files "Cambridge, MA" as
+    British; getting it wrong in the list direction deletes a London vacancy
+    that was advertised alongside two American ones.
+    """
+    if not 2 <= len(segs) <= 3:
+        return False
+    last = segs[-1]
+    return bool(_SUBDIVISION_ONLY.match(last)
+                or _country_of(last, cities=False))
+
+
 def _countries_in(location: str) -> set[str]:
-    """Every country a posting names. Postings routinely list several."""
+    """Every country a posting names. Postings routinely list several.
+
+    Commas are read as separators too, but only carefully. A comma usually
+    binds a place to its qualifier ("Cambridge, MA"), which is why the
+    pipe-and-slash split above exists; but employers also write plain
+    comma-separated lists of cities, and reading those as one string returns
+    exactly one country. "London, New York", "San Francisco, New York,
+    London" and "Germany, Cyprus, Poland, London, Portugal" all came back as
+    a single foreign country, so a London vacancy on any of them was dropped
+    as being outside the UK.
+
+    A comma segment therefore contributes its own country UNLESS the segment
+    after it is a bare subdivision, in which case the pair is one place and
+    the subdivision decides.
+    """
     found = set()
     for part in _SPLIT.split(location or ""):
         c = _country_of(part)
         if c:
             found.add(c)
+        segs = [x.strip() for x in part.split(",") if x.strip()]
+        if len(segs) < 2 or _looks_like_one_place(segs):
+            continue
+        for i, seg in enumerate(segs):
+            nxt = segs[i + 1] if i + 1 < len(segs) else ""
+            if nxt and _SUBDIVISION_ONLY.match(nxt):
+                continue        # "Cambridge" belongs to the "MA" behind it
+            if _SUBDIVISION_ONLY.match(seg):
+                continue        # a qualifier names no country on its own
+            c = _country_of(seg)
+            if c:
+                found.add(c)
     if not found:
         c = _country_of(location)
         if c:
@@ -1036,6 +1125,99 @@ def enrich(job: Job) -> Job:
     return job
 
 
+# ---------------------------------------------------------------------------
+# Title matching
+#
+# `titles.include` is a substring test, and a job title is not a substring
+# problem. Employers write the same job as "Engineering Manager", "Manager,
+# Engineering", "Senior Manager, Software Engineering", "Head of Site
+# Reliability Engineering" and "Director, Data Engineering & Architecture",
+# and only the first of those contains the phrase anybody would think to type.
+#
+# Measured on 13,588 postings from 505 bundled boards: of 165 postings a
+# person would call engineering leadership, the config in `config.yaml`
+# ("engineering manager", "senior engineering manager", "head of
+# engineering", "director of engineering") matched 92. The other 73 were
+# dropped as "title does not match" and were therefore never seen at all.
+#
+# So the configured phrase is treated as its significant words, which may
+# appear in any order with a couple of qualifiers between them. This layer
+# only ever ADDS matches: the substring regex runs first and unchanged, so
+# nothing that matched before can stop matching now.
+# ---------------------------------------------------------------------------
+
+# Dropped from both the configured term and the title before comparing, so
+# "Director of Engineering", "Director, Engineering" and "Engineering
+# Director" are one title and not three.
+_TITLE_STOP = {"of", "the", "for", "and", "a", "an", "in", "at", "on", "to", "&"}
+_TITLE_WORD = re.compile(r"[a-z0-9+#&]+")
+
+# Words that, appearing between or immediately before the parts of a
+# configured title, make it a DIFFERENT job rather than a narrower version of
+# the same one. "Senior Manager, Data Engineering" is the job; "Senior
+# Technical Program Manager - Foundations Engineering" is not, and neither is
+# "Product Manager, Engineering Platform". A qualifier that only names the
+# discipline ("data", "platform", "mobile", "site reliability") is fine and is
+# exactly what this is meant to let through.
+_ROLE_SHIFT = {
+    "program", "programme", "project", "product", "account", "sales",
+    "presales", "marketing", "finance", "financial", "legal", "recruiting",
+    "recruitment", "talent", "procurement", "category", "partner",
+    "partnerships", "hr", "people", "customer", "business", "brand",
+    "community", "event", "events", "facilities", "construction", "land",
+    "civil",
+}
+# How many extra words may sit inside the phrase. Two covers "Head of [Site
+# Reliability] Engineering" and "Director, [Data] Engineering & Architecture".
+# Three adds almost no real roles and a third more wrong ones.
+_TITLE_GAP = 2
+
+
+def _title_words(text: str) -> list[str]:
+    folded = _fold((text or "").lower())
+    return [w for w in _TITLE_WORD.findall(folded) if w not in _TITLE_STOP]
+
+
+def _term_core(term: str) -> list[str]:
+    words = _TITLE_WORD.findall(_fold((term or "").lower()))
+    return [w for w in words if w not in _TITLE_STOP] or words
+
+
+def title_matches_loosely(title: str, terms) -> str | None:
+    """The configured title said a different way. Returns the term that hit.
+
+    Every significant word of the term has to be present, within a window of
+    its own length plus `_TITLE_GAP`, and none of the words that landed inside
+    that window (or immediately in front of it) may be one that changes the
+    job. Order is free, because "Engineering Director" and "Director of
+    Engineering" are the same vacancy.
+    """
+    words = _title_words(title)
+    if not words:
+        return None
+    where: dict[str, list[int]] = {}
+    for i, w in enumerate(words):
+        where.setdefault(w, []).append(i)
+    for term in terms or ():
+        core = _term_core(term)
+        # A single-word term is already a substring test and the regex did it.
+        if len(core) < 2 or not all(w in where for w in core):
+            continue
+        for combo in itertools.product(*[where[w] for w in core]):
+            if len(set(combo)) != len(core):
+                continue
+            first, last = min(combo), max(combo)
+            if last - first + 1 > len(core) + _TITLE_GAP:
+                continue
+            near = {words[i] for i in range(first, last + 1)} - set(core)
+            if first:
+                near.add(words[first - 1])
+            if near & _ROLE_SHIFT:
+                continue
+            return term
+    return None
+
+
 def match(job: Job, cfg: Config) -> tuple[bool, str]:
     """Title and location gate. Returns (keep, reason_if_dropped)."""
     inc, exc = cfg.title_include_re(), cfg.title_exclude_re()
@@ -1044,7 +1226,8 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
     if exc and exc.search(title):
         return False, "title excluded"
     if inc and not inc.search(title):
-        return False, "title does not match"
+        if not title_matches_loosely(title, cfg.titles_include):
+            return False, "title does not match"
 
     loc = (job.location or "").strip()
     allowed = set(cfg.countries) | set(cfg.relocate_to)

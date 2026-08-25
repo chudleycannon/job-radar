@@ -41,6 +41,133 @@ _SINGLE_RATE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM_RATE})", re.I)
 
 _PER_DAY = re.compile(r"\b(per|a|/)\s?day\b|\bday rate\b|\bdaily\b|\bpd\b", re.I)
 _PER_HOUR = re.compile(r"\b(per|an|/)\s?h(ou)?r\b|\bhourly\b", re.I)
+# Needed as a first-class answer, not just as "no rate word found". A figure
+# can sit between a rate word and a year word -- "$19-$27 per hour (~$39,000 -
+# $56,000 annually)" -- and whichever is NEARER is the one describing it.
+_PER_MONTH = re.compile(
+    r"\bper month\b|\ba month\b|\bmonthly\b|\bpcm\b|\bper calendar month\b|"
+    r"/\s?month\b", re.I)
+_PER_YEAR = re.compile(
+    r"\bper annum\b|\bannually\b|\bannualized\b|\bannualised\b|\bper year\b|"
+    r"\ba year\b|\byearly\b|/\s?(?:year|yr|annum)\b|\bp\.?a\.?\b|"
+    r"\bannual (?:base )?(?:salary|pay|compensation)\b", re.I)
+
+# How far either side of a figure a period word still describes it.
+#
+# `_period` used to answer from the whole chunk it was given, and the chunk
+# handed to the second pass is up to 19,600 characters. So one "daily" in a
+# benefits paragraph re-read a whole annual salary as a day rate: four
+# postings in a 13,588-posting sample had their period set by a word more
+# than 300 characters from the figure, and five Bezos Academy adverts stating
+# "$19-$27 per hour" came out as $19 a DAY because `_PER_DAY` is tested
+# before `_PER_HOUR` and "a day" appeared elsewhere in the body.
+_PERIOD_WINDOW = 60
+
+
+def _period_near(text: str, start: int, end: int) -> str | None:
+    """The period named CLOSEST to a figure, or None when none is close.
+
+    Distance decides, not pattern order. Reading day before hour turned
+    "per hour" into a day rate whenever the body happened to say "a day"
+    somewhere else, and a day rate is 8x an hour rate, so the annualised
+    figure that the floor then compares against is wrong by that much in
+    whichever direction happens to hurt.
+    """
+    lead = text[max(0, start - _PERIOD_WINDOW):start]
+    trail = text[end:end + _PERIOD_WINDOW]
+    best: tuple[int, str] | None = None
+    for period, pat in (("day", _PER_DAY), ("hour", _PER_HOUR),
+                        ("month", _PER_MONTH), ("year", _PER_YEAR)):
+        for m in pat.finditer(lead):
+            gap = len(lead) - m.end()
+            if best is None or gap < best[0]:
+                best = (gap, period)
+        m = pat.search(trail)
+        if m and (best is None or m.start() < best[0]):
+            best = (m.start(), period)
+    return best[1] if best else None
+
+
+# HTML entities that survive into a description and break a pay range apart.
+#
+# Greenhouse double-encodes: the adapter's single `html.unescape` turns
+# `&amp;nbsp;` into `&nbsp;` and stops, so "£60,000 to &nbsp; £70,000" reaches
+# the parser with a literal entity sitting in the middle of the range. `\s*`
+# does not match it, the range collapses to its first figure, and the posting
+# is filed £10,000 lower than it pays.
+_ENTITY = re.compile(r"&(?:nbsp|#160|#xa0);|&(?:mdash|#8212|#x2014);|"
+                     r"&(?:ndash|#8211|#x2013);|&(?:amp|#38);", re.I)
+_ENTITY_TEXT = {"nbsp": " ", "#160": " ", "#xa0": " ",
+                "mdash": "—", "#8212": "—", "#x2014": "—",
+                "ndash": "–", "#8211": "–", "#x2013": "–",
+                "amp": "&", "#38": "&"}
+
+
+def _de_entity(text: str) -> str:
+    return _ENTITY.sub(
+        lambda m: _ENTITY_TEXT[m.group(0).strip("&;").lower()], text)
+
+
+# A figure whose very next words name it as a bonus, an allowance or equity is
+# not base pay, and treating it as pay is the worst kind of parse: IVC's "Head
+# Veterinary Nurse ... we are also offering up to £3,000 welcome bonus" was
+# stored as a £3,000 SALARY and then dropped by any floor at all, on a posting
+# that stated no salary. Three postings in a 13,588 sample, and every one of
+# them a role deleted rather than shown.
+#
+# Only the words IMMEDIATELY after the number count. "Salary up to £75,000 DOE
+# Welcome Bonus up to £5,000" states a real salary and must keep it, so
+# anything between the figure and the bonus word means the bonus word is
+# describing a different number.
+_IS_BONUS = re.compile(
+    r"^\s*\)?\s*(?:welcome|signing|sign.?on|sign.?up|joining|referral|"
+    r"retention|golden hello|relocation|cpd|training|learning|wellness|"
+    r"home ?office|equipment|travel|car|lunch|book|study|kit|wfh)\s*"
+    r"(?:bonus|allowance|budget|stipend|support|voucher|fund)"
+    r"|^\s*\)?\s*(?:in\s+)?(?:equity|stock|shares|share options|stock options)\b",
+    re.I)
+# ...unless the figure was introduced as pay in the same breath.
+_PAY_LEAD = re.compile(
+    r"(?:salary|salaries|compensation|base(?:\s+pay)?|\bpay\b|package|"
+    r"remuneration|earnings|wage|ote|rate|per annum|p\.?a\.?)\W{0,15}$", re.I)
+# A bonus phrase carrying its OWN amount is describing that amount, not the
+# figure in front of it. "Up to £65,000 Welcome bonus of up to £5,000" and
+# "£3,000 welcome bonus for this position" are the same shape to a regex and
+# opposite in meaning, and this is what separates them. Without it the first
+# one was read as a £5,000 salary, which is worse than the bug being fixed.
+_BONUS_OWN_AMOUNT = re.compile(r"^[^.]{0,24}?[£$€]\s?\d")
+
+# The same question from the other side: "relocation allowance of up to
+# £2,000" names the figure that FOLLOWS it. Nearest label wins, so a real
+# "competitive relocation package and a salary of £70,000" still reads as pay.
+_BONUS_LEAD = re.compile(
+    r"\b(?:welcome|signing|sign.?on|sign.?up|joining|referral|retention|"
+    r"golden hello|relocation|cpd|training|learning|wellness|home ?office|"
+    r"equipment|travel|car|study|kit)\s+"
+    r"(?:bonus|allowance|budget|stipend|support|package|voucher|fund)"
+    r"|\bequity\b|\bstock options?\b|\bshare options?\b", re.I)
+_BONUS_WINDOW = 60
+
+
+def _is_bonus_figure(text: str, start: int, end: int) -> bool:
+    """Is this number a bonus, an allowance or equity rather than pay?"""
+    after = text[end:end + 40]
+    m = _IS_BONUS.match(after)
+    if m and not _BONUS_OWN_AMOUNT.match(after[m.end():]) \
+            and not _PAY_LEAD.search(text[max(0, start - 40):start]):
+        return True
+    lead = text[max(0, start - _BONUS_WINDOW):start]
+    bonus = max((x.end() for x in _BONUS_LEAD.finditer(lead)), default=-1)
+    if bonus < 0:
+        return False
+    pay = max((x.end() for x in _PAY_WORD.finditer(lead)), default=-1)
+    return bonus > pay
+
+
+_PAY_WORD = re.compile(
+    r"\b(?:salary|salaries|compensation|base pay|base salary|pay|package|"
+    r"remuneration|earnings|wage|ote|rate|per annum|pay range|salary range)\b",
+    re.I)
 
 # Text that means "we are not telling you", not "zero"
 _NOISE = re.compile(r"competitive|doe|depending on experience|negotiable", re.I)
@@ -86,12 +213,12 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     """
     if not text:
         return Salary()
-    full = " ".join(text.split())
+    full = " ".join(_de_entity(text).split())
     t = full[:400]
     if _NOISE.search(t) and not re.search(r"[£$€]\s?\d", t):
         return Salary(raw=t.strip()[:120])
 
-    got = _scan(t, default_currency, need_context=False)
+    got = _scan(full, 0, 400, default_currency, need_context=False)
     if got.confirmed:
         return got
     # Most adapters hand this the whole description, and employers who do
@@ -102,45 +229,86 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     # customer count as pay goes up, so out there a figure only counts when
     # pay is being discussed right next to it, symbol or no symbol.
     if len(full) > 400:
-        got = _scan(full[400:20_000], default_currency, need_context=True)
+        got = _scan(full, 400, 20_000, default_currency, need_context=True)
         if got.confirmed:
             return got
     return got
 
 
-def _scan(t: str, default_currency: str | None, *, need_context: bool) -> Salary:
-    period = _period(t)
-    rng, single = (_RANGE_RATE, _SINGLE_RATE) if period != "year" else (_RANGE, _SINGLE)
+def _scan(full: str, begin: int, stop: int, default_currency: str | None, *,
+          need_context: bool) -> Salary:
+    """Read one block of text for a pay figure.
 
-    m = rng.search(t)
-    if m:
-        lo, hi = _to_float(m.group("lo")), _to_float(m.group("hi"))
-        symbol = m.group("c1") or m.group("c2")
-        cur = _CUR.get((symbol or "").lower()) or default_currency
-        if not symbol or need_context:
-            # Only believe it if pay is being discussed within the preceding
-            # stretch of text. Required always for an unsymbolled range, and
-            # everywhere once we are past the opening block.
-            lead = t[max(0, m.start() - 120):m.start()]
-            if not _PAY_CONTEXT.search(lead):
+    The annual-shaped patterns run first because they are the specific ones:
+    `_SINGLE_RATE` reads "£45,000" as "£45" (its number is at most four
+    digits and it stops at the comma), so letting the rate family go first
+    turns a real salary into a rate one time in ten.
+
+    The period is then taken from the words nearest THAT figure rather than
+    from anywhere in the block, and a figure the text calls a bonus is
+    skipped rather than filed as pay.
+    """
+    # The window is a slice of `full`, but the period and bonus questions are
+    # asked of `full` at absolute positions. Asking them of the slice loses
+    # any label that straddles the cut: "$10,000+ per month" sat at character
+    # 383 and the block ended at 400, so "per mont" did not match "per month"
+    # and a monthly figure was confirmed as an annual salary.
+    t = full[begin:stop]
+    chunk_period = _period(t)
+    families = [(_RANGE, _SINGLE, False), (_RANGE_RATE, _SINGLE_RATE, True)]
+    if chunk_period != "year":
+        # What the shipped code did: a block that says "per hour" is read with
+        # the rate patterns. Keeping that order matters, because the annual
+        # patterns would otherwise reach past an hourly base to a commission
+        # figure further down and report that as the salary.
+        families.reverse()
+
+    for rng, single, rate in families:
+        for m in rng.finditer(t):
+            lo, hi = _to_float(m.group("lo")), _to_float(m.group("hi"))
+            if lo is None or hi is None or hi < lo:
+                continue
+            if _is_bonus_figure(full, begin + m.start(), begin + m.end()):
+                continue
+            symbol = m.group("c1") or m.group("c2")
+            cur = _CUR.get((symbol or "").lower()) or default_currency
+            if not symbol or need_context:
+                # Only believe it if pay is being discussed within the
+                # preceding stretch of text. Required always for an
+                # unsymbolled range, and everywhere once we are past the
+                # opening block.
+                lead = t[max(0, m.start() - 120):m.start()]
+                if not _PAY_CONTEXT.search(lead):
+                    return Salary()
+            period = _period_near(full, begin + m.start(), begin + m.end()) or (
+                chunk_period if rate or len(t) <= 400 else "year")
+            if period == "month" or (rate and period == "year"):
+                # The rate patterns exist only to read day and hour rates:
+                # their number is four digits at most, so believing one as an
+                # annual figure files a 13.45 an hour job as 13.45 a YEAR and
+                # then hides it behind any floor at all. A monthly figure has
+                # no period to be stored in, and reading it as annual is the
+                # same mistake twelve times over.
+                continue
+            return Salary(min=lo, max=hi, currency=cur, period=period,
+                          raw=m.group(0).strip(), confirmed=True)
+
+        for m in single.finditer(t):
+            v = _to_float(m.group("v"))
+            if v is None or v <= 0:
+                continue
+            if _is_bonus_figure(full, begin + m.start(), begin + m.end()):
+                continue
+            if need_context and not _PAY_CONTEXT.search(
+                    t[max(0, m.start() - 120):m.start()]):
                 return Salary()
-        if lo is not None and hi is not None and hi >= lo:
-            return Salary(
-                min=lo, max=hi, currency=cur, period=period,
-                raw=m.group(0).strip(), confirmed=True,
-            )
-
-    m = single.search(t)
-    if m:
-        v = _to_float(m.group("v"))
-        cur = _CUR.get((m.group("c") or "").lower()) or default_currency
-        if need_context and not _PAY_CONTEXT.search(t[max(0, m.start() - 120):m.start()]):
-            return Salary()
-        if v is not None and v > 0:
-            return Salary(
-                min=v, max=v, currency=cur, period=period,
-                raw=m.group(0).strip(), confirmed=True,
-            )
+            period = _period_near(full, begin + m.start(), begin + m.end()) or (
+                chunk_period if rate or len(t) <= 400 else "year")
+            if period == "month" or (rate and period == "year"):
+                continue
+            cur = _CUR.get((m.group("c") or "").lower()) or default_currency
+            return Salary(min=v, max=v, currency=cur, period=period,
+                          raw=m.group(0).strip(), confirmed=True)
 
     return Salary()
 
