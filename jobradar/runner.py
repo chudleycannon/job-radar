@@ -264,49 +264,101 @@ APPLY_WITH_CAVEATS, SKIP or NEEDS_THE_ADVERT.""",
 "cv": """Use the rate-cv and natural-writing skills, which are in `skills/` here.
 {untrusted}
 
-Report the score as `NN/100 · currency N/8 · <band>`. Category 7 of the rubric
-scores how recent the evidence is, and it travels with the headline rather
-than inside it: a single number reported a CV with a three-year break and
-three retired platforms on it as shortlist-strong.
+Draft a CV tailored to the role in `job-description.md` in this directory, and
+write it to `CV.md` here. Base it on my real record in `source-cv.txt` in this
+directory, which is the plain-text extraction of my current CV. Read that file
+first.
 
-Draft a CV tailored to the role in `job-description.md` in this directory.
-Base it strictly on my real record in `source-cv.txt` in this directory. Read
-that file first; it is the plain-text extraction of my current CV. Never
-invent or inflate anything. A requirement I cannot truthfully claim is reported as a gap, not
-written around.
+WHO READS IT. A hiring manager and a recruiter at a different company, and an
+applicant tracking system before either of them opens it. Nobody in that chain
+has worked where I work or knows its vocabulary. A line only an insider could
+decode gets skipped, and the achievement inside it goes with it.
 
-Write it to `CV.md` here.
+- Expand an acronym the first time it appears and then use the short form:
+  "Detection Engineering Group (DEG)". If the expansion is still an internal
+  name that a stranger cannot look up, cut it and say what the thing did.
+- Only proper nouns take capitals. A job title, a tool or a process set in
+  block capitals slows the reader down and proves nothing, and a page of
+  capitals reads as a form rather than as a person. Role titles take ordinary
+  capitals: "Engineering Manager", not "engineering manager" and not
+  "ENGINEERING MANAGER".
+- Use no phrasing from `job-description.md`. Words like "end-to-end" or
+  "cross-functional" are the employer describing what it wants; handing them
+  back as a description of my work asserts a scale the source CV never
+  claimed, and an interviewer will ask me to size it. Say what I did in my own
+  words and let the reader make the match.
 
-Rules that are not negotiable:
+LENGTH. 650 to 850 words, which comes out at two pages. Never more than 900.
+The opening paragraph is 60 words at most. Nobody reads a three-page CV to the
+end, so the length is paid for out of the part meant to win the interview.
+Older and less relevant roles shrink to a line each; they do not get dropped,
+because a gap in the dates raises a question that a one-line entry answers.
+
+FACTS.
 - Every number, date, scale and frequency must already be in `source-cv.txt`.
   Do not add one that is not there. "Run the newsletter" does not become
   "write the monthly newsletter": that is one word, it is unverifiable, and it
   is the first thing an interviewer asks about. If a claim would be stronger
   with a figure and there is no figure, leave it without one and list it as a
   question to ask me.
+- Being in `source-cv.txt` makes a claim mine. It does not make it true. If a
+  line there asserts a scope or an outcome that nothing else in the file
+  supports, leave it out and list it as a question to ask me. I am the one who
+  has to defend it in the room, and I would rather answer a question now than
+  a challenge there.
+- A requirement I cannot truthfully claim is a gap. Report it under the CV in
+  `cv-rating.txt`; do not write around it.
+- Keep my headline as it is in the source CV, other than expanding an acronym
+  in it.
 - No em-dashes anywhere.
 - Plain first. State the fact and stop. No triads with a payoff, no
-  "not X but Y", no stock idioms, no aphorisms.
-- Keep my headline exactly as it is in the source CV.
+  "not X but Y", no denial used to set up a reveal ("Not a pilot: it
+  shipped"), no stock idioms, no aphorisms.
 
-Then run `python3 skills/natural-writing/scripts/detect.py CV.md`
-and fix every warning, not only failures. Repeat until it is clean.
+STRUCTURE, because a parser reads this before a person does and it only finds
+what it recognises.
+- Keep all four standard sections under their ordinary names: Summary or
+  Profile, Experience, Skills, Education. Education stays even when the
+  posting never mentions it: a section the parser cannot find is recorded as
+  something I do not have.
+- Every role carries a date range in digits on the same line as the title and
+  the employer: "2022 - 2025" or "2022 - Present". Written as prose, "joined
+  in 2022 and still there", no parser can read it and the role counts as
+  undated.
+- Achievements go in bullets, one line each, and about two thirds of them
+  carry a number that is already in `source-cv.txt`.
 
-Then score it with rate-cv against this job description and write the numeric
-score out of 100 on a single line in `cv-rating.txt`, with the gap list under
-it.""",
+Then run `python3 skills/natural-writing/scripts/detect.py CV.md` once and fix
+what it reports. Fixing it now is free; the checks run again afterwards and a
+second draft costs another call.
+
+Then score it with rate-cv against this job description and write
+`cv-rating.txt`, with `NN/100 · currency N/8 · <band>` on the first line and
+the gap list under it. Category 7 of the rubric scores how recent the evidence
+is, and it travels with the headline rather than inside it: a single number
+reported a CV with a three-year break and three retired platforms on it as
+shortlist-strong.""",
 
 "cover_letter": """{untrusted}
 Use the natural-writing skill.
 
-Draft a cover letter for the role in `job-description.md` in this directory.
+Draft a cover letter for the role in `job-description.md` in this directory,
+and write it to `cover-letter.md` here.
 
-**Read `CV.md` in this directory first.** The letter must share no phrasing
-with it at all. The CV carries the facts and the metrics; the letter carries
-judgement, motivation and how I work. Check this properly: no sequence of six
-or more words may appear in both. If any does, rewrite the letter.
+**Read `CV.md` in this directory first**, and `source-cv.txt` for the record
+behind it. The letter must share no phrasing with the CV at all. The CV
+carries the facts and the metrics; the letter carries judgement, motivation
+and how I work. No sequence of six or more words may appear in both. That is
+measured after you stop, so check it before you do.
 
-Write it to `cover-letter.md` here.
+WHO READS IT. A hiring manager at a different company who has never worked
+where I work. Expand an acronym the first time it appears, or cut it. An
+internal team name, product codename or process word means nothing to someone
+who cannot look it up, and a letter is where that reads worst, because it is
+the part meant to sound like a person talking.
+
+LENGTH. 250 to 350 words, four or five short paragraphs, one page. Anything
+longer gets skimmed, and skimming settles on the weakest sentence in it.
 
 Rules that are not negotiable:
 - Every number, date, scale and frequency must already be in `source-cv.txt`.
@@ -315,14 +367,21 @@ Rules that are not negotiable:
   is the first thing an interviewer asks about. If a claim would be stronger
   with a figure and there is no figure, leave it without one and list it as a
   question to ask me.
+- Never claim experience that is not in the CV. If a line in `source-cv.txt`
+  asserts something nothing else in the file supports, leave it out rather
+  than repeating it. This is the document an interviewer quotes back at me.
+- Name what draws me to this company and this team, and point at the specific
+  thing in the posting that does it. Put it in my own words. Repeating the
+  posting's own vocabulary reads as search-and-replace, and reads worse still
+  when one of its phrases ends up describing my work.
 - No em-dashes anywhere.
-- Say plainly why this company and why this team, using something specific
-  from the job description.
-- Never claim experience that is not in the CV.
-- Plain first. If a sentence would work as a LinkedIn caption, flatten it.
+- Plain first. State the fact and stop. No triads with a payoff, no
+  "not X but Y", no denial used to set up a reveal ("Not a pilot: it
+  shipped"). If a sentence would work as a LinkedIn caption, flatten it.
 
-Then run `python3 skills/natural-writing/scripts/detect.py
-cover-letter.md` and fix every warning. Repeat until clean.
+Then run `python3 skills/natural-writing/scripts/detect.py cover-letter.md`
+once and fix what it reports. Fixing it now is free; the checks run again
+afterwards and a second draft costs another call.
 
 Then write `overlap.txt` containing the longest phrase shared with the CV, or
 the word NONE.""",
@@ -912,6 +971,11 @@ def _revision_prompt(doc: str, problems: list[str]) -> str:
     Deliberately says what not to do as well: the first version of this loop
     watched a model shorten a CV until it passed by having almost nothing
     left in it, which is a better score and a worse document.
+
+    It also says not to put back what an earlier pass took out. A drum-roll
+    denial, "Not a trial: the output ships", was removed on one revision and
+    written again on the next in a different sentence, because the model was
+    told what had failed and nothing about what the draft used to say.
     """
     lines = "\n".join(f"- {p}" for p in problems)
     return (
@@ -921,7 +985,11 @@ def _revision_prompt(doc: str, problems: list[str]) -> str:
         f"every claim already in the document is one the candidate can "
         f"defend, and losing it costs more than the score gains. Do not add "
         f"any fact that is not in source-cv.txt. Keep the same structure and "
-        f"the same headings. Write the file, do not print it."
+        f"the same headings, keep every section, and keep role date ranges in "
+        f"digits on the title line, as '2022 - Present'. Do not reintroduce a "
+        f"phrase or a construction an earlier pass removed, in this or any "
+        f"other sentence: it failed once and it fails again. Write the file, "
+        f"do not print it."
     )
 
 
