@@ -1,0 +1,79 @@
+"""Run every test file in this directory, with nothing installed but the tool.
+
+CI ran `python tests/test_core.py` and nothing else. That is not a suite, it
+is one file, and the second file went unrun from the day it was added:
+tests/test_locations.py held 47 tests, including every country-code rule that
+decides whether a job is one the user can legally take, and CI had never
+executed one of them. It could not have: it has no `sys.path` insert and no
+runner block, so `python tests/test_locations.py` died on `ModuleNotFoundError`.
+
+This is the second time the same shape has bitten. The first was a `__main__`
+block sitting halfway up test_core.py, which meant CI ran 116 of 239 tests and
+reported a full pass. Both failures share a cause: which tests run was decided
+by hand somewhere, and the hand went out of date.
+
+So this discovers them instead. Add a file called `test_*.py` to this
+directory and it runs, in CI, on the next push, without anybody remembering to
+add a line to a workflow.
+
+pytest runs these too and does not need this file. It exists so the suite
+stays runnable with no dependency beyond the package itself, which is what
+lets somebody check the salary and location logic without installing anything.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+import traceback
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+
+
+def _load(path: Path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[path.stem] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def main() -> int:
+    files = sorted(p for p in HERE.glob("test_*.py"))
+    if not files:
+        print("no test files found, which is itself a failure")
+        return 1
+
+    total = bad = 0
+    for path in files:
+        print(f"\n{path.name}")
+        try:
+            mod = _load(path)
+        except Exception:
+            # A file that will not import is a failure, not a file to skip.
+            # Skipping is how the first one went missing.
+            print(f"  FAIL  could not import {path.name}")
+            traceback.print_exc()
+            bad += 1
+            total += 1
+            continue
+        fns = [(n, f) for n, f in sorted(vars(mod).items())
+               if n.startswith("test_") and callable(f)]
+        for name, fn in fns:
+            total += 1
+            try:
+                fn()
+                print(f"  pass  {name}")
+            except Exception:
+                bad += 1
+                print(f"  FAIL  {name}")
+                traceback.print_exc()
+
+    print(f"\n{total - bad}/{total} passed across {len(files)} files")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -36,4 +36,10 @@ jobs:
       # No pytest dependency on purpose: the suite runs standalone so that
       # anyone can check the salary and location logic without installing
       # anything beyond the tool itself.
-      - run: python tests/test_core.py
+      #
+      # run_all.py rather than test_core.py, because naming one file meant the
+      # second one never ran. test_locations.py held 47 tests, every
+      # country-code rule among them, and CI had not executed one of them since
+      # the day it was added. run_all.py discovers `test_*.py`, so a new file
+      # runs here without anyone remembering to edit this line.
+      - run: python tests/run_all.py

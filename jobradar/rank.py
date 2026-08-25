@@ -388,7 +388,14 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
     reason attached is the precise failure the hard error in `_call` exists to
     prevent, and swallowing it per batch would have quietly reintroduced it.
     """
-    from .runner import LimitReached
+    from .runner import LimitReached, require_claude
+    # Before the CV is read and before a single batch is built. `_call` looked
+    # for the binary, so the answer arrived only once a worker thread ran one:
+    # a machine without the CLI read the CV, validated it, built fifty batches
+    # and submitted the first three, printed its progress line, and only then
+    # exited on a missing install. Nothing was ever charged, but the person
+    # had no way to know that from where the message landed.
+    require_claude()
     cv, wants = _cv_text(cfg), _wants(cfg)
     head, tail = _prompt_parts(cv, wants)
     width = max(1, int(WIDTH if width is None else width))

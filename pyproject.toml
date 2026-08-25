@@ -27,4 +27,4 @@ job-radar = "jobradar.cli:main"
 packages = ["jobradar", "jobradar.adapters", "jobradar.output"]
 
 [tool.setuptools.package-data]
-jobradar = ["../sources/*.json"]
+jobradar = ["../sources/*.json", "../skills/*/*", "../skills/*/*/*"]

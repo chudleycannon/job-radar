@@ -152,13 +152,57 @@ SKILLS_FOR = {
 }
 
 
+# The skills this repo ships, resolved from this file rather than from the
+# working directory.
+#
+# Only ~/.claude/skills was searched, so `skills/rate-cv` and
+# `skills/screen-role` sat in the checkout being read by nothing: cloning the
+# repo got you the files and none of their effect, and the README's "cloning
+# job-radar gets you a working set" was untrue for the one thing that uses
+# them. A relative "skills" would not have fixed it either, because the
+# dashboard is started by launchd and the CLI is run from wherever the person
+# happens to be standing, so the path has to come from the package.
+_BUNDLED_SKILLS = Path(__file__).resolve().parent.parent / "skills"
+
+
+def _skill_roots() -> list[Path]:
+    """Everywhere a skill may live, in the order a lookup prefers.
+
+    The user's own tree first. If a skill exists in both, theirs is the copy
+    they have edited, and quietly preferring the vendored one would undo those
+    edits on every run. The bundled directory is the supplement underneath:
+    it is what makes a fresh clone able to draft anything at all.
+
+    `Path.home()` is read here rather than at import, because a process that
+    changes HOME (a test, a service account) otherwise keeps looking in the
+    home directory it started with.
+    """
+    return [Path.home() / ".claude" / "skills", _BUNDLED_SKILLS]
+
+
 def _copy_skills(d: Path, kind: str) -> list[str]:
-    """Copy the skills this job needs into its own folder."""
-    src_root = Path.home() / ".claude" / "skills"
+    """Copy the skills this job needs into its own folder.
+
+    Returns the names actually copied, which is not always the names asked
+    for: `natural-writing` is required by the cv and cover_letter prompts and
+    by two of the four gates, and it is deliberately not vendored here, so on
+    a machine that has not installed it a first CV draft ran with none of its
+    skills, produced a visibly worse document, and said nothing. A silent
+    `continue` made "the skill is missing" render exactly like "the skill was
+    used", which is the same defect the gates exist to stop.
+
+    Missing is reported, not fatal. A CV drafted without natural-writing is
+    still a CV; refusing to draft one would be a worse trade than saying so.
+    """
+    roots = _skill_roots()
     out = []
     for name in SKILLS_FOR.get(kind, ()):
-        src = src_root / name
-        if not src.is_dir():
+        src = next((r / name for r in roots if (r / name).is_dir()), None)
+        if src is None:
+            print(f"  ! skill '{name}' not found in "
+                  f"{' or '.join(str(r) for r in roots)}. The {kind} will "
+                  f"still be drafted, without it, and will be worse for it.",
+                  flush=True)
             continue
         dst = d / SKILL_DIR / name
         if dst.exists():
@@ -350,10 +394,30 @@ def looks_like_limit(*chunks: str) -> str:
 def _no_claude_msg() -> str:
     return ("cannot find the `claude` CLI. It is not on this process's PATH "
             f"({os.environ.get('PATH', '')[:120]}...) and is not in any of the "
-            f"usual places ({', '.join(_CLAUDE_PATHS[:4])}). If it is "
+            f"usual places ({', '.join(_CLAUDE_PATHS[:4])}). Install it with "
+            f"`npm install -g @anthropic-ai/claude-code` (see "
+            f"https://claude.com/claude-code). If it is "
             f"installed somewhere else, set JOB_RADAR_CLAUDE to its full path. "
             f"Note that a dashboard started by launchd, cron or an IDE does "
-            f"not inherit the PATH from your terminal.")
+            f"not inherit the PATH from your terminal. Only the commands that "
+            f"spend tokens need it: scan, enrich, list and serve all work "
+            f"without it.")
+
+
+def require_claude() -> str:
+    """The CLI's path, or `SystemExit` with the reason it is not there.
+
+    For the top of anything that will eventually shell out to it. The check
+    is two `stat` calls, and the alternative is discovering it several steps
+    in: `rank` read and validated the CV, built every batch and submitted the
+    first ones to its thread pool before the first `_call` looked, so a
+    missing binary was reported after a wall of progress output rather than in
+    the first second. Nothing was charged, but nothing said so either.
+    """
+    exe = claude_bin()
+    if not exe:
+        raise SystemExit(_no_claude_msg())
+    return exe
 
 
 def build_prompt(kind: str, cfg_path: str, cv_source: str) -> str:
@@ -375,14 +439,21 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             return
 
         store.mark_job(con, job_id, "running")
-        d = role_dir(row, base)
-        d.mkdir(parents=True, exist_ok=True)
-        _write_jd(d, row)
 
+        # First, before anything is created. This check used to sit below the
+        # folder and the job-description snapshot, so a machine with no CLI
+        # answered a click by writing a directory and a file for a document
+        # that was never going to be drafted, and only then said why. Nothing
+        # here is expensive, but "it failed and left something behind" is a
+        # worse first impression than "it failed immediately".
         claude = claude_bin()
         if not claude:
             store.mark_job(con, job_id, "failed", error=_no_claude_msg())
             return
+
+        d = role_dir(row, base)
+        d.mkdir(parents=True, exist_ok=True)
+        _write_jd(d, row)
 
         # Inline the filters rather than pointing at a path: the subprocess is
         # pinned to this folder and cannot read outside it, and a screen that
@@ -438,6 +509,14 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             # change that outlives the run and affects every later one. A copy
             # can only damage a folder that exists for this job.
             copied = _copy_skills(d, job["kind"])
+            # The warning `_copy_skills` prints goes to whatever console
+            # started the process, and for the dashboard that is a launchd
+            # log nobody reads. It goes in the job log as well, which is the
+            # thing on screen next to the document it degraded.
+            missing = [n for n in SKILLS_FOR.get(job["kind"], ())
+                       if n not in copied]
+            note = (f"! drafted without {', '.join(missing)}: not installed "
+                    f"in ~/.claude/skills and not bundled.\n" if missing else "")
             cmd = [claude, "-p", prompt,
                    "--permission-mode", "acceptEdits",
                    "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
@@ -450,7 +529,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             proc = subprocess.run(cmd, cwd=str(d), capture_output=True,
                                   text=True, encoding="utf-8",
                                   stdin=subprocess.DEVNULL, timeout=TIMEOUT)
-            out = (proc.stdout or "")[-4000:]
+            out = note + (proc.stdout or "")[-4000:]
             if proc.returncode != 0:
                 hit = looks_like_limit(proc.stderr, proc.stdout)
                 store.mark_job(
@@ -663,8 +742,15 @@ def _gates(d: Path, name: str) -> dict:
                 gates["unsourced_found"] = new_bits
         except OSError:
             pass
-    det = Path.home() / ".claude/skills/natural-writing/scripts/detect.py"
-    if det.exists():
+    # Same lookup as the copy, so the gate and the draft cannot disagree about
+    # where natural-writing is. Hard-coding ~/.claude/skills here meant a
+    # bundled copy would have been used to write the document and then not
+    # used to check it.
+    det = next((r / "natural-writing" / "scripts" / "detect.py"
+                for r in _skill_roots()
+                if (r / "natural-writing" / "scripts" / "detect.py").exists()),
+               None)
+    if det is not None:
         try:
             # sys.executable, not "python3": that name does not exist on a
             # standard Windows install, so the gate reported None and the
@@ -687,6 +773,14 @@ def _gates(d: Path, name: str) -> dict:
                 gates["slop_score"] = int(s.group(1))
         except Exception:
             gates["natural_writing"] = None
+    else:
+        # An unmeasurable gate is a failed gate, the same rule the overlap
+        # check follows two functions up. Leaving the key out altogether meant
+        # a document that nothing had ever checked rendered exactly like one
+        # that passed: the dashboard and `generate` both count `is False`, and
+        # a key that is not there counts as nothing at all. This is the only
+        # place a reader is told that half the quality checks did not run.
+        gates["natural_writing"] = False
     return gates
 
 

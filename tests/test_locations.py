@@ -6,11 +6,12 @@ touching the file every adapter's tests live in.
 
 import contextlib
 import io
+import sys
 import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobradar.screen import _countries_in, _country_of
 
@@ -614,8 +615,11 @@ def test_ask_raises_rather_than_accepting_every_default_at_eof():
     def eof(_):
         raise EOFError
     with mock.patch("builtins.input", eof):
-        with pytest.raises(NoInput):
+        try:
             _ask("   Path to your CV", "some-default")
+        except NoInput:
+            return
+    raise AssertionError("EOF was swallowed and the default returned")
 
 
 def test_setup_never_writes_the_file_the_repo_ships():
@@ -713,3 +717,25 @@ def test_the_board_count_in_the_header_cannot_go_stale():
     real = sum(1 for x in shipped["sources"] if not x.get("keyword_template"))
     assert shipped["meta"]["boards"] == real, (
         f"header says {shipped['meta']['boards']}, list holds {real}")
+
+
+def test_the_data_the_tool_reads_at_runtime_is_declared_for_the_wheel():
+    """`skills/` shipped in a clone and in `pip install -e .`, not in a wheel.
+
+    Both of those are directories outside the package, reachable only because
+    setuptools was told about them. `sources/` was declared and survives;
+    `skills/` was not, so a wheel install found no bundled skills and every CV
+    was drafted without them. Verified by building a wheel: before, zero
+    skill files in it; after, eight.
+
+    This checks the declaration rather than building a wheel, because the
+    build needs network. If a third runtime directory is ever added, add it
+    here too.
+    """
+    root = Path(__file__).resolve().parent.parent
+    decl = (root / "pyproject.toml").read_text(encoding="utf-8")
+    for d in ("sources", "skills"):
+        assert (root / d).is_dir(), f"{d}/ has moved; this test is now wrong"
+        assert f"../{d}/" in decl, (
+            f"{d}/ is read at runtime but not in package-data, so it will be "
+            f"missing from a built wheel")

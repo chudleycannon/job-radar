@@ -5099,7 +5099,7 @@ def test_taleo_is_wired_into_discovery_paging_and_enrichment():
 
 
 def test_two_requests_to_the_same_host_are_spaced_by_the_configured_gap():
-    """Ten thousand of the bundled sources sit on eight API hosts, so raising
+    """Ten thousand of the bundled sources sit on seven API hosts, so raising
     the worker count without pacing each host separately turns the scan into a
     burst against Greenhouse and Workable. Workable answers 429 to a burst, and
     a 429 reaches the adapter as a board with no jobs, which is how 250 live
@@ -5119,9 +5119,9 @@ def test_two_requests_to_the_same_host_are_spaced_by_the_configured_gap():
 
 
 def test_two_requests_to_different_hosts_do_not_wait_for_each_other():
-    """The whole point of pacing per host rather than globally: about 7,584 of
+    """The whole point of pacing per host rather than globally: about 7,748 of
     the bundled hosts carry one board each and must not be slowed down to the
-    rate the eight busy hosts need. If one host's gap blocked another host's
+    rate the seven busy hosts need. If one host's gap blocked another host's
     request, a wide pool would be no faster than a narrow one."""
     import time
     from jobradar.fetch import HostLimiter
@@ -5209,7 +5209,7 @@ def test_the_concurrency_config_key_still_caps_the_worker_count():
 
 
 def test_the_default_worker_count_is_well_above_the_old_four():
-    """Four workers against 17,625 sources was most of an hour of waiting on
+    """Four workers against 17,809 sources was most of an hour of waiting on
     other people's latency, and it bought no politeness that per-host pacing
     does not now buy properly. A default that drifts back down undoes the whole
     change silently, because nothing else in the tool would report it."""
@@ -5240,7 +5240,7 @@ def test_a_config_asking_for_more_workers_than_the_cap_is_clamped_not_obeyed():
 
 def test_the_queue_interleaves_hosts_so_one_block_cannot_own_the_pool():
     """The bundled source list is sorted into contiguous per-platform blocks:
-    all 2,095 Workable boards are one unbroken run. Submitted in file order,
+    all 2,094 Workable boards are one unbroken run. Submitted in file order,
     every worker is on the same host at once, so per-host pacing would cost the
     sum of the per-host times instead of the longest. A real scan was observed
     spending over an hour with all four workers pointed at apply.workable.com
@@ -5278,9 +5278,9 @@ def test_the_queue_interleaves_hosts_so_one_block_cannot_own_the_pool():
 
 def test_a_worker_reuses_one_connection_pool_instead_of_handshaking_each_time():
     """`fetch_one` used to fall back to a brand new `requests.Session` on every
-    call, so a full scan paid a TLS handshake 17,625 times. Measured against
+    call, so a full scan paid a TLS handshake 17,809 times. Measured against
     boards-api.greenhouse.io that was 2.29s a request against 0.18s reused, and
-    it costs most on the eight hosts that carry 56% of the list."""
+    it costs most on the seven hosts that carry 56% of the list."""
     import threading
 
     from jobradar import fetch as fetch_mod
@@ -5307,7 +5307,7 @@ def test_a_worker_reuses_one_connection_pool_instead_of_handshaking_each_time():
 def test_a_host_that_says_come_back_tomorrow_is_not_asked_again_this_run():
     """Measured live: apply.workable.com answered every request 429 with
     `Retry-After: 57841`, a sixteen hour block. The old code capped the wait at
-    30 seconds and retried twice, so each of the 2,095 Workable sources spent
+    30 seconds and retried twice, so each of the 2,094 Workable sources spent
     60 seconds asleep and returned nothing. That is 8.7 hours of a four worker
     pool spent knocking on a door that had been bolted for the day."""
     from jobradar import fetch as fetch_mod
@@ -5991,7 +5991,7 @@ def test_the_vendor_rule_does_not_swallow_a_real_employer():
     real employers whose names contain the words the rule is built from.
 
     The bundled source list is the evidence that the rule is narrow enough:
-    17,836 boards found and verified live, and it must reject none of them.
+    17,807 boards found and verified live, and it must reject none of them.
     """
     import json as _j
     from urllib.parse import urlparse
@@ -6369,7 +6369,7 @@ def test_an_ordinary_429_eventually_shuts_the_host():
     A 429 with no `Retry-After` at all, or one under MAX_RETRY_AFTER, spent
     its retries and returned without the host ever being recorded, so every
     remaining source on that host repeated the same retry-and-sleep cycle into
-    the same closed door. On Workable's 2,095 sources that is the arithmetic
+    the same closed door. On Workable's 2,094 sources that is the arithmetic
     of the 8.7 hour bug, reached by a host that simply omitted a header it was
     never obliged to send."""
     from unittest import mock
@@ -6420,7 +6420,7 @@ def test_an_ordinary_429_eventually_shuts_the_host():
 def test_a_board_the_breaker_skipped_is_unreachable_not_dead():
     """The whole point of blocking the host is that its boards go unread, and
     an unread board that `validate` calls dead is one `--prune` deletes. The
-    breaker must not become a way to lose 2,095 employers quietly."""
+    breaker must not become a way to lose 2,094 employers quietly."""
     from jobradar import discover as disc
     from jobradar import fetch as fetch_mod
     from jobradar.models import Source
@@ -6660,6 +6660,185 @@ def test_a_partly_written_rank_run_is_not_reported_as_nothing_written():
         con.close()
     assert "2 role(s) were scored and saved" in err, err
     assert "roles are unchanged" not in err, err
+
+
+# ------------------------------------------------------- skills, and the CLI
+def _empty_home():
+    """A HOME with a ~/.claude/skills that exists and is empty.
+
+    Both names are set: `Path.home()` reads USERPROFILE on Windows and HOME
+    everywhere else, and CI runs this file on both.
+    """
+    import tempfile
+    home = Path(tempfile.mkdtemp())
+    (home / ".claude" / "skills").mkdir(parents=True)
+    return home, {"HOME": str(home), "USERPROFILE": str(home)}
+
+
+def test_the_bundled_skills_are_found_without_a_user_skills_tree():
+    """Only ~/.claude/skills was ever searched, so `skills/rate-cv` and
+    `skills/screen-role` shipped in the repo and were read by nothing.
+
+    Cloning the repo is supposed to give you a working set. It gave you the
+    files and none of their effect, and nothing said so, because the lookup
+    was a bare `continue`."""
+    import os, tempfile
+    from unittest import mock
+    from jobradar import runner
+
+    home, env = _empty_home()
+    d = Path(tempfile.mkdtemp())
+    with mock.patch.dict(os.environ, env):
+        assert runner._copy_skills(d, "screen") == ["screen-role"]
+        copied = runner._copy_skills(d, "cv")
+    assert "rate-cv" in copied, copied
+    assert (d / runner.SKILL_DIR / "rate-cv" / "SKILL.md").is_file()
+    assert (d / runner.SKILL_DIR / "screen-role" / "SKILL.md").is_file()
+    # Resolved from the package, not the working directory: the dashboard is
+    # started by launchd and the CLI is run from wherever the person is.
+    assert runner._BUNDLED_SKILLS == Path(runner.__file__).resolve().parent.parent / "skills"
+
+
+def test_a_skill_that_is_nowhere_says_so_and_still_drafts():
+    """`natural-writing` is required by the cv and cover_letter prompts and by
+    two of the four gates, and it is not vendored here.
+
+    On a machine that has not installed it a first CV draft ran with none of
+    its skills and produced a worse document in silence. Missing must be
+    visible; it must not be fatal, because a CV drafted without it is still a
+    CV and refusing to draft one is the worse trade."""
+    import contextlib, io, os, tempfile
+    from unittest import mock
+    from jobradar import runner
+
+    home, env = _empty_home()
+    d = Path(tempfile.mkdtemp())
+    buf = io.StringIO()
+    with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(buf):
+        copied = runner._copy_skills(d, "cv")
+    said = buf.getvalue()
+
+    assert "natural-writing" not in copied, "it is not installed in this HOME"
+    assert copied, "the ones that do exist are still copied"
+    assert "natural-writing" in said, said
+    # Both places, named, or the reader cannot act on it.
+    assert str(home / ".claude" / "skills") in said, said
+    assert str(runner._BUNDLED_SKILLS) in said, said
+
+
+def test_the_users_own_copy_of_a_skill_beats_the_bundled_one():
+    """Whoever has edited a skill in ~/.claude/skills meant it. Preferring the
+    vendored copy would undo those edits on every run, and copying both would
+    hand the subprocess two versions of the same instructions."""
+    import os, tempfile
+    from unittest import mock
+    from jobradar import runner
+
+    home, env = _empty_home()
+    mine = home / ".claude" / "skills" / "rate-cv"
+    mine.mkdir(parents=True)
+    (mine / "SKILL.md").write_text("MINE, edited by hand\n", encoding="utf-8")
+
+    d = Path(tempfile.mkdtemp())
+    with mock.patch.dict(os.environ, env):
+        copied = runner._copy_skills(d, "cv")
+
+    assert copied.count("rate-cv") == 1, copied
+    got = (d / runner.SKILL_DIR / "rate-cv" / "SKILL.md").read_text(encoding="utf-8")
+    assert "MINE" in got, "the bundled copy overwrote the user's own"
+
+
+def test_a_generation_without_the_cli_fails_before_it_writes_anything():
+    """The check sat below the folder and the job-description snapshot, so a
+    machine with no CLI answered a click by creating a directory and a file
+    for a document that was never going to be written."""
+    import tempfile
+    from unittest import mock
+    from jobradar import runner, store
+
+    d = Path(tempfile.mkdtemp())
+    db, docs = d / "j.db", d / "docs"
+    docs.mkdir()
+    con = store.connect(str(db))
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "description,first_seen,last_seen,score) VALUES "
+                "('u'+'0'*15,'Acme','EM','https://x','London','greenhouse',?,"
+                "'2026-08-22','2026-08-22',70)", ("x" * 900,))
+    uid = con.execute("SELECT uid FROM roles").fetchone()["uid"]
+    job_id = store.enqueue(con, uid, "cv")
+
+    with mock.patch("jobradar.runner.claude_bin", lambda: ""):
+        runner.run_job(job_id, db_path=str(db), base=str(docs))
+
+    row = con.execute("SELECT state,error FROM jobs WHERE id=?", (job_id,)).fetchone()
+    con.close()
+    assert row["state"] == "failed"
+    assert list(docs.iterdir()) == [], "it left a folder behind for a job it never ran"
+    # And the message has to be actionable: what to install, and that the
+    # commands which spend nothing are unaffected.
+    assert "npm install -g @anthropic-ai/claude-code" in row["error"]
+    assert "scan" in row["error"] and "serve" in row["error"]
+
+
+def test_a_missing_cli_stops_a_rank_before_it_reads_the_cv():
+    """`_call` looked for the binary, so the answer arrived only once a worker
+    thread ran one: the CV was read and validated, every batch was built and
+    the first were submitted, all to exit on a missing install.
+
+    The CV path here does not exist, so `_cv_text` would raise its own
+    SystemExit. Getting the CLI's message instead is the proof of order."""
+    import tempfile
+    from unittest import mock
+    from jobradar import rank, store
+    from jobradar.config import Config
+
+    con = store.connect(":memory:")
+    con.execute("INSERT INTO roles (uid,company,title,url,location,platform,"
+                "description,first_seen,last_seen,score) VALUES "
+                "('u'+'0'*15,'Co','EM','https://x','London','greenhouse',?,"
+                "'2026-08-22','2026-08-22',70)", ("x" * 900,))
+    rows = rank.candidates(con)
+    assert rows, "the fixture must give it something to rank"
+    cfg = Config(titles_include=["engineering manager"],
+                 cv_path=str(Path(tempfile.mkdtemp()) / "no-such-cv.txt"))
+
+    def never(*a, **k):
+        raise AssertionError("nothing may be spawned when there is no CLI")
+
+    try:
+        with mock.patch("jobradar.runner.claude_bin", lambda: ""), \
+             mock.patch.object(rank.subprocess, "run", never):
+            rank.rank(con, cfg, rows)
+    except SystemExit as e:
+        assert "claude" in str(e) and "npm install" in str(e), str(e)
+        assert "No CV at" not in str(e), "it read the CV before it looked"
+        return
+    finally:
+        con.close()
+    raise AssertionError("a rank without the CLI must not start")
+
+
+def test_a_natural_writing_gate_that_could_not_run_is_not_a_pass():
+    """detect.py was looked for in ~/.claude/skills only, and when it was not
+    there the gate key was simply left out.
+
+    The dashboard and `generate` both count `is False`, so an absent key was
+    counted as nothing: a document nothing had ever checked rendered exactly
+    like one that passed. That is the same defect the overlap gate was fixed
+    for."""
+    import os, tempfile
+    from unittest import mock
+    from jobradar import runner
+
+    home, env = _empty_home()
+    d = Path(tempfile.mkdtemp())
+    (d / "CV.md").write_text("# CV\n\nRan the newsletter.\n", encoding="utf-8")
+    with mock.patch.dict(os.environ, env):
+        gates = runner._gates(d, "CV.md")
+
+    assert gates["written"] is True
+    assert gates["natural_writing"] is False, \
+        "an unrunnable check must not read as a clean one"
 
 
 # This block MUST stay at the END of the file. It collects `globals()` at

@@ -885,6 +885,13 @@ def cmd_generate(args) -> int:
         if args.kind not in runner.KINDS:
             _say(f"kind must be one of: {', '.join(runner.KINDS)}")
             return 1
+        # Before the queue row and before "this spends tokens". Without the
+        # CLI the row was still created and instantly marked failed, so the
+        # jobs table filled with attempts that were never possible and the
+        # user read a cost warning for a run that could not start.
+        if not runner.claude_bin():
+            _say(runner._no_claude_msg())
+            return 1
         uid, why = _resolve_uid(con, args.target)
         if not uid:
             _say(f"Could not identify a role: {why}")
@@ -1007,6 +1014,14 @@ def cmd_rank(args) -> int:
         if args.dry_run:
             _say("dry run: nothing sent")
             return 0
+        # After the dry-run branch, so estimating a spend still works on a
+        # machine that could not make it, and before the real one, so the
+        # missing-CLI message does not land underneath a cost estimate for a
+        # run that was never going to start.
+        from . import runner
+        if not runner.claude_bin():
+            _say(runner._no_claude_msg())
+            return 1
 
         def progress(done, total, scored):
             _say(f"  {done}/{total} sent, {scored} scored")
