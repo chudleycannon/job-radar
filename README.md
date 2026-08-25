@@ -9,7 +9,7 @@ your own filters.
 
 Most job tools are built to make you apply to more things. This one is built to
 show you fewer: it reads postings straight from company applicant tracking
-systems, normalises twenty-five different board APIs into one shape, and
+systems, normalises twenty-seven different board APIs into one shape, and
 drops anything that fails rules you write down once.
 
 ```bash
@@ -52,14 +52,16 @@ and no evidence any of it works. It is also the run most likely to show up a
 mistake worth fixing now, like titles that match nothing or a salary floor that
 hides everything, while you are still sitting in front of it.
 
-**Leave that first scan the best part of an hour.** The bundled list is 17,807
-employer boards, and the runtime is not a fixed number: it is proportional to
-how many sources you keep and how many requests you allow in flight, and each
-host is paced on its own clock underneath that (more on that in "Being a good
-citizen"), so a shorter list or a higher `fetch.concurrency` (default 16,
-capped at 64) moves it in a way a single stopwatch reading from one run would
-not honestly represent for the next one. `job-radar scan --limit 200` takes a
-couple of minutes if you only want to watch it work.
+**Leave that first scan an hour, and there is a floor under that no setting
+moves.** The bundled list is 17,807 employer boards and each host is paced on
+its own clock (more on that in "Being a good citizen"). `apply.workable.com`
+alone holds 2,094 of those boards at 0.7 requests a second, which is fifty
+minutes on that one host when it is answering, with everything else
+interleaved behind it. Above the floor the runtime follows how many sources
+you keep and how many requests you allow in flight, so a shorter list or a
+higher `fetch.concurrency` (default 16, capped at 64) moves that part and not
+the Workable part. `job-radar scan --limit 200` takes a couple of minutes if
+you only want to watch it work.
 
 Afterwards:
 
@@ -79,8 +81,10 @@ a missing CV does not degrade the output, it invents it. The path is checked
 again each time the config loads, so a CV you moved fails loudly instead of
 quietly producing fiction.
 
-Or fork this repo, edit `config.yaml`, and let GitHub Actions run it for you.
-No server, no Docker, free on public repos.
+Or fork this repo, write a `config.yaml` and commit it with `git add -f`, and
+let GitHub Actions run it for you. No server, no Docker, free on public repos.
+The full steps are in "Running it on GitHub Actions" below; the `-f` is not
+optional, because `config.yaml` is gitignored.
 
 ---
 
@@ -120,12 +124,15 @@ sources:
 ```
 
 or leave `reed_api_key` blank and export `REED_API_KEY` instead, which is what
-GitHub Actions wants. **Never put a real key in `config.yaml`.** That file is
-committed; `config.local.yaml` is not. With no key the Reed source is skipped
-and the scan says so by name.
+GitHub Actions wants. **Never put a real key in `config.yaml`.** Both files
+are gitignored, but `config.yaml` is the one a fork force-adds for the Actions
+path, so it is the one that ends up committed. With no key the Reed source is
+skipped and the scan says so by name.
 
 `{keyword}` expands into one search per entry in `titles.include`, the same
-way NHS Jobs works, so that single line becomes up to six searches.
+way NHS Jobs works, so that single line becomes up to twelve searches
+(`sources.MAX_KEYWORD_TITLES`). A scan names any title past the cap rather
+than dropping it silently.
 
 **What to expect from it.** These are aggregator listings and they are not the
 equal of an employer's own board:
@@ -194,10 +201,11 @@ wants. With no credentials the source is skipped and the scan says so by name.
 
 **Watch the call budget.** Adzuna's published free limits are **25 hits a
 minute, 250 a day, 1,000 a week and 2,500 a month**. One scan is one call per
-job title per page: six titles at up to three pages is **18 calls**, so the
-monthly cap is the binding one and it works out at roughly **four scans a day**
-sustained, or about thirteen in a single day against the daily cap. Add a second
-country and double it.
+job title per page, and a keyword source is searched with up to twelve titles:
+twelve at up to three pages is **36 calls**, so the monthly cap is the binding
+one and it works out at roughly **two scans a day** sustained, or about six in
+a single day against the daily cap. Fewer titles cost proportionally less. Add
+a second country and double it.
 
 **What to expect from it.**
 
@@ -301,23 +309,28 @@ one live snapshot held **five** engineering-leadership titles across roughly
 
 ## What it does
 
-**Reads 17,807 employer boards** across 23 platforms. Roughly 4,100 are
+**Reads 17,807 employer boards** across 21 board platforms. Roughly 4,100 are
 Greenhouse and 2,600 Ashby, then Workable, iCIMS, Workday, Personio, Breezy,
 Recruitee, SmartRecruiters and Oracle in the four figures or high hundreds,
 then Jobvite in the hundreds, then Avature, Phenom, Teamtailor, Lever on both
-its US and EU deployments, Pinpoint and SuccessFactors in the tens. LinkedIn's
-public endpoint and NHS Jobs are in there too, as keyword searches rather than
-boards, which is what takes the file to 17,809 entries.
+its US and EU deployments, Pinpoint and SuccessFactors in the tens. Three more
+entries are keyword searches rather than boards, which is what takes the file
+to 17,810: LinkedIn's public endpoint, NHS Jobs, and Workable's own
+cross-employer search at `jobs.workable.com`, which reaches every employer
+Workable hosts rather than the 2,094 boards a crawl happened to find, and
+carries the full advert with it.
 
-The code carries 25 board adapters, two more than the bundled list uses: Reed
-and Adzuna are keyed aggregators you add yourself, and JazzHR is written but
-has no boards on the list yet.
+The code carries 27 adapters, four more than the bundled list uses: Reed and
+Adzuna are keyed aggregators you add yourself, JazzHR is written but has no
+boards on the list yet, and there is a generic RSS reader for a feed you add
+by hand.
 
 `job-radar coverage` counts the file rather than trusting this paragraph, and
 that is the number to go by. **Expect it to print slightly more than 17,807.**
-The two keyword sources are templates rather than boards, and each one is
-expanded into one search per job title in your config before anything is
-counted, so the total it prints moves with how many titles you are watching.
+The three keyword sources are templates rather than boards. Each is expanded
+into one search per job title in your config, up to twelve, and the Workable
+search is expanded again per country in `locations.countries` and
+`locations.relocate_to`, so the total it prints moves with your config.
 
 Names you would recognise are on it: Barclays, Lloyds, Santander, BP, Shell,
 Unilever, Tesco, Marks & Spencer, John Lewis, Sky, Skyscanner, Accenture,
@@ -451,6 +464,18 @@ job-radar applied <url|company|uid> -s interviewing --note "call booked"
 job-radar generate <url|company|uid> -k screen      # or cv, or cover_letter
 ```
 
+A scan filters what it fetched that day and never looks back, so a change to
+your titles, locations, dealbreakers or salary floor only applies to roles
+found afterwards. `job-radar rescreen` re-applies the current config to what
+is already stored and reports what no longer matches. It removes nothing
+unless you add `--remove`, and even then a role you have already acted on
+stays: the status is a decision you made and it outranks a filter.
+
+```bash
+job-radar rescreen             # report only
+job-radar rescreen --remove    # delete the untouched ones that no longer match
+```
+
 `applied` and `generate` accept a posting URL, a company name, or a role id.
 When a name matches more than one role they list the candidates and stop
 rather than guessing, because recording a status against the wrong role is
@@ -459,9 +484,9 @@ worse than not recording it.
 Both write the same database the dashboard reads, so the two views cannot
 disagree.
 
-`scan`, `discover`, `validate` and `coverage` are command-line only by design:
-they are slow maintenance verbs and the dashboard has nowhere sensible to show
-their progress.
+`scan`, `enrich`, `rescreen`, `discover`, `validate` and `coverage` are
+command-line only by design: they are slow maintenance verbs and the dashboard
+has nowhere sensible to show their progress.
 
 ---
 
@@ -474,7 +499,7 @@ stop coming back.
 ```bash
 job-radar applied https://job-boards.greenhouse.io/example/jobs/123456
 job-radar applied "Example Corp" --status rejected --note "coding round"
-job-radar applied <url> --status interviewing --date 2026-08-19
+job-radar applied <url> --status interviewing --note "second round"
 ```
 
 That writes to the local database, the same one the dashboard reads, so the
@@ -482,7 +507,9 @@ two cannot disagree. The database lives at `data/job-radar.db` by default and
 is gitignored, so your history stays yours even on a public fork.
 
 `applications.local.yaml` is still read if you have one, and is imported once
-on first run. It is no longer written to; see
+on first run into the default database. A scan pointed elsewhere with `--db`
+imports neither it nor `state/seen.json`, because `--db` reads as isolation
+and has to be one. It is no longer written to; see
 [`applications.example.yaml`](applications.example.yaml) for the format if you
 are migrating an old file.
 
@@ -503,8 +530,12 @@ the wording differs. Giving only `org` mutes a whole company.
 
 ## Configuration
 
-Everything lives in `config.yaml`. `job-radar setup` writes one by asking
-questions; after that, edit it directly.
+Everything lives in `config.yaml`, which the repo does not ship: it is
+gitignored, so a fresh clone has none and nothing you write there ever
+conflicts on a pull. `job-radar setup` writes one by asking questions; after
+that, edit it directly. Setup needs a terminal to ask them, so for a script
+there is `job-radar setup --defaults --cv PATH --titles "a,b"`, and
+`config.example.yaml` is a starting point to copy.
 
 ```yaml
 titles:
@@ -534,22 +565,38 @@ Every setting, what it accepts and what happens when it is wrong is in
 [docs/CONFIG.md](docs/CONFIG.md), including the command-line flags and the
 real list of sectors.
 
+`titles.include` is matched twice. The whole-word regex runs first, and
+anything it misses gets a second pass from a looser matcher that accepts the
+same words in another order with up to two words between them, so
+`engineering manager` also finds "Manager, Engineering Platform" and
+`head of engineering` finds "Head of Site Reliability Engineering". A word
+that changes the job rather than rewording it, "product", "business" or
+"program" landing inside the phrase, still blocks the match: "Engineering
+Program Manager" does not pass.
+
 `dealbreakers` are read against the job description, which is the part that
 catches roles that look right in a search result and are wrong in the detail.
 
-Put private settings in `config.local.yaml`, which is gitignored and takes
-precedence. `config.yaml` has to be committed for the Actions path to work.
+Put private settings in `config.local.yaml`, which is also gitignored and
+takes precedence. Both are ignored, so a fork using the Actions path has to
+force-add `config.yaml` to commit it.
 
 ---
 
 ## Running it on GitHub Actions
 
-1. Fork this repo.
-2. Edit `config.yaml`.
-3. Uncomment the two `schedule:` lines at the top of
+1. Fork this repo and clone your fork.
+2. Write a `config.yaml`: `job-radar setup`, or copy `config.example.yaml`
+   and edit it. The repo ships neither, because `config.yaml` is gitignored.
+3. Commit it: `git add -f config.yaml && git commit && git push`. The `-f`
+   is required, because the file is gitignored and a plain `git add` refuses
+   it in silence. Without it the runner checks out a fork with no config and
+   the scan stops on "No config at config.yaml". You do not need to add
+   `state/`; the workflow force-adds that itself on every run.
+4. Uncomment the two `schedule:` lines at the top of
    `.github/workflows/scan.yml`.
 
-That third step is not optional and it is not an oversight. The cron is
+That last step is not optional and it is not an oversight. The cron is
 commented out **in this repository** on purpose, because this repo is public
 and a scheduled scan would publish its maintainer's job search to anyone with
 the URL. Your fork is where the decision belongs, so it is left to you to make
@@ -596,8 +643,8 @@ far more than a daily scan uses.
 ### Two caveats worth knowing
 
 **On a public fork, your search is public** even without Pages. `config.yaml`
-has to be committed for the workflow to read it, and `state/` is committed on
-every run, so the titles you search for, your salary floor, your dealbreakers
+has to be force-added for the workflow to read it, and `state/` is committed
+on every run, so the titles you search for, your salary floor, your dealbreakers
 and every role you have been shown are all readable. A private fork, or
 running locally with your settings in the gitignored `config.local.yaml`,
 avoids that.
@@ -639,10 +686,19 @@ the adapters are shaped the way they are.
 | **SuccessFactors RMK** | Still served from `jobs2web.com` hostnames. Server-rendered, so no browser needed, but hrefs carry a tenant prefix (`/tfl/job/...`) rather than a bare `/job/`, and the location sits in the URL slug ahead of the title rather than in its own field. The token is `tenant|prefix` with the prefix optional (`london-gov|tfl`), because some tenants serve the board at `/search/` and some at `/<prefix>/search/`. It pages on `startrow` in twenty-fives and states no total anywhere. The list carries no advert text, and the posting page publishes **no schema.org JSON-LD at all**, so `enrich` reads `<span class="jobdescription">` instead. Most of those spans nest further spans, so the closing tag is found by counting rather than by a lazy match: PSEG's advert is 15,758 characters and a lazy `(.*?)</span>` returns 121 of them, Hikma's 1,053 of 2,375. Some tenants serve `<span itemprop="description" class="jobdescription">`, so the class is matched as a word in the tag rather than as the whole attribute. |
 | **iCIMS** | The plain search page is an empty shell that renders into an iframe. Adding **`in_iframe=1`** returns the server-rendered list. That single parameter is the whole difference between "no jobs" and a working board. **The posting page does the same thing**: the bare URL answers 200 with a 3.8KB shell containing no advert and no JSON-LD, so `enrich` asks for `in_iframe=1` there too and then reads the schema.org `JobPosting` block the iframe view carries. |
 | **Avature** | Absolute hrefs to `/JobDetail/`, and the location is only in the slug. **The signature is the path, not the host**, because Avature serves as often from the employer's own domain as from `avature.net`: Tesco's board is `careers.tesco.com`, which has nothing in the hostname to match on. So the token is `host|path-prefix` and the prefix can be more than one segment (`en_GB/careersmarketplace`). It pages on `jobOffset`, and **the page size is the tenant's, not yours**: Tesco answers ten however many you ask for. `semanticSearch=` is a real server-side keyword filter, which is what keeps a 999+ board down to a few requests. The list carries no advert. **Whether the posting page publishes schema.org JSON-LD is per tenant**: Tesco's does and EA's does not, and both are ordinary Avature installs, so `enrich` tries that block first and falls back to Avature's own `article__content__view__field__value` divs. It takes every field block rather than the one under the description heading, because that heading is localised. A minority of tenants answer the posting page with **403** (`baufest.avature.net`, `avature.cn`, `portal.fritolayemployment.com`); those roles stay unenriched. |
-| **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. The list's `ShortDescriptionStr` is a teaser, not the advert, and **the posting page is a 4.4KB JavaScript shell** with no JSON-LD, so `enrich` calls `recruitingCEJobRequisitionDetails` instead: **plural**, because the singular spelling answers 404 with an empty body, which is indistinguishable from a dead board. The advert is split across `ExternalDescriptionStr`, `ExternalResponsibilitiesStr` and `ExternalQualificationsStr` and which are filled varies by tenant, so all of them are read and then deduplicated: one measured board had all three holding the same advert. **Known gap:** `enrich` only re-reads roles whose stored description is under 200 characters, and about half of Oracle roles arrive with a longer teaser than that, so those keep the teaser rather than the advert. |
+| **Oracle Recruiting Cloud** | Postings nest at `items[0].requisitionList`, one level deeper than most, and `TotalJobsCount` is the real total rather than the page length. The host bears no relation to the company: Marks and Spencer are on `fa-eqid-saasfaprod1.fa.ocs.oraclecloud.com`. The list view carries no salary, so roles from here read as unconfirmed by nature rather than by parse failure. The list's `ShortDescriptionStr` is a teaser, not the advert, and **the posting page is a 4.4KB JavaScript shell** with no JSON-LD, so `enrich` calls `recruitingCEJobRequisitionDetails` instead: **plural**, because the singular spelling answers 404 with an empty body, which is indistinguishable from a dead board. The advert is split across `ExternalDescriptionStr`, `ExternalResponsibilitiesStr` and `ExternalQualificationsStr` and which are filled varies by tenant, so all of them are read and then deduplicated: one measured board had all three holding the same advert. The `ShortDescriptionStr` teaser is long enough to clear the ordinary 200 character re-read floor, which is how 185 of 483 roles kept a teaser: Oracle and Phenom carry a **1,200 character floor** of their own instead, set above every teaser measured and below every real advert. Fetching 20 of those returned a median 6,400 characters, every one between 3.8x and 16.2x what was stored. |
 | **NHS Jobs** | The JSON API at `/api/v1/search_json` is behind an auth token, and the `.rss` path returns HTML rather than a feed, so the search page is the route. Ten results per page, no page-size parameter. Worth it: NHS trusts publish Agenda for Change bands, so **46 of 50 roles stated a salary** against a market average near a third. |
 | **Reed** | One of the two sources that need a credential: a free API key, sent as the **HTTP Basic username with an empty password**, which is Reed's own documented scheme. Unkeyed requests are **401**, which is the good news, because a 401 cannot be mistaken for "no jobs today". A search that matched nothing is **200 with an empty `results` list**, and so is a nonsense keyword, so liveness is the result count. Pages are capped at **100** and walked with `resultsToSkip`. The catch is salary: the **search endpoint returns `minimumSalary` / `maximumSalary` with no period at all** (only the per-job details endpoint carries `salaryType`), so a bare `650` could be a year or a day. Anything under 2,000 is read as an unlabelled rate and left **unconfirmed** rather than annualised wrongly, and the advert text gets a second go at it. `locationName` is free text, so most of it is towns and counties the location matcher has never heard of ("Stoke-on-Trent", "Cambridgeshire"), and the country has to be added by the adapter or a UK-filtered search drops the lot; that append only skips a string that already names a country, so a bare town matching a foreign city ("Perth", "Boston") is filed British anyway. There is **no remote field**, and `employerName` is whoever posted the job, which on an agency listing is the agency. |
+| **Workable search** (`jobs.workable.com`) | Workable's own search across every employer it hosts, rather than a board, and it needs no key. **Twenty results a page behind an opaque `nextPageToken`**, so the walk is strictly sequential and cannot be parallelised; `limit=100` is a **400**, and `pageSize`, `size`, `per_page` and `page_size` are all accepted and all ignored. Fifteen pages is the cap, 300 postings per title, and a scan says so when it bites rather than quietly returning the first 300. It carries the full advert, so these roles need no `enrich` pass. `{keyword}` and `{country}` are both narrowed at the query: "software engineer" worldwide is 4,220 postings over 211 pages, and the same search in the United Kingdom is 322. Deliberately a different host from `apply.workable.com`, so the 0.7/s pacing those 2,094 boards need does not throttle this and a block on one does not silently take out the other. Scored as an aggregator, so the employer's own board wins the row: 36% of what it finds is an employer already on the list. |
 | **Adzuna** | Needs a free `app_id` and `app_key`, and both go in the **query string**: there is no header auth, so the fetcher adds them per request and never writes them onto the stored source or into the state file. Unkeyed requests answer **400 with an HTML error page**, not a 401 and not JSON. **The country is in the URL path** (`/v1/api/jobs/gb/search/1`) and appears nowhere in the payload, so the adapter reads it from there and names it in the location, or a UK filter drops every listing whose town is not in the city list; the same append-only-if-unnamed rule as Reed applies, so a bare town matching a foreign city is filed under the index's own country. Same for the **currency**, which follows the index. The trap is **`salary_is_predicted`**: `"1"` means the figure came from Adzuna's Jobsworth model rather than the employer, and treating a model output as a stated salary drops real roles against the floor and promotes ones that pay nothing like it, so those stay unconfirmed. **Descriptions are truncated to 500 characters** by documentation. **The page number is in the path, not a parameter**, and `results_per_page` is a request rather than a promise, so paging stops on an empty page and never on a short one. No remote field, and no direct-employer filter of any kind. |
+
+**Which system publishes the advert is not always which board it came off.**
+So `enrich` tries the platform's own reader first and then falls back to the
+shape of the role's own URL. A Phenom `applyUrl` is the employer's real
+applicant tracking system: of 1,882 Phenom roles measured, 1,562 point at a
+Workday tenant, 73 at iCIMS and 33 at a SuccessFactors host, and both `custom`
+boards on the list hand back iCIMS posting URLs. A URL matching none of the
+twelve known shapes is left alone, exactly as before.
 
 **Five adapters are unverified, and this table should not imply otherwise.**
 The registry marks Recruitee, Personio and the generic RSS reader as
@@ -738,7 +794,7 @@ work this way and are better served elsewhere.
 
 **Fields you cannot select for, because most of the list is still unlabelled.**
 This used to read as a shortage of employers. It is now a shortage of tags. Of
-17,809 sources, **6,089 carry a sector tag and 11,720 carry none**: the harvest
+17,810 sources, **6,089 carry a sector tag and 11,721 carry none**: the harvest
 that took this list from hundreds to thousands read board addresses out of a
 public crawl index, and an address does not say what industry the employer is
 in. The tagged ones are 1,311 healthcare, 1,304 finance, 512 education, 498
@@ -749,7 +805,7 @@ legal, 42 industry, 34 security, 34 professional services and 16 travel.
 That is less damaging than it sounds, because **a `sectors:` filter keeps every
 untagged source as well as the ones you asked for**. `sectors: [hospitality]`
 does not cut you to seventy-four employers; it drops the sources tagged as
-something else and leaves the 11,720 unlabelled ones in, which is where most
+something else and leaves the 11,721 unlabelled ones in, which is where most
 of any industry actually is. The cost runs the other way: you cannot ask this
 list for "every hospitality employer" and get a true answer, and `job-radar
 coverage` can only report what somebody labelled.
@@ -893,8 +949,8 @@ generic agent:
 
 So the bundled LinkedIn source fetches a path LinkedIn's robots.txt tells
 crawlers not to. It is one entry that gets expanded into one search per job
-title you configure, so the request count follows your `titles.include` rather
-than being fixed. They are public pages served without a login, and this reads
+title you configure, up to twelve, so the request count follows your
+`titles.include` rather than being fixed. They are public pages served without a login, and this reads
 them at a handful of requests per run rather than at crawl scale, but that
 does not make it permitted.
 
@@ -986,26 +1042,26 @@ the source of truth; the copy here is synced weekly by a workflow. See
 ## Development
 
 ```bash
-python3 -m pytest -q            # 297 passed
-python3 tests/test_core.py      # the core file alone, without pytest: 257/257
+python3 -m pytest -q            # 395 passed
+python3 tests/run_all.py        # the same suite, without pytest: 395/395
 job-radar validate --file sources/sources.json --report out/validation.json
 job-radar coverage              # what the source list actually holds
 ```
 
-`pytest` runs both test files, `tests/test_core.py` and `tests/test_locations.py`.
-The second command is the standalone runner for `tests/test_core.py` alone and
-needs nothing installed, pytest included. That used not to be quite true:
-`test_the_installer_needs_nothing_installed` used to `import pytest` to check
-whether it was present, which broke the promise the test exists to make, so a
-standalone run without pytest reported one failure rather than a clean pass.
-It checks `sys.stdlib_module_names` instead now, so the standalone run needs
-nothing beyond the standard library and reports a clean 257/257.
+`tests/run_all.py` discovers every `tests/test_*.py` and needs nothing
+installed, pytest included. It is what CI runs, and naming one file instead is
+the mistake it exists to prevent: CI ran `tests/test_core.py` and nothing
+else, so `tests/test_locations.py`, which holds every country-code rule that
+decides whether a job is one you can legally take, had never executed once.
+Seven files hold the 395 tests between them, and a new `test_*.py` runs here
+and in CI without anyone editing a workflow.
 
-The suite also used to under-report itself a different way: the `__main__`
-block that drives the standalone run collects `globals()` at the point it
-executes, and it once sat partway through the file rather than at the end, so
-it only ever saw the tests defined above it and silently ran less than half
-the file while printing what looked like a full pass. It now has to stay at
-the end, and the file's own comment says why.
+The suite has under-reported itself two other ways, both fixed and both worth
+knowing before you add to it. The `__main__` block that collects `globals()`
+once sat partway up `test_core.py`, so it saw only the tests defined above it
+and ran less than half the file while printing what looked like a full pass;
+it has to stay at the end now, and the file's own comment says why. And the
+runner caught `Exception` rather than `BaseException`, so one test raising
+`SystemExit` ended the whole run mid-file with no failure line and no summary.
 
 MIT licensed.

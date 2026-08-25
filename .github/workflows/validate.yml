@@ -49,14 +49,14 @@ jobs:
           if r["dead"]:
               print("### Dead\n")
               for d in r["dead"][:60]:
-                  print(f"- `{d['company']}` — {d['url']}")
+                  print(f"- `{d['company']}`, {d['url']}")
           if r["mismatch"]:
               print("\n### Wrong company?\n")
               print("These boards respond, but do not look like who we think they are.")
               print("That is how a Florida schools operator ended up filed as a London")
               print("payments company.\n")
               for d in r["mismatch"][:60]:
-                  print(f"- `{d['company']}` — {d['note']}")
+                  print(f"- `{d['company']}`, {d['note']}")
           PY
           echo "dead=$(python3 -c "import json;print(len(json.load(open('out/validation.json'))['dead']))")" >> "$GITHUB_OUTPUT"
 

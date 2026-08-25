@@ -815,8 +815,14 @@ def cmd_coverage(args) -> int:
             if bundled:
                 _say(f"Your `sectors` setting narrows the bundled list to "
                      f"{cov['total']} of {bundled} sources.")
+        # Derived from the list rather than named here. The hardcoded pair
+        # missed `workable_search` the day it was added, so the line
+        # undercounted and the reader was told fewer of their sources were
+        # keyword searches than actually were. Same failure as `meta.boards`,
+        # which drifted for exactly the same reason.
+        kw_platforms = {s.platform for s in srcs if s.keyword_template}
         keyword = sum(n for k, n in cov["by_platform"].items()
-                      if k in ("linkedin", "nhs"))
+                      if k in kw_platforms)
         if keyword:
             _say(f"{keyword} of these are keyword searches rather than "
                  f"employer boards: they return leads with no description "

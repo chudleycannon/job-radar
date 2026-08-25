@@ -102,7 +102,7 @@ jobs:
               # Range"), which tells the reader nothing.
               pay = j["salary_label"]
               loc = j["location"] or "location not stated"
-              print(f"- **[{j['title']}]({j['url']})** — {j['company']} · {loc} · {pay} · score {j['score']:.0f}")
+              print(f"- **[{j['title']}]({j['url']})**, {j['company']} · {loc} · {pay} · score {j['score']:.0f}")
               for f in j["flags"]:
                   print(f"  - {f}")
           m = d["meta"]

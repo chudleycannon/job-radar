@@ -1,8 +1,11 @@
 # Config reference
 
 Every setting, what it accepts, and what happens when it is wrong. The file is
-`config.local.yaml` if present, otherwise `config.yaml`. `job-radar setup`
-writes one for you; this is for editing it afterwards, or writing it by hand.
+`config.local.yaml` if present, otherwise `config.yaml`, unless `-c` or the
+`JOB_RADAR_CONFIG` environment variable names one. Both filenames are
+gitignored, so the repo ships neither and a fork using GitHub Actions has to
+`git add -f config.yaml`. `job-radar setup` writes one for you; this is for
+editing it afterwards, or writing it by hand.
 
 **The config is validated when it loads.** An unknown key, a broken regex, a
 salary that is not a number or a format that does not exist stops the run with
@@ -12,7 +15,7 @@ a message naming the setting. It does not silently do something else.
 
 | key | type | notes |
 |---|---|---|
-| `include` | list of strings | **Required.** Matched against the posting title, whole words, case-insensitive. Also the search terms for NHS Jobs and LinkedIn, so wrong titles there return nothing rather than merely filtering loosely. Only the **first six** are used as search terms. |
+| `include` | list of strings | **Required.** Matched against the posting title, whole words, case-insensitive. Also the search terms for the keyword sources (NHS Jobs, LinkedIn, the Workable search, and Reed and Adzuna if you add them), so wrong titles there return nothing rather than merely filtering loosely. Only the **first twelve** are used as search terms, and a scan names any beyond that rather than dropping them silently. A title the regex misses gets a second pass from a looser matcher, which accepts the same words in another order with up to two words between them, so `engineering manager` also finds "Manager, Engineering Platform". A word that changes the job rather than rewording it (thirty of them, "product", "business", "program" and "sales" among them) still blocks it, so "Engineering Program Manager" does not pass. The loose pass runs after the regex, never instead of it. |
 | `exclude` | list of strings | Never show these, even when `include` matches. Escaped, so brackets and punctuation are safe: `healthcare assistant (bank)` works. |
 
 An empty `include` is refused: with no titles every posting matches and the
@@ -24,7 +27,9 @@ keyword sources have nothing to look for.
 |---|---|---|
 | `countries` | list of codes | Empty means anywhere. Country names are accepted and normalised (`Portugal` becomes `PT`); anything the filter cannot use is refused at load rather than silently matching nothing. Note the UK is `UK`, not `GB`. |
 | `remote_ok` | true / false | Unquoted. `"no"` and `"false"` are understood, anything else is refused rather than read as true. |
-| `relocate_to` | list of codes | Shown, scored below home. Same validation as `countries`. |
+| `relocate_to` | list of codes | Shown, scored below home. Same validation as `countries`. Also the countries the Workable search is run against, alongside `countries`. |
+| `need_sponsorship` | list of codes | Where you would need a visa. Same validation as `countries`. A role in one of these is hidden only if the posting says outright that it will not sponsor; one that says it will scores higher, and one that says nothing is kept and left as a question to ask. |
+| `exclude` | list of places | Applied per location. A role in London only is dropped; a role in "London / Manchester" survives on Manchester. |
 
 The full set of codes the location filter recognises:
 
@@ -33,7 +38,6 @@ The full set of codes the location filter recognises:
 A country not on this list cannot be filtered on. Roles there are still
 fetched; they are dropped as "location not recognised" unless `countries` is
 empty.
-| `exclude` | list of places | Applied per location. A role in London only is dropped; a role in "London / Manchester" survives on Manchester. |
 
 ## cv
 
@@ -62,11 +66,11 @@ absent.
 ## sectors
 
 Which employers to watch. Empty means all of them. These are the tags that
-actually exist in the bundled list, out of 17,809 sources:
+actually exist in the bundled list, out of 17,810 sources:
 
 | sector | sources |
 |---|---|
-| `untagged` | 11,720 |
+| `untagged` | 11,721 |
 | `healthcare` | 1,311 |
 | `finance` | 1,304 |
 | `education` | 512 |
@@ -95,7 +99,7 @@ municipal and non-profit employers as often as UK public bodies).
 
 Setting `sectors` **keeps every untagged source as well** as the ones tagged
 with what you asked for. So it removes the labelled sources you did not ask
-for and leaves the other 11,720 in place, which is why it narrows the list far
+for and leaves the other 11,721 in place, which is why it narrows the list far
 less than the numbers above suggest. A tag that is not in this table is
 refused at load rather than quietly matching nothing. Check yours with
 `job-radar coverage`, which counts the file rather than this table.
@@ -105,16 +109,16 @@ refused at load rather than quietly matching nothing. Check yours with
 | key | type | notes |
 |---|---|---|
 | `use_bundled` | true / false | |
-| `countries` | list of codes | Only filters sources that carry a country tag, and 12,595 of 17,809 do. The rest are always fetched, and `job-radar coverage` says so when this is set. |
+| `countries` | list of codes | Only filters sources that carry a country tag, and 12,596 of 17,810 do. The rest are always fetched, and `job-radar coverage` says so when this is set. |
 | `extra` | list | Either a bare URL string, or `{company, url, platform}`. `job-radar discover <name> --add` writes these for you. |
-| `reed_api_key` | string | Free key from <https://www.reed.co.uk/developers/jobseeker>, needed only if you add the Reed source. Falls back to the `REED_API_KEY` environment variable when blank, which is the route for GitHub Actions. **Put a real key in `config.local.yaml`, never in `config.yaml`**: the second one is committed. Blank means the Reed source is skipped, with a message naming it. |
-| `adzuna_app_id`, `adzuna_app_key` | string | Free pair from <https://developer.adzuna.com/signup>, needed only if you add the Adzuna source. Both fall back to `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` in the environment when blank, which is the route for GitHub Actions. **Real values go in `config.local.yaml`, never in `config.yaml`.** Either one missing means no credentials, and the Adzuna source is skipped with a message naming it. Adzuna's free limits are 25 calls a minute, 250 a day, 1,000 a week and 2,500 a month; one scan is one call per job title per page. |
+| `reed_api_key` | string | Free key from <https://www.reed.co.uk/developers/jobseeker>, needed only if you add the Reed source. Falls back to the `REED_API_KEY` environment variable when blank, which is the route for GitHub Actions. **Put a real key in `config.local.yaml`, never in `config.yaml`**: the second one is the file a fork force-adds for GitHub Actions, so it is the one that ends up committed. Blank means the Reed source is skipped, with a message naming it. |
+| `adzuna_app_id`, `adzuna_app_key` | string | Free pair from <https://developer.adzuna.com/signup>, needed only if you add the Adzuna source. Both fall back to `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` in the environment when blank, which is the route for GitHub Actions. **Real values go in `config.local.yaml`, never in `config.yaml`**, which is the file a fork force-adds for GitHub Actions. Either one missing means no credentials, and the Adzuna source is skipped with a message naming it. Adzuna's free limits are 25 calls a minute, 250 a day, 1,000 a week and 2,500 a month; one scan is one call per job title per page. |
 
 ## output
 
 | key | type | notes |
 |---|---|---|
-| `formats` | list | `html`, `json`, `markdown`. Anything else is refused, rather than producing a successful run that writes no files. |
+| `formats` | list | `html`, `json`, `markdown` (`md` is accepted for it). Anything else is refused, rather than producing a successful run that writes no files. |
 | `dir` | path | `~` is expanded. |
 
 ## fetch
@@ -124,21 +128,23 @@ refused at load rather than quietly matching nothing. Check yours with
 | `concurrency` | number | Default 16, capped at 64 with a warning. This governs how many DIFFERENT boards are read at once, not how hard any one host is hit: each host is paced separately (roughly 3 requests a second, slower for the strict ones), and a host that keeps refusing is blocked outright rather than retried into. How long a scan takes follows from this and from how many sources you keep, not from a fixed rate; a shorter list or a higher concurrency both move it. |
 | `timeout` | seconds | Default 20. |
 | `retries` | number | Default 2. |
-| `user_agent` | string | Identifies the tool. Leave it identifying. |
+| `user_agent` | string | Identifies the tool. Leave it identifying. **Accepted but not currently applied**: the loader validates the key and then does not read it, so every request goes out under the default agent. |
 
 ## Command-line flags not in the examples
 
 | flag | applies to | notes |
 |---|---|---|
 | `-c, --config` | all | Which config to load. |
-| `--db` | scan, list, applied, generate, serve | Database path. Default `data/job-radar.db`. |
+| `--db` | scan, enrich, rank, rescreen, list, applied, generate, serve | Database path. Default `data/job-radar.db`. Pointing a scan somewhere else isolates it: the one-off import of `state/seen.json` and `applications.local.yaml` follows the database, not the working directory, so `--db /tmp/scratch.db` does not copy your real history into a scratch file. |
 | `--docs` | generate, serve | Where generated documents go. Default `~/job-applications`. |
-| `--limit` | scan, list | Cap the sources fetched, or the rows listed. |
-| `--dry-run` | scan, rank, enrich | Do not record what was seen. On `rank`, show what it would cost and send nothing. |
+| `--limit` | scan, validate, enrich, rank, rescreen, list | Cap the sources fetched or checked, the roles re-read, scored or listed. |
+| `--dry-run` | scan, rank, enrich | Do not record what was seen, and do not write into `out/` either: a dry run leaves the last real dashboard where it is. On `rank`, show what it would cost and send nothing. |
 | `--json` | list | Machine-readable output. |
 | `--all` | list | Include settled roles, and roles no longer on a board. |
 | `--new` | list | Only roles first seen on the most recent scan. |
 | `--no-enrich` | scan | Skip fetching full postings for headline-only sources. They stay unscreenable. |
 | `--prune`, `--force-prune` | validate | Rewrite `--file` without the dead sources. |
 | `--refresh`, `--top` | rank | Re-score roles that already have a fit; how many to print. |
+| `--remove` | rescreen | Delete the stored roles that no longer match your config. Off by default: `rescreen` reports and changes nothing without it, and a role you have already given a status is never removed whatever it matches. |
 | `--port`, `--host`, `--no-browser` | serve | |
+| `--defaults`, `--cv`, `--titles` | setup | `setup` asks questions and so refuses anything that is not a terminal. The scriptable form is `job-radar setup --defaults --cv PATH --titles "a,b"`; `--cv` is required with `--defaults`. Add `--scan` to run the first scan straight after. |

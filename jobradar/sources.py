@@ -94,7 +94,13 @@ def expand_templates(srcs: list[Source], titles: list[str],
                     company=label, url=url,
                     platform=s.platform, sector=s.sector,
                     country=s.country, domain=s.domain,
-                    method=s.method, body=s.body))
+                    method=s.method, body=s.body,
+                    # The expansion dropped this, so an expanded search looked
+                    # like an employer's own board to everything downstream.
+                    # `coverage` counts keyword sources to warn that they
+                    # return leads with no description and include agencies,
+                    # and with the flag gone it counted none of them.
+                    keyword_template=True))
     return out
 
 

@@ -446,6 +446,13 @@ def load(path: str | os.PathLike | None = None) -> Config:
         concurrency=int(fet.get("concurrency", DEFAULT_CONCURRENCY)),
         timeout=int(fet.get("timeout", 20)),
         retries=int(fet.get("retries", 2)),
+        # Read, not just accepted. `user_agent` was in KNOWN_KEYS, so setting
+        # it passed validation and told the user nothing was wrong, and then
+        # the dataclass default won anyway: a config asking to identify itself
+        # as something else was silently overruled. Accepting a setting and
+        # ignoring it is worse than rejecting it, because the rejection is at
+        # least visible.
+        user_agent=str(fet.get("user_agent") or Config.user_agent),
         path=p,
     )
 
