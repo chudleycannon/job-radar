@@ -66,7 +66,19 @@ def main() -> int:
             try:
                 fn()
                 print(f"  pass  {name}")
-            except Exception:
+            except KeyboardInterrupt:
+                raise
+            except BaseException:
+                # BaseException, not Exception. SystemExit is not an
+                # Exception, so a test that exits walked straight past this
+                # and took the whole runner with it: the log stopped
+                # mid-suite, with no FAIL line, no traceback and no summary,
+                # and the job reported exit code 1 with nothing to say why.
+                # It cost three red CI runs to find, and the test that did it
+                # was one calling `rank.rank`, which now checks for the
+                # `claude` binary up front and raises SystemExit when it is
+                # missing, which it is on every runner and is not on my
+                # machine.
                 bad += 1
                 print(f"  FAIL  {name}")
                 traceback.print_exc()

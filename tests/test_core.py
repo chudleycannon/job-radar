@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -13,6 +14,25 @@ from jobradar.config import Config, Dealbreaker
 from jobradar.models import Job, Salary, Source
 from jobradar.salary import clears_floor, from_ashby, from_greenhouse, parse_text
 from jobradar.screen import dedupe, match, run as screen_run
+
+
+def _rank_needs_no_binary():
+    """`rank()` looks for the `claude` binary before it builds a single batch.
+
+    That guard is right: it stops a run reading the CV, validating it, building
+    fifty batches and submitting three before finding out the machine cannot
+    make the call. But every rank test below mocks `_call`, so no binary is
+    ever invoked, and without this they were asserting the presence of Claude
+    Code on whoever's machine was running them. They passed on mine and raised
+    SystemExit on all five CI runners.
+
+    SystemExit is not an Exception, so it also walked past the standalone
+    runner's handler and killed the whole suite mid-file, with no failure line,
+    no traceback and no summary. Twelve tests were failing and the log named
+    none of them. tests/run_all.py catches BaseException now, and these say out
+    loud that they do not need the binary.
+    """
+    return mock.patch("jobradar.runner.claude_bin", lambda: "/bin/true")
 
 
 def _cfg(**kw) -> Config:
@@ -2190,7 +2210,8 @@ def test_each_score_lands_on_its_own_role_when_batches_finish_out_of_order():
         return [{"role": n, "fit": int(c[2:]) * 10, "why": f"about {c}"}
                 for n, c in enumerate(cos, 1)]
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         scored = rank.rank(con, cfg, rows, width=3)
 
@@ -2222,7 +2243,8 @@ def test_one_failing_batch_does_not_lose_the_batches_that_worked():
             raise rank.CallFailed("model id no longer exists")
         return [{"role": n, "fit": 70, "why": "fine"} for n, _ in enumerate(cos, 1)]
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         scored = rank.rank(con, cfg, rows, width=3)
 
@@ -2238,7 +2260,8 @@ def test_a_run_where_every_batch_failed_still_raises_rather_than_reporting_zero(
     """The other half of the rule above. Tolerating a failed batch must not
     quietly restore the fault `_call` raises for: an expired login or a dead
     model id failed all 49 calls identically and the run reported "0 scored"
-    with no reason attached. If nothing anywhere was scored, the first failure
+    with _rank_needs_no_binary(), \
+         no reason attached. If nothing anywhere was scored, the first failure
     is the answer.
     """
     from unittest import mock
@@ -2249,7 +2272,8 @@ def test_a_run_where_every_batch_failed_still_raises_rather_than_reporting_zero(
     def fake_call(prompt, timeout=None):
         raise rank.CallFailed("invalid api key")
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         try:
             rank.rank(con, cfg, rows, width=3)
@@ -2288,7 +2312,8 @@ def test_reaching_the_limit_stops_the_run_and_keeps_what_was_already_scored():
         started.wait(2)
         return [{"role": n, "fit": 55, "why": "ok"} for n, _ in enumerate(cos, 1)]
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         try:
             rank.rank(con, cfg, rows, width=2)
@@ -2333,7 +2358,8 @@ def test_should_stop_starts_no_new_calls_but_keeps_the_ones_in_flight():
         asked.append(1)
         return len(asked) > 3
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         scored = rank.rank(con, cfg, rows, width=3, should_stop=should_stop)
 
@@ -2384,7 +2410,8 @@ def test_every_database_write_of_a_concurrent_rank_happens_on_one_thread():
     def on_batch(done, total, scored):
         seen["on_batch"].add(threading.get_ident())
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         scored = rank.rank(Watched(con), cfg, rows, width=4,
                            on_batch=on_batch, should_stop=should_stop)
@@ -2448,7 +2475,8 @@ def test_the_injection_defences_survive_the_concurrent_rewrite():
                 {"role": 1, "fit": 99, "why": "rewritten"},
                 {"role": 2, "fit": 50, "why": "second"}]
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         rank.rank(con, cfg, rows, width=2)
 
@@ -2481,7 +2509,8 @@ def test_rank_width_one_is_still_available_as_the_old_serial_behaviour():
     from unittest import mock
     from jobradar import rank
 
-    with mock.patch.dict(os.environ, {"JOB_RADAR_RANK_WIDTH": "1"}):
+    with _rank_needs_no_binary(), \
+         mock.patch.dict(os.environ, {"JOB_RADAR_RANK_WIDTH": "1"}):
         assert rank._width_default() == 1
     with mock.patch.dict(os.environ, {"JOB_RADAR_RANK_WIDTH": "banana"}):
         assert rank._width_default() == 6
@@ -2497,7 +2526,8 @@ def test_rank_width_one_is_still_available_as_the_old_serial_behaviour():
         cos = _companies_in(prompt)
         return [{"role": n, "fit": 50, "why": "ok"} for n, _ in enumerate(cos, 1)]
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         assert rank.rank(con, cfg, rows, width=1) == 4
     assert len(set(calls)) == 1, "width 1 must run the batches one at a time"
@@ -6206,7 +6236,8 @@ def test_a_missing_fit_key_leaves_the_role_unranked_rather_than_scoring_it_zero(
         return [{"role": 1, "why": "strong match, could do this today"},
                 {"role": 2, "fit": 80, "why": "fine"}][:len(cos)]
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         rank.rank(con, cfg, rows, width=1)
 
@@ -6240,7 +6271,8 @@ def test_a_run_whose_only_readable_reply_was_empty_still_raises():
             return []          # a reply that parsed to nothing
         raise rank.CallFailed("invalid api key")
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         try:
             rank.rank(con, cfg, rows, width=1)
@@ -6566,7 +6598,8 @@ def test_a_failure_while_applying_one_batch_keeps_the_others():
         if seen["n"] == 1:
             raise RuntimeError("database is locked")
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         written = rank.rank(con, cfg, rows, width=1, on_batch=flaky_progress)
 
@@ -6601,7 +6634,8 @@ def test_a_run_that_dies_says_how_many_roles_it_had_already_written():
             raise RuntimeError("database is locked")
         return False
 
-    with mock.patch.object(rank, "BATCH", 2), \
+    with _rank_needs_no_binary(), \
+         mock.patch.object(rank, "BATCH", 2), \
          mock.patch.object(rank, "_call", fake_call):
         written = rank.rank(con, cfg, rows, width=1, should_stop=should_stop)
 
