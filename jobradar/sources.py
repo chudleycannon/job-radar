@@ -31,6 +31,23 @@ def load_file(path: str | Path) -> list[Source]:
     return out
 
 
+# How many of your titles a keyword platform is searched with.
+#
+# There is a cap because the request count is titles times countries times
+# pages, and these are searches rather than one board each. There is a cap of
+# TWELVE rather than six because six silently stopped searching for half of a
+# realistic config: eleven titles is normal once you ask for leadership rather
+# than for the exact words "engineering manager", and the cut was made without
+# saying so, which is the same silent truncation this tool keeps finding
+# elsewhere. `dropped_titles` exists so the caller can say what it skipped.
+MAX_KEYWORD_TITLES = 12
+
+
+def dropped_titles(titles: list[str]) -> list[str]:
+    """The titles a keyword search will not be run for, so a caller can say so."""
+    return list(titles[MAX_KEYWORD_TITLES:])
+
+
 def expand_templates(srcs: list[Source], titles: list[str],
                      countries: list[str] | None = None) -> list[Source]:
     """Turn one templated source into one search per thing you care about.
@@ -66,7 +83,7 @@ def expand_templates(srcs: list[Source], titles: list[str],
         # returns too much rather than nothing.
         names = [n for n in (country_name(c) for c in (countries or [])) if n]
         places = names if (wants_country and names) else [""]
-        for title in titles[:6]:
+        for title in titles[:MAX_KEYWORD_TITLES]:
             kw = quote_plus(title)
             for place in places:
                 url = s.url.format(keyword=kw, country=quote_plus(place))

@@ -80,6 +80,17 @@ def cmd_scan(args) -> int:
              "Then set sources.adzuna_app_id and sources.adzuna_app_key, or "
              "$ADZUNA_APP_ID and $ADZUNA_APP_KEY.")
 
+    # No silent truncation. A keyword platform is searched with the first
+    # MAX_KEYWORD_TITLES titles, and a config with more than that was quietly
+    # having the rest ignored: LinkedIn, NHS Jobs, Reed, Adzuna and the
+    # Workable search all never looked for them.
+    _skipped = src_mod.dropped_titles(cfg.titles_include)
+    if _skipped:
+        _say(f"  note: the keyword searches use your first "
+             f"{src_mod.MAX_KEYWORD_TITLES} titles, so these are not searched "
+             f"for there: {', '.join(_skipped)}")
+        _say("  they are still matched against every employer board.")
+
     results = fetch_all(
         srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
         retries=cfg.retries, user_agent=cfg.user_agent,
