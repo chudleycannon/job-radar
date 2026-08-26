@@ -75,11 +75,84 @@ def cmd_scan(args) -> int:
              f"{cfg.path or 'your config'} is the new default.")
 
     done = {"n": 0}
+    all_jobs: list = []
+    counts: dict[str, int] = {}
+    absorbed: set = set()
+    ok = 0
+
+    def absorb(res):
+        """Turn one fetched source into jobs. Called at most once per result.
+
+        Idempotent by identity, because it runs from two places: `tick`, while
+        the fetch is still going, and a sweep afterwards for anything `tick`
+        never saw. It must not be possible for a result to be counted twice --
+        `ok` and `all_jobs` would both inflate, and inflating the posting count
+        is the shape of bug this file keeps finding.
+        """
+        nonlocal ok
+        if id(res) in absorbed or not res.ok:
+            return
+        absorbed.add(id(res))
+        ok += 1
+        jobs = adapters.parse(res.payload, res.source)
+        for j in jobs:
+            j.sector = j.sector or res.source.sector
+            # The posting's own location beats the board's tag. A board is
+            # tagged with where its vacancies usually are, which is a fair
+            # default and a bad override: Homebase's board is tagged UK
+            # because that is a UK retailer, and a genuine Toronto vacancy on
+            # it was being stored as UK. The tag is only a fallback for a
+            # posting that names nowhere, and it is only used when it names
+            # exactly one country, since "multiple" is not one.
+            if not j.country:
+                here = _countries_in(j.location or "")
+                tag = res.source.country or ""
+                # One spelling, defined in sources.py and normalised as the
+                # list is loaded. This used to accept both `multi` and
+                # `multiple` because the shipped list held both, which meant
+                # neither was the right one and the next consumer would handle
+                # whichever it happened to meet.
+                if tag in src_mod.NON_COUNTRY_TAGS:
+                    tag = ""            # not a country, never store it as one
+                if len(here) == 1:
+                    j.country = here.pop()
+                elif here:
+                    # Several countries named. The board's tag is only usable
+                    # if it is one of them: "London / New York" on a UK board
+                    # really is partly UK, "Berlin / Paris" is not.
+                    j.country = tag if tag in here else ""
+                else:
+                    j.country = tag
+        counts[res.source.key] = len(jobs)
+        all_jobs.extend(jobs)
 
     def tick(res):
+        """Count the source, and parse it while the fetch is still running.
+
+        The parsing used to be a second pass over `results` after `fetch_all`
+        had returned. Moving it in here is worth about two minutes of wall
+        clock on a full scan and changes nothing else, because `fetch_all`
+        calls this from its own `as_completed` loop: same thread, same
+        completion order, same one-call-per-result. The old second pass ran on
+        that same thread too, just later.
+
+        What it buys is overlap. The scan's floor is not this machine, it is
+        apply.workable.com's pacing -- 2,094 boards at 0.7 requests a second
+        is 50 minutes on its own, and measured across a 179-board sample only
+        about five of sixteen workers are busy at any moment. So the thread
+        running this callback spends most of the run blocked in
+        `as_completed` with nothing to do, and parsing roughly 480,000
+        postings at 262 microseconds each is ~126 seconds of work that now
+        happens inside time that was already being spent waiting.
+
+        Deliberately only the parsing. Screening cannot move here: it starts
+        with `dedupe` across the whole set, so it has nothing to do until
+        every source is in.
+        """
         done["n"] += 1
         if done["n"] % 25 == 0:
             _say(f"  {done['n']}/{len(srcs)}")
+        absorb(res)
 
     if len(cfg.titles_include) > 6:
         _say(f"  note: only the first 6 of your {len(cfg.titles_include)} titles "
@@ -123,42 +196,17 @@ def cmd_scan(args) -> int:
                   "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick,
     )
 
-    all_jobs, counts, ok = [], {}, 0
+    # `tick` has already parsed everything `fetch_all` handed it, so on the
+    # real path this loop finds nothing to do and costs one set lookup per
+    # source. It is not dead code: it is what keeps the parsing an OPTIMISATION
+    # rather than a contract. A `fetch_all` that returns its results without
+    # calling `on_result` is a perfectly reasonable thing to write -- the
+    # parameter is optional and several tests stub exactly that -- and without
+    # this sweep such a caller would silently scan zero postings and report
+    # "Nothing matched" on a full board. `absorb` is idempotent, so anything
+    # already taken in is skipped rather than double counted.
     for res in results:
-        if not res.ok:
-            continue
-        ok += 1
-        jobs = adapters.parse(res.payload, res.source)
-        for j in jobs:
-            j.sector = j.sector or res.source.sector
-            # The posting's own location beats the board's tag. A board is
-            # tagged with where its vacancies usually are, which is a fair
-            # default and a bad override: Homebase's board is tagged UK
-            # because that is a UK retailer, and a genuine Toronto vacancy on
-            # it was being stored as UK. The tag is only a fallback for a
-            # posting that names nowhere, and it is only used when it names
-            # exactly one country, since "multiple" is not one.
-            if not j.country:
-                here = _countries_in(j.location or "")
-                tag = res.source.country or ""
-                # One spelling, defined in sources.py and normalised as the
-                # list is loaded. This used to accept both `multi` and
-                # `multiple` because the shipped list held both, which meant
-                # neither was the right one and the next consumer would handle
-                # whichever it happened to meet.
-                if tag in src_mod.NON_COUNTRY_TAGS:
-                    tag = ""            # not a country, never store it as one
-                if len(here) == 1:
-                    j.country = here.pop()
-                elif here:
-                    # Several countries named. The board's tag is only usable
-                    # if it is one of them: "London / New York" on a UK board
-                    # really is partly UK, "Berlin / Paris" is not.
-                    j.country = tag if tag in here else ""
-                else:
-                    j.country = tag
-        counts[res.source.key] = len(jobs)
-        all_jobs.extend(jobs)
+        absorb(res)
 
     throttled = detect_throttling(results, counts, state.source_counts)
 
@@ -495,6 +543,15 @@ def _enrich_step(con, cfg) -> None:
     if not rows:
         return
     _say(f"  fetching {len(rows)} postings that arrived as headlines only...")
+    # Left on `enrich.run`'s own default of `fetch.DEFAULT_CONCURRENCY`, and
+    # NOT wired to `cfg.concurrency`, which looks like the obvious tidy-up and
+    # is a regression. Measured: this pass runs at 8.1 postings a second at 16
+    # workers and 13.1 at 32, and the last full scan enriched 958 postings, so
+    # the whole step is about two minutes of a fifty-minute run -- there is
+    # nothing here worth chasing. Meanwhile plenty of configs still carry the
+    # `concurrency: 4` the old advice recommended, and honouring that number
+    # here would take those runs from 16 workers down to 4 and turn two
+    # minutes into eight.
     got, tried = enrich.run(con, cfg, rows)
     if got:
         dropped = _rescreen(con, cfg)
