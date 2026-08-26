@@ -341,11 +341,25 @@ def test_a_rank_worker_that_dies_before_it_starts_unwedges_the_button():
         store.set_meta(con, "rank_state", "running")
         assert store.claim(con, "rank")
         real = store.connect
-        calls = {"n": 0}
+        # Keyed to the worker thread, not to a call count.
+        #
+        # `store.connect` is a module global, so patching it arms every caller
+        # in the process, and counting calls hands the injected failure to
+        # whichever one gets there first. That is fine on an idle machine and
+        # a coin toss on a loaded CI runner: this test passed on three of five
+        # runners, twelve times out of twelve in isolation, and failed in the
+        # full suite. A flaky test is worse than no test, because it teaches
+        # you to stop reading the red.
+        #
+        # The worker is the only caller on a non-main thread, and the main
+        # thread here reads through a connection it already holds, so this
+        # cannot be consumed by anything else.
+        armed = threading.Event()
+        armed.set()
 
         def flaky(p=None):
-            calls["n"] += 1
-            if calls["n"] == 1:
+            if armed.is_set() and threading.current_thread() is not threading.main_thread():
+                armed.clear()
                 raise sqlite3.OperationalError("database is locked")
             return real(p)
 
