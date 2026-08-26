@@ -145,6 +145,46 @@ jobs:
               f.write(f"refuse={'true' if refuse else 'false'}\n")
           PY
 
+      - name: The diff has to match the claim
+        # A pull request titled "Prune 2 dead source(s)" whose diff removed
+        # 17,171 of 17,810 sat open for three days. The branch had been cut
+        # before the harvest that grew the list, so its copy of sources.json
+        # was a wholesale revert wearing a prune's title, and every guard
+        # upstream of here passed: two boards really were dead, two is well
+        # under the cap, and the refusal threshold is a share of the run's own
+        # source count.
+        #
+        # None of those look at the artefact. This does. It compares the file
+        # about to be committed against the base branch and demands the net
+        # removal be exactly the number the title claims, which catches a
+        # stale branch, a bad merge, a truncated write, and anything else that
+        # makes the diff disagree with the sentence describing it.
+        if: steps.sum.outputs.dead != '0' && steps.sum.outputs.refuse != 'true'
+        run: |
+          git show "origin/$BASE_BRANCH:sources/sources.json" > /tmp/base.json
+          python3 - <<'EOF'
+          import json, os, sys
+          base = json.load(open("/tmp/base.json", encoding="utf-8"))["sources"]
+          head = json.load(open("sources/sources.json", encoding="utf-8"))["sources"]
+          bk = {s["url"] for s in base}
+          hk = {s["url"] for s in head}
+          removed, added = len(bk - hk), len(hk - bk)
+          claimed = int(os.environ["DEAD"])
+          print(f"base {len(base)}, head {len(head)}, removed {removed}, added {added}, claimed {claimed}")
+          if removed != claimed or added:
+              print(f"::error::the diff does not match the claim: it removes "
+                    f"{removed} and adds {added} while the title says {claimed}. "
+                    f"Refusing to open a pull request.")
+              sys.exit(1)
+          EOF
+        env:
+          # Through the environment, never interpolated into the script. A
+          # `${{ }}` inside a run block is substituted before the shell sees
+          # it, so the value becomes code; the repo's own test refuses it and
+          # caught this line.
+          DEAD: ${{ steps.sum.outputs.dead }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+
       - name: Open a pull request
         if: steps.sum.outputs.dead != '0' && steps.sum.outputs.refuse != 'true'
         uses: peter-evans/create-pull-request@v6

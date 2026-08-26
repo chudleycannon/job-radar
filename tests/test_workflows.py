@@ -450,3 +450,38 @@ def _run() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_run())
+
+
+def test_the_prune_pull_request_checks_its_diff_against_the_claim():
+    """A pull request titled "Prune 2 dead source(s)" whose diff removed
+    17,171 of 17,810 sat open for three days.
+
+    The branch had been cut before the harvest that grew the list, so its copy
+    of sources.json was a wholesale revert wearing a prune's title. Every
+    guard upstream passed, because all of them reason about the run: two
+    boards really were dead, two is far under the cap, and the refusal
+    threshold is a share of the run's own source count. None of them look at
+    the artefact that would actually be merged.
+    """
+    wf = _load("validate.yml")
+    steps = wf["jobs"]["validate"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    assert "The diff has to match the claim" in names
+
+    guard = names.index("The diff has to match the claim")
+    pr = next(i for i, s in enumerate(steps)
+              if "create-pull-request" in str(s.get("uses", "")))
+    assert guard < pr, "the check has to run before the pull request is opened"
+
+    body = steps[guard]["run"]
+    # It must compare against the base branch, not against itself. The branch
+    # name arrives through the environment rather than being interpolated into
+    # the script, which the injection test above insists on.
+    assert 'git show "origin/$BASE_BRANCH' in body
+    assert steps[guard]["env"].get("BASE_BRANCH")
+    assert "sources/sources.json" in body
+    # And it must fail rather than warn.
+    assert "sys.exit(1)" in body
+    assert "::error::" in body
+    # Removals and additions both, since a stale branch shows up as either.
+    assert "removed != claimed" in body and "added" in body
