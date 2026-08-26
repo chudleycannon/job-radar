@@ -191,6 +191,20 @@ jobs:
             # dashboard upload below. The roles are the output of the run, so
             # put them somewhere that always works before deciding the step
             # failed.
+            # Close the last one first. This runs on a schedule, so opening
+            # an issue per run and never closing one leaves a list that grows
+            # for ever and that nobody reads by the second week. The previous
+            # report is superseded by definition: the roles in it are already
+            # in the database, and this one lists what arrived since.
+            #
+            # `|| true` throughout, because a fork with Issues disabled must
+            # not fail the scan over its notifications, and the create below
+            # already handles that case.
+            gh issue list --state open --search 'in:title "New roles:"' \
+              --json number --jq '.[].number' 2>/dev/null | while read -r n; do
+                [ -n "$n" ] && gh issue close "$n" \
+                  --comment "Superseded by today's scan." >/dev/null 2>&1 || true
+            done || true
             if ! gh issue create --title "New roles: $(date -u +%Y-%m-%d) ($NEW)" --body-file body.md; then
               echo "::warning::could not open an issue. The roles are in the run summary and in the dashboard artifact."
               {
@@ -237,6 +251,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # Same rule as the roles report: one open failure notice, not one
+          # per failed run. A scan that fails every night for a week is one
+          # problem, and seven identical issues make it look like seven.
+          gh issue list --state open --search 'in:title "Scan failed:"' \
+            --json number --jq '.[].number' 2>/dev/null | while read -r n; do
+              [ -n "$n" ] && gh issue close "$n" \
+                --comment "Superseded by a later run." >/dev/null 2>&1 || true
+          done || true
           gh issue create \
             --title "Scan failed: run ${{ github.run_id }}" \
             --body "The scheduled scan did not finish. Nothing was scanned, or it stopped part-way, so no new roles were reported today.

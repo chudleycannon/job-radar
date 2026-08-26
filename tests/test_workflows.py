@@ -50,6 +50,10 @@ def _load(name: str) -> dict:
     return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
 
 
+def _text(name: str) -> str:
+    return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+
 def _files() -> list[Path]:
     return sorted(WORKFLOWS.glob("*.yml"))
 
@@ -485,3 +489,47 @@ def test_the_prune_pull_request_checks_its_diff_against_the_claim():
     assert "::error::" in body
     # Removals and additions both, since a stale branch shows up as either.
     assert "removed != claimed" in body and "added" in body
+
+
+def test_a_scheduled_job_closes_its_last_notice_before_opening_another():
+    """These run on a schedule and file an issue when they have something to
+    say. Opening one per run and never closing one leaves a list that grows
+    for ever and that nobody reads by the second week.
+
+    For the roles report the previous one is superseded by definition: its
+    roles are already in the database and the new one lists what arrived
+    since. For a failure notice, a job that fails every night for a week is
+    one problem, and seven identical issues make it look like seven.
+    """
+    for name in ("scan.yml", "validate.yml", "sync-skills.yml"):
+        text = _text(name)
+        creates = text.count("gh issue create")
+        # scan.yml mentions the command once more inside a comment.
+        if name == "scan.yml":
+            creates -= 1
+        closes = text.count("gh issue close")
+        assert creates > 0, f"{name} files no issue"
+        assert closes == creates, (
+            f"{name} opens {creates} kind(s) of issue and closes {closes}")
+        # Closing must never be able to fail the job: a fork with Issues
+        # disabled has to keep scanning.
+        for block in text.split("gh issue close")[1:]:
+            head = block[:400]
+            assert "|| true" in head or "2>/dev/null" in head, name
+
+
+def test_the_close_step_searches_by_the_title_it_writes():
+    """A search that does not match the title it files leaves the old issue
+    open and looks like it worked."""
+    import re
+    for name in ("scan.yml", "validate.yml", "sync-skills.yml"):
+        text = _text(name)
+        searched = set(re.findall(r"""in:title "([^"]+)\"""", text))
+        titled = set()
+        for m in re.finditer(r"--title \"([^\"$]*)", text):
+            t = m.group(1).strip()
+            if t:
+                titled.add(t)
+        for s in searched:
+            assert any(t.startswith(s.rstrip()) for t in titled), (
+                f"{name}: searches for {s!r} but files {sorted(titled)!r}")

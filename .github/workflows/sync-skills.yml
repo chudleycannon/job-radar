@@ -91,6 +91,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # One open notice, not one per failed run. A job that fails every
+          # night for a week is one problem, and seven identical issues make
+          # it look like seven. `|| true` throughout: a fork with Issues
+          # disabled must not fail the job over its own notifications.
+          gh issue list --state open --search 'in:title "Vendored skill sync failed:"' \
+            --json number --jq '.[].number' 2>/dev/null | while read -r n; do
+              [ -n "$n" ] && gh issue close "$n" \
+                --comment "Superseded by a later run." >/dev/null 2>&1 || true
+          done || true
           gh issue create \
             --title "Vendored skill sync failed: run ${{ github.run_id }}" \
             --body "The weekly rate-cv sync did not finish, so \`skills/rate-cv\` may now be behind its own repository.
