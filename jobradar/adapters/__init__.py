@@ -12,6 +12,8 @@ README rather than quietly presented as equal.
 from __future__ import annotations
 
 import re
+import sys
+import threading
 from dataclasses import dataclass
 from typing import Callable, Iterator
 
@@ -605,12 +607,75 @@ def prepare(src: Source) -> Source:
     return src
 
 
+# Every board this run could not read, in the order it happened: one
+# (company, platform, reason) per failure. A scan reads its own list back out
+# to say how many of its zeros were "no vacancies" and how many were "we could
+# not read it"; a test reads it to prove the difference was recorded at all.
+# Appended under a lock because the scan parses on sixteen worker threads.
+_unreadable: list[tuple[str, str, str]] = []
+_unreadable_lock = threading.Lock()
+
+# How many of them get a line of their own on stderr before this goes quiet.
+# The list keeps every one; the printing stops, because a platform that breaks
+# for all 4,078 of its boards would otherwise bury the rest of the scan's
+# output under 4,078 identical lines and the reader would lose the summary
+# that matters. The last line says how many were not printed.
+MAX_UNREADABLE_LINES = 20
+
+
+def unreadable() -> list[tuple[str, str, str]]:
+    """The boards `parse` could not read since `clear_unreadable`."""
+    with _unreadable_lock:
+        return list(_unreadable)
+
+
+def clear_unreadable() -> None:
+    with _unreadable_lock:
+        _unreadable.clear()
+
+
 def parse(payload, src: Source) -> list[Job]:
+    """Parse one board's payload, or record why not and return nothing.
+
+    Returning `[]` is still right: one malformed board must not end a run over
+    17,810 sources. Returning it SILENTLY is not, and that was the whole of
+    this function until now. A board that answers HTTP 200 with a holding
+    page, a login wall or a vendor error page raises inside its platform's
+    parser, the exception was swallowed here, and the source arrived at
+    `cmd_scan` as `counts[key] = 0` -- indistinguishable from an employer with
+    no vacancies, and counted in the line that says "N sources responded with
+    no postings at all".
+
+    `discover._parse_or_why` fixed exactly this for `validate` in 2715264,
+    because `validate --prune` deletes what it reads as dead. The scan path
+    was left as it was, so the same payload still produced the right answer
+    through one command and a wrong one through the other. This closes that:
+    the list is kept, and the failure is said out loud once, on stderr, where
+    a scan's own output is.
+
+    `KeyboardInterrupt` is gone from the handler with no change in behaviour.
+    It is a `BaseException`, so `except Exception` never caught it, and both
+    arms of the conditional returned the same empty list anyway.
+    """
     p = by_name(src.platform) or detect(src.url)
     try:
         return [j for j in p.parse(payload, src) if j.title and j.url]
     except Exception as e:  # a malformed board must not kill the whole run
-        return [] if not isinstance(e, KeyboardInterrupt) else []
+        why = f"{type(e).__name__}: {str(e)[:200]}"
+        with _unreadable_lock:
+            _unreadable.append((src.company, src.platform or p.name, why))
+            said = len(_unreadable)
+        if said <= MAX_UNREADABLE_LINES:
+            print(f"  ! {src.company}: the board answered, but its "
+                  f"{src.platform or p.name} response could not be read "
+                  f"({why}). That is not the same as having no postings.",
+                  file=sys.stderr)
+        elif said == MAX_UNREADABLE_LINES + 1:
+            print(f"  ! more boards answered with something that could not "
+                  f"be read; the rest are counted rather than listed. "
+                  f"`adapters.unreadable()` has all of them.",
+                  file=sys.stderr)
+        return []
 
 
 def platform_names() -> list[str]:

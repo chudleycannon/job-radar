@@ -25,6 +25,23 @@ _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
 
 
+class BoardUnreadable(Exception):
+    """The board answered, and what it answered is not a job listing.
+
+    Raised by a parser that can see the difference between "this employer has
+    no vacancies today" and "this page is not the listing at all". Those two
+    reach the rest of the tool as the same number -- zero postings -- and only
+    one of them is a fact about the employer. `validate --prune` deletes on
+    the first reading, so a board that answers HTTP 200 with a login wall gets
+    removed from the shipped source list for having said nothing.
+
+    `discover._parse_or_why` already turns any exception out of a parser into
+    "could not be read", which is the verdict that is never pruned, and
+    `adapters.parse` now says so out loud instead of silently returning an
+    empty list. So a parser raising this is the way to be heard.
+    """
+
+
 def _text(v: Any) -> str:
     """Flatten whatever an API returned into a readable string.
 
@@ -2003,6 +2020,26 @@ _ICIMS_LINK = re.compile(
 _ICIMS_LOC = re.compile(
     r'field-label">Job Locations?</span>\s*<span[^>]*>\s*(.*?)\s*</span>', re.S)
 
+# iCIMS states the page's verdict in one div and only when there is a verdict
+# to state. `iCIMS_GenericMessage` is that div. The other two error boxes on
+# these pages -- `iCIMS_NoCookies` and the geolocation one -- are boilerplate
+# and sit on healthy boards too: 192 of 200 boards with live postings carry
+# the cookie box, so anything keying on `iCIMS_ErrorMessage` alone would call
+# nearly every board broken.
+_ICIMS_VERDICT = re.compile(
+    r'class="[^"]*iCIMS_GenericMessage[^"]*"[^>]*>(.*?)</div>', re.S)
+
+# The one verdict that really does mean "this board has nothing today".
+# Everything else in that div is the board declining to show us the listing,
+# which is not the same fact and must not be recorded as one. Measured on
+# 2026-08-26 across 949 live iCIMS boards: four said this, and
+# referral-publicisgroupe.icims.com answered HTTP 200 with "Error: Login is
+# required to search for jobs." Both parsed to zero postings, both were
+# reported as a board with no vacancies, and `validate --prune` deletes a
+# board it reads as dead.
+_ICIMS_REALLY_EMPTY = re.compile(
+    r"no jobs were found|no results were found|no matching", re.I)
+
 
 def parse_icims(payload: Any, src: Source) -> Iterator[Job]:
     """iCIMS renders its results into an iframe, so the plain search page comes
@@ -2016,7 +2053,19 @@ def parse_icims(payload: Any, src: Source) -> Iterator[Job]:
     text = payload if isinstance(payload, str) else ""
     seen = set()
 
-    for block in _ICIMS_ITEM.findall(text):
+    rows = _ICIMS_ITEM.findall(text)
+    if not rows:
+        verdict = _ICIMS_VERDICT.search(text)
+        said = _text(verdict.group(1)) if verdict else ""
+        if said and not _ICIMS_REALLY_EMPTY.search(said):
+            # Not an empty board. The board answered and refused, and the
+            # difference is the whole point of this exception existing.
+            raise BoardUnreadable(
+                f"iCIMS answered HTTP 200 and said {said[:160]!r} instead of "
+                f"returning a listing, so this is not a board with no "
+                f"vacancies")
+
+    for block in rows:
         lm = _ICIMS_LINK.search(block)
         if not lm:
             continue

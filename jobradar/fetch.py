@@ -97,6 +97,46 @@ DEFAULT_CONCURRENCY = 16
 # whoever is running this, and a four-figure worker count only exhausts them.
 MAX_CONCURRENCY = 64
 
+# What a host is slowed down by when it answers 429, and how far that can go.
+#
+# `PER_HOST_RPS` above is a table somebody measured once. Measured again on
+# 2026-08-26 against the 0.7 in it: a run over 3,568 bundled sources, paced at
+# exactly that rate, got 41 of its 419 apply.workable.com boards (9.8%) back
+# as HTTP 429 after their retries. Every one of those employers was UNKNOWN
+# for that run. The refusals began at the 176th request to that host and
+# continued at roughly one in four to the end of it.
+#
+# What it is NOT, because all three were checked against the same host the
+# same day and every one of them drew zero refusals: 250 boards single
+# threaded at 0.7/s; 250 at 0.35/s; 150 across eight workers at 0.7/s with
+# eight requests in flight at the peak. So neither the instantaneous rate nor
+# the concurrency explains it on its own, and no number in a static table is
+# going to. It behaves like a budget that a long run exhausts and that comes
+# back with time, and a table cannot know where a run is in one.
+#
+# What matters more than the mechanism is that nothing here responded to it.
+# The circuit breaker arms on CONSECUTIVE_429_LIMIT refusals IN A ROW, these
+# were interleaved with successes, and `note_ok` reset the run every time. So
+# the host said no 41 times and the pacing it was saying no to never changed.
+#
+# Slowing down is the right answer where blocking is the wrong one: a host
+# serving between 429s is busy, not shut, and
+# `test_the_breaker_needs_a_run_of_refusals_not_a_scattered_few` pins that it
+# must not be shut out. Halving the rate spends the budget slower, keeps every
+# board reachable, and costs only time.
+#
+# The cap is what stops a bad afternoon turning into an eight-hour scan: at
+# 8x, Workable's 0.7/s becomes one request every 11 seconds, and past that
+# point the honest answer is that the host does not want this traffic today.
+HOST_SLOWDOWN_STEP = 2.0
+MAX_HOST_SLOWDOWN = 8.0
+
+# Successes on one host before its gap is narrowed again by one step. Recovery
+# has to be slower than the slowdown, or a host that refuses one request in
+# four ends up oscillating around the rate that refuses. Twenty is about three
+# times the run of successes Workable gave between refusals.
+OK_RUN_TO_SPEED_UP = 20
+
 
 class HostLimiter:
     """A minimum gap between requests to the same host, across all workers.
@@ -121,6 +161,10 @@ class HostLimiter:
         # Consecutive sources on a host that spent all their retries and still
         # got 429. See `note_refusal`.
         self._refusals: dict[str, int] = defaultdict(int)
+        # What this host's configured gap is currently multiplied by, and the
+        # run of clean answers since it was last widened. See `note_throttle`.
+        self._slowdown: dict[str, float] = defaultdict(lambda: 1.0)
+        self._ok_run: dict[str, int] = defaultdict(int)
         self._lock = threading.Lock()
 
     def gap_for(self, host: str) -> float:
@@ -133,7 +177,12 @@ class HostLimiter:
         if self.rps <= 0:
             return 0.0
         rps = min(self.rps, self.overrides.get(host, self.rps))
-        return 1.0 / rps if rps > 0 else 0.0
+        if rps <= 0:
+            return 0.0
+        # Multiplied, not replaced, so a host that has been slowed by its own
+        # 429s stays slower than the table asked for rather than being reset
+        # to it on the next request.
+        return (1.0 / rps) * self._slowdown.get(host, 1.0)
 
     def block(self, url: str, seconds: float) -> None:
         """Record that this host has shut the door, and for how long.
@@ -159,11 +208,47 @@ class HostLimiter:
         has to be a run of CONSECUTIVE refusals rather than a total. Without
         this, a long scan would eventually accumulate enough scattered 429s
         from an otherwise healthy host to arm the breaker against it.
+
+        A run of clean answers also earns back some of the pacing a 429 cost,
+        one step at a time. Without that, one refusal early in a scan would
+        slow a host for the remaining seventeen thousand sources, and a
+        permanent penalty for a momentary refusal is its own kind of wrong.
         """
         host = urlparse(url).netloc
         with self._lock:
             if self._refusals.get(host):
                 self._refusals[host] = 0
+            if self._slowdown.get(host, 1.0) > 1.0:
+                self._ok_run[host] += 1
+                if self._ok_run[host] >= OK_RUN_TO_SPEED_UP:
+                    self._ok_run[host] = 0
+                    self._slowdown[host] = max(
+                        1.0, self._slowdown[host] / HOST_SLOWDOWN_STEP)
+
+    def note_throttle(self, url: str) -> float:
+        """This host answered 429. Widen its gap, and say what it now is.
+
+        Separate from `note_refusal`, and it fires earlier: `note_refusal`
+        only runs once a source has spent every retry and is being given up
+        on, which on a host refusing one request in four never happens three
+        times in a row. This fires on the refusal itself, including the ones
+        that then succeed on retry, because those are the same signal and
+        they are the only signal such a host gives.
+
+        Returns the multiplier now in force, so a caller can say out loud
+        that it has slowed down rather than doing it silently.
+        """
+        host = urlparse(url).netloc
+        with self._lock:
+            self._ok_run[host] = 0
+            widened = min(self._slowdown.get(host, 1.0) * HOST_SLOWDOWN_STEP,
+                          MAX_HOST_SLOWDOWN)
+            self._slowdown[host] = widened
+        return widened
+
+    def slowdown_for(self, url: str) -> float:
+        """How much this host's configured gap is currently multiplied by."""
+        return self._slowdown.get(urlparse(url).netloc, 1.0)
 
     def note_refusal(self, url: str) -> float:
         """One source has now spent all its retries and still got 429.
@@ -488,6 +573,15 @@ def fetch_one(
 
             if r.status_code == 429 or 500 <= r.status_code < 600:
                 last = f"HTTP {r.status_code}"
+                # Every 429, not only the ones that end in giving up.
+                # `note_refusal` below runs once a source has spent all its
+                # retries, and needs CONSECUTIVE_429_LIMIT of those in a row;
+                # a host refusing one request in four never produces that, so
+                # nothing here would otherwise ever change the rate. Measured
+                # on apply.workable.com: 41 of 419 boards came back unknown
+                # and the pacing stayed exactly as it was.
+                if r.status_code == 429 and lim is not None:
+                    lim.note_throttle(src.url)
                 wait = retry_after_seconds(r.headers.get("Retry-After"))
                 # A Retry-After measured in hours is not a pause, it is a
                 # refusal, and retrying it can only fail more slowly. Record it
@@ -632,6 +726,43 @@ def _root_cause(e: BaseException, limit: int = 120) -> str:
     if not text or text == type(e).__name__:
         return ""
     return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
+
+def _no_rows(src: Source, first_error: "Result | None",
+             answered: bool) -> Result:
+    """What a paged fetcher returns when it walked away with no rows.
+
+    Three of the fetchers here spelled this `Result(src, error="no pages
+    returned")`, which says two different things in one string and gets one of
+    them wrong. A board that never answered and a board that answered with an
+    empty result set are not the same event, and the difference is the one
+    this whole file exists to keep: `ok` False means "we could not read it",
+    and a search that legitimately matched nothing was being reported that
+    way.
+
+    Measured live on 2026-08-26: Orano's Avature board, searched for a title
+    it has no vacancy for, answers HTTP 200 with a perfectly good results page
+    holding zero rows, and `fetch_avature` returned `ok=False, error="no pages
+    returned"`. `cmd_scan` counts that source under "did not respond" instead
+    of "responded with no postings at all", so the run's own summary is wrong
+    about which of the two happened, and the reader is told nothing about a
+    board that answered them.
+
+    So: a real failure wins, because half an answer is not an answer. Failing
+    that, a board that answered gets an empty payload, which every parser here
+    reads as no jobs. Only a fetcher that never got as far as a response
+    reports one.
+    """
+    if first_error is not None:
+        return first_error
+    if answered:
+        # `ok` is True: error is None and the payload is a string, empty.
+        # The board was read and had nothing in it, which is a fact about the
+        # board rather than about us.
+        return Result(src, payload="")
+    return Result(src, error="no page was ever requested, so nothing is "
+                             "known about this board")
+
 
 def fetch_workday(
     src: Source,
@@ -815,6 +946,7 @@ def fetch_nhs(
     session = _thread_session()
     parts: list[str] = []
     first_error: Result | None = None
+    answered = False
     sep = "&" if "?" in src.url else "?"
 
     truncated = False
@@ -832,6 +964,7 @@ def fetch_nhs(
                                  status=res.status, throttled=res.throttled,
                                  transport=res.transport)
             break
+        answered = True
         if "search-result" not in res.payload:
             break
         parts.append(res.payload)
@@ -846,7 +979,7 @@ def fetch_nhs(
     else:
         truncated = True
     if not parts:
-        return first_error or Result(src, error="no pages returned")
+        return _no_rows(src, first_error, answered)
     return Result(src, payload="".join(parts), truncated=truncated)
 
 
@@ -1187,6 +1320,10 @@ def fetch_avature(
     pages: list[str] = []
     seen: set[str] = set()
     first_error: Result | None = None
+    # Whether the board ever answered, whatever was in the answer. See
+    # `_no_rows` for why that is not the same question as whether any page
+    # was kept.
+    answered = False
 
     # An empty term means the unfiltered board, which is right for the small
     # tenants: Metro Bank publish six roles and a keyword search would only
@@ -1208,6 +1345,7 @@ def fetch_avature(
                     throttled=res.throttled,
                     transport=res.transport)
                 break
+            answered = True
             fresh = {u for u in _AV_JOB.findall(res.payload)} - seen
             if not fresh:
                 break
@@ -1225,7 +1363,7 @@ def fetch_avature(
         else:
             truncated = True
     if not pages:
-        return first_error or Result(src, error="no pages returned")
+        return _no_rows(src, first_error, answered)
     # `parse_avature` already drops a repeated /JobDetail/ link, so joining the
     # pages is safe and keeps the parser a pure function of one HTML string.
     return Result(src, payload="".join(pages), truncated=truncated)
@@ -1263,6 +1401,7 @@ def fetch_rmk(
     pages: list[str] = []
     seen: set[str] = set()
     first_error: Result | None = None
+    answered = False
 
     for term in (terms or [""])[:3]:
         truncated = False
@@ -1278,6 +1417,7 @@ def fetch_rmk(
                     throttled=res.throttled,
                     transport=res.transport)
                 break
+            answered = True
             fresh = set(re.findall(r'href="([^"]*?/job/[^"?]+)"',
                                    res.payload)) - seen
             # Stop on nothing new, never on a short page. A tenant that serves
@@ -1296,7 +1436,7 @@ def fetch_rmk(
         else:
             truncated = True
     if not pages:
-        return first_error or Result(src, error="no pages returned")
+        return _no_rows(src, first_error, answered)
     return Result(src, payload="".join(pages), truncated=truncated)
 
 
