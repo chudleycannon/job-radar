@@ -367,7 +367,19 @@ def test_a_rank_worker_that_dies_before_it_starts_unwedges_the_button():
         try:
             with _quiet_threads():
                 serve._spawn_rank(str(db), None)
-                _settle(lambda: store.get_meta(con, "rank_state") == "idle")
+                # Wait for the thing this test actually asserts, not for a
+                # proxy for it. `_spawn_rank` sets rank_state to idle and then
+                # releases the lock, so settling on the state alone leaves a
+                # window where the state has flipped and the lock has not been
+                # given back. Wide enough to lose on a loaded Windows runner
+                # and never on this machine, which is how it failed: green on
+                # four runners of five, and then a PermissionError on the way
+                # out because the assertion raised before the connection was
+                # closed and Windows will not delete an open file.
+                _settle(lambda: store.get_meta(con, "rank_state") == "idle"
+                        and con.execute(
+                            "SELECT 1 FROM locks WHERE name='rank'"
+                        ).fetchone() is None)
         finally:
             store.connect = real
         assert store.get_meta(con, "rank_state") == "idle"

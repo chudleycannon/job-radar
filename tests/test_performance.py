@@ -356,11 +356,24 @@ def test_the_benchmark_times_the_request_and_not_the_wait_for_it():
     is mostly the pacing: about 1.4s for a Workable request that takes 0.21s.
     Reading it here would blame the network for a delay this tool chose, and
     the entire finding is that Workable's 50 minutes are self-imposed."""
+    import ast
+    import textwrap
+
     bench = _bench()
-    src = inspect.getsource(bench.measure_platforms)
-    # The docstring explains exactly this trap, so strip it before looking:
-    # otherwise the test fails on its own explanation of why it exists.
-    src = src.replace(bench.measure_platforms.__doc__ or "", "")
+    # The docstring explains exactly this trap, so it has to come out before
+    # looking, or the test fails on its own explanation of why it exists.
+    #
+    # Removed by parsing rather than by `src.replace(__doc__, "")`, which
+    # worked everywhere until Python 3.13 and then failed only there: 3.13
+    # dedents docstrings when it stores them, so `__doc__` no longer appears
+    # verbatim in the indented source and the replace silently did nothing.
+    tree = ast.parse(textwrap.dedent(inspect.getsource(bench.measure_platforms)))
+    fn = tree.body[0]
+    if (fn.body and isinstance(fn.body[0], ast.Expr)
+            and isinstance(fn.body[0].value, ast.Constant)
+            and isinstance(fn.body[0].value.value, str)):
+        fn.body = fn.body[1:]
+    src = ast.unparse(fn)
     assert ".elapsed" not in src, (
         "measure_platforms is reading Result.elapsed, which on a paced host "
         "reports the limiter wait as though it were latency")
