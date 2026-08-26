@@ -6497,7 +6497,14 @@ def test_an_ordinary_429_eventually_shuts_the_host():
         f"{calls['n']} requests sent; the breaker should arm after {armed} "
         f"sources have each spent three attempts, and spare the other 9")
     left = lim.blocked_for("https://busy.example.com/x")
-    assert 0 < left <= fetch_mod.BREAKER_BLOCK_SECONDS, (
+    # A hair of tolerance on the upper bound, and the reason is worth knowing.
+    # `blocked_for` is `(monotonic() + 300) - monotonic()`, and Windows'
+    # monotonic clock ticks about every 15.6ms, so both calls can land on the
+    # same tick and the subtraction returns 300.00000000000006. It failed on
+    # Windows and only Windows, and the assertion message added when it first
+    # went red is what named the cause in one look rather than another round
+    # of guessing at thread scheduling.
+    assert 0 < left <= fetch_mod.BREAKER_BLOCK_SECONDS + 0.01, (
         f"breaker armed after {calls['n']} calls but blocked_for returned "
         f"{left}; block map={dict(lim._blocked_until)} "
         f"refusals={dict(lim._refusals)}")
