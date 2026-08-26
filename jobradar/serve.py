@@ -31,6 +31,10 @@ class Handler(BaseHTTPRequestHandler):
     db_path = None
     docs_base = None
     config_path = None
+    # The host `serve()` was asked to bind to, so `_expected_hosts` can accept
+    # the name the browser will actually send. Empty means loopback only,
+    # which is what every test and the default both want.
+    bind_host = ""
     # `salary.currency` from the config, so the salary sort groups by the
     # currency the FLOOR is in rather than by whichever one happens to be
     # commonest on the board. Read once at startup: it cannot change while
@@ -126,6 +130,23 @@ class Handler(BaseHTTPRequestHandler):
                 pass             # the client went away mid-answer
 
     def do_GET(self):
+        # Reads were exempt from this and should not have been.
+        #
+        # The Host check exists to stop DNS rebinding, and it was only on the
+        # POSTs and on /open. So a page on evil.example that had rebound its
+        # own name to 127.0.0.1 could not WRITE anything -- but it could ask
+        # for `/` and `/api/jobs` same-origin, and read back the whole board:
+        # every employer, every application status, the private note on each
+        # role, the fit scores, the text of every screening, and the paths of
+        # the generated documents under ~/job-applications. For someone job
+        # hunting out of a current job that is the most sensitive thing this
+        # tool holds, and it was the one page not behind the check.
+        #
+        # Verified by sending `Host: evil.example:PORT` to `/`: 200 and the
+        # full dashboard before this, 403 after.
+        if not self._same_origin():
+            return self._json(
+                {"ok": False, "error": "cross-origin request refused"}, 403)
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             con = store.connect(self.db_path)
@@ -259,9 +280,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def _expected_hosts(self) -> set[str]:
-        """The names this server is allowed to be reached by."""
+        """The names this server is allowed to be reached by.
+
+        The loopback names, plus whatever `--host` was actually given. Without
+        the last one, `job-radar serve --host 0.0.0.0` opened the browser at
+        `http://0.0.0.0:8765/`, and every write from that page was refused with
+        "cross-origin request refused" -- a flag that silently broke the
+        buttons. It is not a hole: a rebinding attack needs the ATTACKER's
+        name in Host, and that is a name the person running this never typed.
+        """
         port = self.server.server_address[1]
-        return {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+        if self.bind_host:
+            allowed.add(f"{self.bind_host}:{port}")
+        return allowed
 
     def _same_origin(self) -> bool:
         """Reject cross-site posts, and reject rebinding.
@@ -627,6 +659,7 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
 
     Handler.db_path = db_path
     Handler.docs_base = docs_base
+    Handler.bind_host = host or ""
     # Without this the runner resolved a config from its working directory, so
     # generation used whatever config.yaml happened to be in cwd rather than
     # the one passed on the command line.

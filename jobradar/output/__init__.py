@@ -33,7 +33,14 @@ def write_markdown(path: Path, new: list[Job], seen: list[Job], meta: dict) -> P
         for j in js:
             pay = j.salary.label()
             loc = j.location or "location not stated"
-            out.append(f"- **[{j.title}]({j.url})** · {j.company} · {loc} · {pay} · score {j.score:.0f}")
+            # Same check the dashboard applies. The apply URL is third-party
+            # data on six of the adapters, and a Markdown previewer that
+            # renders to HTML without sanitising will happily make
+            # `[title](javascript:...)` a live link. A role with no usable
+            # link is still worth listing, so it loses the link, not the row.
+            link = html_out.safe_url(j.url)
+            head = f"[{j.title}]({link})" if link else f"{j.title} (no usable link)"
+            out.append(f"- **{head}** · {j.company} · {loc} · {pay} · score {j.score:.0f}")
             if j.flags:
                 out.append(f"  - flags: {'; '.join(j.flags)}")
         return "\n".join(out) or "_nothing_"
