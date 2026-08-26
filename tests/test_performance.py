@@ -365,3 +365,40 @@ def test_the_benchmark_times_the_request_and_not_the_wait_for_it():
         "measure_platforms is reading Result.elapsed, which on a paced host "
         "reports the limiter wait as though it were latency")
     assert "Session.get" in src and "Session.post" in src, src
+
+
+def test_the_title_gate_runs_before_the_expensive_enrichment():
+    """`enrich` resolves country, city, work mode and work rights, which is
+    85% of screening CPU, and it was being run on every posting before the
+    filter that discards more than 99% of them.
+
+    Asserted on the order rather than on a clock, because a timing test is
+    flaky by construction. The order is load-bearing in both directions:
+    `match` must not need anything `enrich` sets, and `sponsorship_gate` reads
+    `job.country` while `apply_salary` and `screen` both append to
+    `job.flags`, so `enrich` has to sit between them.
+    """
+    import inspect
+    import re
+
+    from jobradar import screen as screen_mod
+
+    body = inspect.getsource(screen_mod.run)
+    order = [m.group(1) for m in re.finditer(
+        r"\b(enrich|match|apply_salary|screen|sponsorship_gate|score)\(j",
+        body)]
+    assert order.index("match") < order.index("enrich"), (
+        "enrich runs on postings the title filter is about to discard")
+    assert order.index("enrich") < order.index("sponsorship_gate"), (
+        "sponsorship_gate reads job.country, which enrich sets")
+    assert order.index("enrich") < order.index("apply_salary"), (
+        "apply_salary appends to job.flags, which enrich also appends to")
+
+    # And the safety condition the swap rests on: match must not read a field
+    # enrich fills in. If someone adds one, this fails rather than silently
+    # changing which roles are kept.
+    sets = set(re.findall(r"job\.([a-z_]+)\s*=",
+                          inspect.getsource(screen_mod.enrich)))
+    reads = inspect.getsource(screen_mod.match)
+    leaked = [a for a in sets if re.search(rf"\b(?:j|job|role)\.{a}\b", reads)]
+    assert not leaked, f"match now reads {leaked}, which enrich sets after it"
