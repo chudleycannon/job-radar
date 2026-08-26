@@ -215,6 +215,18 @@ def cmd_scan(args) -> int:
              f"platform, which can mean paging stopped early rather than that "
              f"the board is that size: {', '.join(pinned[:6])}")
 
+    # A heuristic above, a fact here. `pinned_to_one_page` guesses from the
+    # count; this is the pager itself saying it stopped because it ran out of
+    # allowance rather than because the board ran out of postings. Every paged
+    # fetcher has a cap, because a broken stop condition with no cap behind it
+    # is an infinite loop, and until now every one of them was silent about
+    # hitting it: the first 200 of 1,055 came back looking exactly like a
+    # complete answer.
+    capped = sorted({r.source.company for r in results if r.truncated})
+    if capped:
+        _say(f"  ! {len(capped)} source(s) had more to give and were cut off at "
+             f"the page limit, so these are incomplete: {', '.join(capped[:6])}")
+
     kept, dropped = screen_run(all_jobs, cfg)
 
     # The database is the source of truth for what you already did about a

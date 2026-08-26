@@ -48,6 +48,16 @@ class Result:
     # a human and this is for code: `validate --prune` has to be able to ask
     # "was this the board's answer or this machine's?" without parsing prose.
     transport: str | None = None
+    # Set when a paged fetcher stopped because it hit its own page cap while
+    # the board still had more to give. Every pager here has a cap, because a
+    # broken stop condition with no cap behind it is an infinite loop. The cap
+    # is the right guard and the wrong thing to be silent about: a result that
+    # is the first N of an unknown number reads exactly like a complete one,
+    # which is the failure-that-looks-like-success this file keeps producing.
+    # `ok` stays True — the rows that came back are real, there are just more
+    # of them — so this is a fact ABOUT a good result, like `throttled`, not a
+    # kind of failure. See `capped_sources`.
+    truncated: bool = False
 
     @property
     def ok(self) -> bool:
@@ -587,7 +597,7 @@ def fetch_workday(
     timeout: int = 20,
     retries: int = 2,
     user_agent: str = "job-radar/0.1",
-    max_pages: int = 3,
+    max_pages: int = 10,
 ) -> Result:
     """Workday needs its own path, for two reasons.
 
@@ -599,14 +609,36 @@ def fetch_workday(
     Workday is also the only platform here with server-side search, so the
     filtering happens at their end instead: one query per wanted title,
     shallowly paged. That turns a thousand postings into the handful that
-    matter, in two or three requests rather than fifty.
+    matter, in a few requests rather than fifty.
+
+    `max_pages` was 3, and three pages was too few by a wide margin. Workday's
+    `searchText` is a FULL-TEXT match, not a title match, so a wanted title
+    scores against every posting whose description happens to mention it, and
+    the genuine matches are NOT all at the top. Measured against NVIDIA for
+    "engineering manager": page 1 held 20 real title matches, pages 4 and 5
+    held none, and pages 7, 8 and 9 held another 19 between them. Relevance
+    does not decay monotonically, so stopping early on a quiet page would be
+    just as wrong as the old fixed cap; the only honest answer is to page
+    further and say when the cap bit.
+
+    Across 30 tenants that took matching titles from 83 to 134. It cost 139
+    requests instead of 243, and almost all of that went to the five biggest
+    boards: 24 of the 30 spent exactly the same three requests as before,
+    because a board smaller than one page still stops on its first short page.
     """
     session = _thread_session()
     merged: dict[str, dict] = {}
     total = 0
     first_error: Result | None = None
+    truncated = False
 
     for term in (terms or [""])[:3]:
+        # Per term, and captured from the FIRST page of that term's search.
+        # Workday reports the real hit count on page one and then returns
+        # `total: 0` on every later page of the same search, so a running
+        # `max()` across the whole walk is the only reading of it that is
+        # stable, and a per-term copy is the only one that can bound a term.
+        term_total = 0
         for page in range(max_pages):
             probe = Source(
                 company=src.company, url=src.url, platform="workday",
@@ -629,17 +661,28 @@ def fetch_workday(
                                          transport=res.transport)
                 break
             posts = res.payload.get("jobPostings") or []
-            total = max(total, int(res.payload.get("total") or 0))
+            page_total = int(res.payload.get("total") or 0)
+            total = max(total, page_total)
+            if page == 0:
+                term_total = page_total
             for p in posts:
                 key = p.get("externalPath") or p.get("title")
                 if key:
                     merged.setdefault(key, p)
             if len(posts) < 20:
                 break
+            # The cap bit while this term still had hits to give. Said out
+            # loud rather than returned as though it were everything: the
+            # first 200 of 1,055 reads exactly like a complete answer, and a
+            # reader has no way to tell them apart. `ok` stays True because
+            # the rows are real; there are simply more of them.
+            if page == max_pages - 1 and term_total > max_pages * 20:
+                truncated = True
 
     if not merged and first_error is not None:
         return first_error
-    return Result(src, payload={"jobPostings": list(merged.values()), "total": total})
+    return Result(src, payload={"jobPostings": list(merged.values()),
+                                "total": total}, truncated=truncated)
 
 
 def fetch_workable_search(
@@ -705,8 +748,11 @@ def fetch_workable_search(
 
     if not merged and first_error is not None:
         return first_error
+    # On the Result, not inside the payload. A parser should not have to know
+    # about a fetcher's paging, and `detect_throttling` and the scan summary
+    # read Results, not payloads.
     return Result(src, payload={"jobs": list(merged.values()),
-                                "totalSize": total, "truncated": truncated})
+                                "totalSize": total}, truncated=truncated)
 
 
 def fetch_nhs(
@@ -728,6 +774,7 @@ def fetch_nhs(
     first_error: Result | None = None
     sep = "&" if "?" in src.url else "?"
 
+    truncated = False
     for page in range(1, max_pages + 1):
         probe = Source(company=src.company, url=f"{src.url}{sep}page={page}",
                        platform="nhs", sector=src.sector, country=src.country)
@@ -749,9 +796,15 @@ def fetch_nhs(
         if res.payload.count('data-test="search-result"') < 10:
             break
 
+    # for/else fires only when the range is exhausted, which means
+    # the cap stopped the walk rather than the board running out.
+    # Said out loud: the first N of an unknown number reads exactly
+    # like a complete answer. See Result.truncated.
+    else:
+        truncated = True
     if not parts:
         return first_error or Result(src, error="no pages returned")
-    return Result(src, payload="".join(parts))
+    return Result(src, payload="".join(parts), truncated=truncated)
 
 
 # Reed hard-limits a page to 100 and documents it. Three pages per keyword is
@@ -904,6 +957,7 @@ def fetch_adzuna(
     total = 0
     first_error: Result | None = None
 
+    truncated = False
     for page in range(1, max_pages + 1):
         paged = _ADZUNA_PAGE_PATH.sub(rf"\g<1>{page}", base)
         probe = Source(
@@ -932,9 +986,16 @@ def fetch_adzuna(
         if not rows or len(merged) >= total > 0:
             break
 
+    # for/else fires only when the range is exhausted, which means
+    # the cap stopped the walk rather than the board running out.
+    # Said out loud: the first N of an unknown number reads exactly
+    # like a complete answer. See Result.truncated.
+    else:
+        truncated = True
     if not merged and first_error is not None:
         return first_error
-    return Result(src, payload={"results": list(merged.values()), "count": total})
+    return Result(src, payload={"results": list(merged.values()), "count": total},
+                  truncated=truncated)
 
 
 def fetch_phenom(
@@ -977,6 +1038,7 @@ def fetch_phenom(
         # shared counter would call the second search complete on the first
         # one's rows.
         got = 0
+        truncated = False
         for page in range(max_pages):
             probe = Source(
                 company=src.company, url=f"https://{host}/widgets", platform="phenom",
@@ -1007,11 +1069,17 @@ def fetch_phenom(
             if not jobs or got >= int(er.get("totalHits") or 0) > 0:
                 break
 
+        # for/else fires only when the range is exhausted, which means
+        # the cap stopped the walk rather than the board running out.
+        # Said out loud: the first N of an unknown number reads exactly
+        # like a complete answer. See Result.truncated.
+        else:
+            truncated = True
     if not merged:
         # Fall back to the ten embedded in the page rather than returning none.
         return fetch_one(src, timeout=timeout, retries=retries, user_agent=user_agent)
     return Result(src, payload={"refineSearch": {"data": {"jobs": list(merged.values())},
-                                                 "totalHits": total}})
+                                                 "totalHits": total}}, truncated=truncated)
 
 
 def _with_query(url: str, **params: str) -> str:
@@ -1080,6 +1148,7 @@ def fetch_avature(
     # An empty term means the unfiltered board, which is right for the small
     # tenants: Metro Bank publish six roles and a keyword search would only
     # hide four of them.
+    truncated = False
     for term in (terms or [""])[:3]:
         url = _with_query(src.url, semanticSearch=term) if term else src.url
         for _ in range(max_pages):
@@ -1106,11 +1175,17 @@ def fetch_avature(
                 break
             url = nxt.group(1).replace("&amp;", "&")
 
+        # for/else fires only when the range is exhausted, so the cap
+        # stopped the walk rather than the board running out. The first
+        # N of an unknown number reads exactly like a complete answer.
+        # See Result.truncated.
+        else:
+            truncated = True
     if not pages:
         return first_error or Result(src, error="no pages returned")
     # `parse_avature` already drops a repeated /JobDetail/ link, so joining the
     # pages is safe and keeps the parser a pure function of one HTML string.
-    return Result(src, payload="".join(pages))
+    return Result(src, payload="".join(pages), truncated=truncated)
 
 
 # SuccessFactors RMK pages on `startrow` and serves twenty-five rows, and no
@@ -1147,6 +1222,7 @@ def fetch_rmk(
     first_error: Result | None = None
 
     for term in (terms or [""])[:3]:
+        truncated = False
         for page in range(max_pages):
             url = _with_query(src.url, q=term, startrow=str(page * RMK_PAGE))
             probe = Source(company=src.company, url=url, platform="rmk",
@@ -1170,9 +1246,15 @@ def fetch_rmk(
             seen |= fresh
             pages.append(res.payload)
 
+        # for/else fires only when the range is exhausted, which means
+        # the cap stopped the walk rather than the board running out.
+        # Said out loud: the first N of an unknown number reads exactly
+        # like a complete answer. See Result.truncated.
+        else:
+            truncated = True
     if not pages:
         return first_error or Result(src, error="no pages returned")
-    return Result(src, payload="".join(pages))
+    return Result(src, payload="".join(pages), truncated=truncated)
 
 
 # Taleo's career section page is a JavaScript shell. It carries the search
