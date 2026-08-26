@@ -20,6 +20,14 @@ dependencies = [
 Homepage = "https://github.com/maccydee/job-radar"
 Issues = "https://github.com/maccydee/job-radar/issues"
 
+[project.optional-dependencies]
+# A CV is most often a PDF, and reading one is the difference between scoring
+# somebody's career and scoring the bytes of a file header. It is optional
+# rather than required because the tool's whole install is requests and PyYAML,
+# and everything except reading a PDF CV works without it. `rank` says so by
+# name when it is missing rather than failing obscurely.
+pdf = ["pypdf>=4"]
+
 [project.scripts]
 job-radar = "jobradar.cli:main"
 

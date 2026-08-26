@@ -789,15 +789,34 @@ def shared_ngram(a: str, b: str, n: int = 6) -> str:
 
 
 def _to_docx(d: Path, md_name: str, docx_name: str):
-    """Write a .docx alongside the Markdown, and hand back whichever exists."""
+    """Write the document out, and hand back the best copy that exists.
+
+    Three files end up in the folder and they are not alternatives. The
+    Markdown is the source. The .docx is the editable original, and some
+    applicant tracking systems still parse it more reliably than a PDF. The
+    PDF is what a person actually sends: it renders the same everywhere and
+    it cannot be edited by accident on the way.
+
+    The PDF is preferred when it exists, because handing back the .docx meant
+    every caller and every dashboard link offered the file nobody sends. It
+    needs LibreOffice, so a machine without one gets the .docx and no error:
+    see pdf.docx_to_pdf.
+    """
     md = d / md_name
     if not md.exists():
         return ""
     try:
         from .docx import markdown_to_docx
-        return markdown_to_docx(md.read_text(encoding="utf-8", errors="ignore"), d / docx_name)
+        made = markdown_to_docx(md.read_text(encoding="utf-8", errors="ignore"),
+                                d / docx_name)
     except Exception:
         return md          # the Markdown is still there and still usable
+    try:
+        from .pdf import docx_to_pdf
+        rendered = docx_to_pdf(made)
+    except Exception:
+        rendered = None
+    return rendered or made
 
 
 # Words that assert a scale or a cadence. On their own they are ordinary
@@ -1018,15 +1037,25 @@ def _gates(d: Path, name: str) -> dict:
     # `unsourced_specifics: False` with "20", "7%", "0b" in `unsourced_found`,
     # which are bytes of the zip. The dashboard reported invented figures that
     # were not in the document and passed a rule that the document broke.
-    if f.suffix.lower() == ".docx":
+    # Any rendered format, not just .docx. Once the generator started handing
+    # back a PDF, a check written for one container would have read the other
+    # one's bytes as prose and reported on those instead. That is the same
+    # fault as reading the zip, arriving through a different file extension a
+    # week later.
+    if f.suffix.lower() in (".docx", ".pdf"):
         md = f.with_suffix(".md")
         f = md if md.exists() else f
     if f.suffix.lower() == ".docx":
         text = docx_to_text(f)          # no markdown left beside it
-        if not text:
-            return {"written": True, "unreadable": True, "natural_writing": False}
+    elif f.suffix.lower() == ".pdf":
+        # No markdown beside it and no extractor guaranteed here. An
+        # unmeasurable gate is a failed gate everywhere else in this file.
+        from .rank import _pdf_to_text
+        text = _pdf_to_text(f)
     else:
         text = f.read_text(encoding="utf-8", errors="ignore")
+    if f.suffix.lower() in (".docx", ".pdf") and not text:
+        return {"written": True, "unreadable": True, "natural_writing": False}
     gates = {"written": True, "no_em_dash": "—" not in text}
     srcs = list(d.glob("source-cv.txt")) or list(d.glob("source-cv.*"))
     if srcs:
@@ -1116,7 +1145,8 @@ def regate(con) -> int:
                 cv_f = d / "CV.md"
                 # The letter's own markdown, not the .docx the row points at.
                 letter_f = (path.with_suffix(".md")
-                            if path.suffix.lower() == ".docx" else path)
+                            if path.suffix.lower() in (".docx", ".pdf")
+                            else path)
                 if cv_f.exists() and letter_f.exists():
                     shared = shared_ngram(
                         cv_f.read_text(encoding="utf-8", errors="ignore"),
