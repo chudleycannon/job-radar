@@ -514,3 +514,36 @@ def test_the_markdown_report_checks_the_url_scheme_too():
     assert "javascript:" not in text
     assert "Head of Engineering (no usable link)" in text
     assert "[Head of Platform](https://example.com/job/1)" in text
+
+
+def test_one_hostile_board_cannot_end_the_whole_scan():
+    """A response body of 60,000 open brackets makes the JSON decoder recurse
+    until Python gives up, and the RecursionError came back out of
+    `f.result()` where nothing caught it. Every other board's results in that
+    run were lost, because the loop never reached its return. On the Actions
+    path that is a red run and no roles after up to 300 minutes of fetching,
+    and any one of 17,807 third parties can trigger it with a small body.
+    """
+    from unittest import mock
+
+    from jobradar import fetch as fetch_mod
+    from jobradar.models import Source
+
+    good = Source(company="Fine", platform="greenhouse",
+                  url="https://good.invalid/jobs")
+    bad = Source(company="Hostile", platform="greenhouse",
+                 url="https://bad.invalid/jobs")
+
+    def dispatch(src, *a, **k):
+        if src.company == "Hostile":
+            raise RecursionError("maximum recursion depth exceeded")
+        return fetch_mod.Result(src, payload={"jobs": []})
+
+    with mock.patch.object(fetch_mod, "_fetch_dispatch", dispatch):
+        out = fetch_mod.fetch_all([good, bad], concurrency=2)
+
+    assert len(out) == 2, "the run lost the boards that worked"
+    by = {r.source.company: r for r in out}
+    assert by["Fine"].ok
+    assert not by["Hostile"].ok
+    assert "RecursionError" in (by["Hostile"].error or ""), by["Hostile"].error

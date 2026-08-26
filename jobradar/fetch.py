@@ -1594,7 +1594,28 @@ def fetch_all(
                           user_agent, search_terms or [],
                           api_keys or {}): src for src in queue}
         for f in as_completed(futs):
-            res = f.result()
+            # One board must never be able to end the run.
+            #
+            # `fetch_one` catches `requests.RequestException`, which is the
+            # failure a board is expected to produce. It is not the only one a
+            # board can cause: a response body of 60,000 open brackets makes
+            # the JSON decoder recurse until Python gives up, and the
+            # `RecursionError` comes back out of `f.result()` where nothing
+            # was catching anything. Demonstrated against a loopback server;
+            # every other board's results in that run were lost, because this
+            # loop never reaches `return out`. On the Actions path that is a
+            # red run and no roles after up to 300 minutes of fetching, and
+            # any one of the 17,807 third parties here can trigger it with a
+            # small response body.
+            #
+            # A raise here is therefore recorded as this source's failure, in
+            # the same shape as every other failure, and the run continues.
+            # `BaseException` is deliberately not caught: KeyboardInterrupt
+            # and SystemExit are the user asking to stop.
+            try:
+                res = f.result()
+            except Exception as e:
+                res = Result(futs[f], error=f"{type(e).__name__}: {e}"[:300])
             out.append(res)
             if on_result:
                 on_result(res)
