@@ -1428,6 +1428,21 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
         if not (found & allowed):
             return False, f"{loc} outside target countries"
 
+    if cfg.work_modes:
+        # An arrangement the reader did not ask for is dropped. One the
+        # posting never stated is KEPT and flagged, because half of all
+        # postings do not say, and reading "we cannot tell" as "not remote"
+        # would hide more real remote roles than it removed office ones. The
+        # reader can see at a glance which is which.
+        mode = work_mode(job)
+        if mode == "unstated":
+            job.flags.append(
+                f"arrangement not stated; you asked for "
+                f"{', '.join(cfg.work_modes)}")
+        elif mode not in cfg.work_modes:
+            return False, f"{mode} role and you asked for " \
+                          f"{', '.join(cfg.work_modes)}"
+
     return True, ""
 
 

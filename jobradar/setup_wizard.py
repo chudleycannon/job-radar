@@ -183,6 +183,10 @@ titles:
 locations:
   countries:{ylist(answers.get('countries'))}
   remote_ok: {str(answers.get('remote_ok', True)).lower()}
+  # Keep only these arrangements: remote, hybrid, office. Empty means all.
+  # A posting that does not state one is always kept, and flagged, because
+  # half of them do not say and "we cannot tell" is not "not remote".
+  work_modes:{ylist(answers.get('work_modes'))}
   # Places you would move to. Scored lower than home, but still shown.
   relocate_to:{ylist(answers.get('relocate_to'))}
   # Never show roles in these places.
@@ -493,6 +497,16 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
     print("\n2. Where?")
     a["countries"] = _ask_list("   Country codes you live in / can work in", ["UK"])
     a["remote_ok"] = _ask_yn("   Include fully remote roles", True)
+    # Asked separately because the question above is a boolean answering a
+    # three-way question: yes shows remote AND everything else, no hides
+    # remote, and neither says "hide anything that is not remote". A
+    # remote-only reader had no way to express the one thing their search is
+    # about.
+    if a["remote_ok"] and _ask_yn("   Remote ONLY (hide office and hybrid)",
+                                  False):
+        a["work_modes"] = ["remote"]
+        print("   Postings that do not state an arrangement are still shown, "
+              "and flagged.")
     a["relocate_to"] = _ask_list("   Countries you would relocate to", [])
     a["exclude_locations"] = _ask_list("   Places to always exclude", [])
 

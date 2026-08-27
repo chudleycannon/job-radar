@@ -27,6 +27,7 @@ keyword sources have nothing to look for.
 |---|---|---|
 | `countries` | list of codes | Empty means anywhere. Country names are accepted and normalised (`Portugal` becomes `PT`); anything the filter cannot use is refused at load rather than silently matching nothing. Note the UK is `UK`, not `GB`. |
 | `remote_ok` | true / false | Unquoted. `"no"` and `"false"` are understood, anything else is refused rather than read as true. |
+| `work_modes` | list | Keep only these arrangements: `remote`, `hybrid`, `office`. Empty (the default) keeps all. A posting that states no arrangement is always kept and flagged, because half of them state none and "we cannot tell" is not "not remote". `remote_ok` cannot express "remote only"; this can. |
 | `relocate_to` | list of codes | Shown, scored below home. Same validation as `countries`. Also the countries the Workable search is run against, alongside `countries`. |
 | `need_sponsorship` | list of codes | Where you would need a visa. Same validation as `countries`. A role in one of these is hidden only if the posting says outright that it will not sponsor; one that says it will scores higher, and one that says nothing is kept and left as a question to ask. |
 | `exclude` | list of places | Applied per location. A role in London only is dropped; a role in "London / Manchester" survives on Manchester. |

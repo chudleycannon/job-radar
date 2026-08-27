@@ -49,6 +49,15 @@ class Config:
 
     countries: list[str] = field(default_factory=list)
     remote_ok: bool = True
+    # Which working arrangements to keep. Empty means all of them, which is
+    # the old behaviour and the default.
+    #
+    # `remote_ok` is a boolean answering a three-way question: True shows
+    # remote AND everything else, False hides remote, and nothing said "hide
+    # anything that is not remote". A remote-only reader had no way to express
+    # the one thing their whole search is about, and 30 of their 40 matches
+    # were office and hybrid roles in cities they will not move to.
+    work_modes: list[str] = field(default_factory=list)
     relocate_to: list[str] = field(default_factory=list)
     # Countries where you would need a visa. A role there that says outright
     # it will not sponsor is one you cannot take, however good the fit.
@@ -255,7 +264,7 @@ VALID_FORMATS = {"html", "json", "markdown", "md"}
 
 KNOWN_KEYS = {
     "titles": {"include", "exclude"},
-    "locations": {"countries", "remote_ok", "relocate_to", "exclude",
+    "locations": {"countries", "remote_ok", "work_modes", "relocate_to", "exclude",
                   "need_sponsorship"},
     "salary": {"floor", "currency"},
     "cv": {"path"},
@@ -329,6 +338,36 @@ def _countries(values, where: str) -> list[str]:
 # uppercased to EURO, never matched EUR, and silently switched the floor off
 # on every euro role.
 VALID_CURRENCIES = {"GBP", "USD", "EUR"}
+
+# What `screen.work_mode` can answer, which is what this can filter on.
+VALID_WORK_MODES = {"remote", "hybrid", "office"}
+
+
+def _work_modes(v, where: str) -> list[str]:
+    """The arrangements to keep. Empty means no filter.
+
+    "unstated" is deliberately not accepted, because it is not a choice
+    anybody makes: a posting that does not say is kept whatever this is set
+    to, and flagged. Half of all postings do not say, and reading "we cannot
+    tell" as "not remote" would hide more real remote roles than it removed
+    office ones.
+    """
+    out = []
+    for item in _as_list(v):
+        t = str(item or "").strip().lower()
+        if t in ("on-site", "onsite", "in office", "in-office"):
+            t = "office"
+        if t == "unstated":
+            raise ConfigError(
+                f"{where}: postings that do not state an arrangement are "
+                f"always kept and flagged, so listing 'unstated' here would "
+                f"change nothing. Remove it.")
+        if t not in VALID_WORK_MODES:
+            raise ConfigError(
+                f"{where}: {item!r} is not a working arrangement. "
+                f"Valid: {', '.join(sorted(VALID_WORK_MODES))}.")
+        out.append(t)
+    return list(dict.fromkeys(out))
 _CURRENCY_ALIASES = {"POUND": "GBP", "POUNDS": "GBP", "STERLING": "GBP",
                      "EURO": "EUR", "EUROS": "EUR", "DOLLAR": "USD",
                      "DOLLARS": "USD", "US$": "USD", "USDOLLAR": "USD"}
@@ -464,6 +503,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         titles_exclude=_terms(titles.get("exclude")),
         countries=_countries(_as_list(loc.get("countries")), "locations.countries"),
         remote_ok=_bool(loc.get("remote_ok", True), "locations.remote_ok"),
+        work_modes=_work_modes(loc.get("work_modes"), "locations.work_modes"),
         relocate_to=_countries(_as_list(loc.get("relocate_to")), "locations.relocate_to"),
         need_sponsorship=_countries(_as_list(loc.get("need_sponsorship")),
                                     "locations.need_sponsorship"),
