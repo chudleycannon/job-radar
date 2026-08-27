@@ -52,6 +52,14 @@ Three corollaries the codebase already applies:
   `False`, never nothing. Readers count `is False`.
 - **Zero is a verdict, not an absence.** Anywhere zero results means "dead",
   the code has to be able to say whether it read the board or merely failed to.
+- **A value meaning "we cannot say" must never be read as "no".** Found three
+  times in one afternoon: the seed gave roles open in several countries a
+  shard of their own and handed it to nobody, so a job open in London and New
+  York vanished from every UK download; `sources.countries: [NL]` dropped all
+  1,599 boards tagged `multi`, which are the multinationals most likely to
+  have a Dutch vacancy; and a salary with no currency was compared against a
+  floor as though it shared one. The unknown case needs its own branch, and
+  usually that branch is "show it and label it".
 
 ## Tests
 
@@ -83,6 +91,11 @@ one function rather than the module.
 
 ## What not to do
 
+- **Do not price, place or judge a posting by the reader's config.** The
+  reader's floor currency was used as the default for any unsymbolled figure
+  anywhere in the world, so an Indian salary of 900,000 rupees was stored,
+  confirmed, as $900k. The advert and its country are evidence; the person
+  reading it is not.
 - **Never work around bot protection.** A 403, a CAPTCHA, a JavaScript
   challenge or a runtime-minted token means blocked: record it and move on. No
   user-agent rotation, no proxies, no headless browsers, no token replay.
