@@ -11,6 +11,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from . import adapters, output, sources as src_mod
+import webbrowser
+
+from . import serve as serve_mod
 from .awake import describe, keep_awake
 from .config import Config, ConfigError, load as load_cfg
 from .discover import discover as run_discover, prunable as row_prunable, validate_source
@@ -129,7 +132,7 @@ def _phase_minutes(group) -> float:
     return max(worst, len(group) * 0.48 / DEFAULT_CONCURRENCY / 60)
 
 
-def _flush_phase(con, cfg, jobs, args) -> None:
+def _flush_phase(con, cfg, jobs, args) -> int:
     """Store and render what the scan has so far, between passes.
 
     Deliberately quiet and deliberately partial. It screens and writes what
@@ -146,7 +149,7 @@ def _flush_phase(con, cfg, jobs, args) -> None:
 
     kept, _ = screen_run(list(jobs), cfg)
     if not kept:
-        return
+        return 0
     try:
         store.upsert_roles(con, kept)
         con.commit()
@@ -155,10 +158,13 @@ def _flush_phase(con, cfg, jobs, args) -> None:
             html_mod.write(outdir / "index.html", new=[], seen=kept, dropped={},
                            sources_ok=0, sources_total=0, throttled=[],
                            postings=len(jobs))
+        return len(kept)
     except Exception:
         # A dashboard that could not be refreshed mid-scan is not a reason to
         # lose the scan. The end of the run writes it properly either way.
-        pass
+        # Reported as zero rather than as the number we meant to write, so a
+        # failed flush cannot be announced as roles the user can go and read.
+        return 0
 
 
 def cmd_scan(args) -> int:
@@ -347,6 +353,38 @@ def cmd_scan(args) -> int:
     _say("The dashboard is worth opening after the first pass; the rest fill "
          "in behind it.")
 
+    from . import store
+    # A dry run touches no file it was not pointed at. It used to create the
+    # database anyway, empty, purely because connecting creates it, which made
+    # "this writes nothing" untrue in the one mode people use to check exactly
+    # that before trusting the tool.
+    con = store.connect(":memory:" if args.dry_run else args.db)
+    # The legacy import follows the database, not the working directory.
+    # `store.migrate(con)` resolved both of its sources against the cwd, so a
+    # scan started in the repo with `--db /tmp/scratch.db` still read this
+    # directory's state/seen.json and applications.local.yaml and copied 1,526
+    # roles and a real application history into the scratch file. `--db` reads
+    # as isolation and was not one, and the result is somebody's job search in
+    # a temp directory they will not think to clear.
+    #
+    # A database that is the configured one keeps the old behaviour, because
+    # that is the upgrade path this function exists for.
+    own_db = not args.db or Path(args.db) == store.DEFAULT_PATH
+    mig = ({"roles": 0, "statuses": 0} if args.dry_run else
+           store.migrate(con,
+                         state_path=str(state.path) if own_db else "",
+                         apps_path=None if own_db else ""))
+    if mig["roles"] or mig["statuses"]:
+        _say(f"  migrated {mig['roles']} roles and {mig['statuses']} statuses "
+             f"into the database")
+
+    # Opened here rather than after the fetch loop, which is where it used to
+    # live. Passes flush to the database between themselves, so a scan that
+    # writes at pass one cannot wait for a connection made at the end of pass
+    # four. The guard that hid this was `n < len(est)`: on a one-pass run the
+    # flush was skipped, and every test used `--limit`, so a real multi-pass
+    # scan would have raised UnboundLocalError on the first flush.
+
     # Hold the machine awake for the run, and be honest about what that does.
     # It stops an idle laptop napping; it does not survive the lid closing.
     results = []
@@ -367,8 +405,50 @@ def cmd_scan(args) -> int:
             # Written and rendered at the end of every pass, not only the
             # last, because a dashboard that is usable at five minutes is the
             # whole point of reading in passes at all.
-            if not args.dry_run and n < len(est):
-                _flush_phase(con, cfg, all_jobs, args)
+            #
+            # The flush has to happen before the open, and on a one-pass run
+            # (`--limit`, or a config that only reaches fast hosts) there is
+            # no "next pass" to flush for. Guarding both on `n < len(est)`
+            # opened a dashboard against a database this scan had not written
+            # to yet: an empty page that looks exactly like a scan that found
+            # nothing.
+            ready = 0
+            if not args.dry_run and (n < len(est) or n == 1):
+                ready = _flush_phase(con, cfg, all_jobs, args)
+
+            if args.dry_run:
+                pass
+            elif n == 1 and not args.no_open:
+                # Opened after the FIRST pass, not at the end of the scan.
+                # Five minutes in there are enough roles to work through, and
+                # another seventy minutes of reading is no reason to sit
+                # watching a counter. The server is detached, so it stays up
+                # when the scan finishes or is interrupted.
+                # `--docs` belongs to `serve`, not to `scan`, so there is
+                # nothing to forward and the server falls back to its own
+                # default. Reading `args.docs` here raised AttributeError on
+                # every scan, which is the fourth time a namespace that does
+                # not match the parser has shipped. `test_scan_open` now
+                # checks this call against the real parser.
+                url = serve_mod.open_in_background(
+                    db_path=args.db, config_path=args.config)
+                if url:
+                    # Says what is actually on the page. Pass one can match
+                    # nothing, and "with what pass 1 found" in front of an
+                    # empty dashboard reads as a broken tool rather than as a
+                    # scan that is still going.
+                    what = (f"with {ready:,} role{'' if ready == 1 else 's'} "
+                            f"from pass 1" if ready else
+                            "though pass 1 matched nothing yet")
+                    _say(f"  dashboard is up at {url} {what}."
+                         + (" It fills in as the rest arrive."
+                            if n < len(est) else ""))
+                    webbrowser.open(url)
+                elif serve_mod.already_serving():
+                    _say("  your dashboard already has pass 1. Refresh it.")
+                else:
+                    _say("  dashboard written. `job-radar serve` opens it.")
+            elif n < len(est):
                 _say(f"  dashboard updated; passes {n + 1} to {len(est)} "
                      f"still to come.")
 
@@ -455,30 +535,6 @@ def cmd_scan(args) -> int:
 
     # The database is the source of truth for what you already did about a
     # role. It beats whatever the scanner thinks of it today.
-    from . import store
-    # A dry run touches no file it was not pointed at. It used to create the
-    # database anyway, empty, purely because connecting creates it, which made
-    # "this writes nothing" untrue in the one mode people use to check exactly
-    # that before trusting the tool.
-    con = store.connect(":memory:" if args.dry_run else args.db)
-    # The legacy import follows the database, not the working directory.
-    # `store.migrate(con)` resolved both of its sources against the cwd, so a
-    # scan started in the repo with `--db /tmp/scratch.db` still read this
-    # directory's state/seen.json and applications.local.yaml and copied 1,526
-    # roles and a real application history into the scratch file. `--db` reads
-    # as isolation and was not one, and the result is somebody's job search in
-    # a temp directory they will not think to clear.
-    #
-    # A database that is the configured one keeps the old behaviour, because
-    # that is the upgrade path this function exists for.
-    own_db = not args.db or Path(args.db) == store.DEFAULT_PATH
-    mig = ({"roles": 0, "statuses": 0} if args.dry_run else
-           store.migrate(con,
-                         state_path=str(state.path) if own_db else "",
-                         apps_path=None if own_db else ""))
-    if mig["roles"] or mig["statuses"]:
-        _say(f"  migrated {mig['roles']} roles and {mig['statuses']} statuses "
-             f"into the database")
 
     # A dry run must not touch the database. It used to insert every role and
     # increment the run counter, so trying the tool out once silently spent
@@ -1627,6 +1683,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-enrich", action="store_true",
                    help="skip fetching full postings for headline-only "
                         "sources; they stay unscreenable")
+    s.add_argument("--no-open", action="store_true",
+                   help="do not open the dashboard when the first pass "
+                        "finishes. It is opened by default because pass one "
+                        "takes about five minutes and the rest of the scan "
+                        "takes over an hour.")
     s.add_argument("--no-caffeine", action="store_true",
                    help="do not hold the machine awake during the scan. It is "
                         "held by default because a full run is about an hour "

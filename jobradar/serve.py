@@ -626,6 +626,64 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
     threading.Thread(target=work, daemon=True).start()
 
 
+def already_serving(host: str = "127.0.0.1", port: int = 8765) -> bool:
+    """Whether something is already listening there.
+
+    Asked before starting a dashboard rather than after, because binding a
+    port that is taken raises out of `serve` before it prints anything useful,
+    and the second copy would be racing the first for the same database.
+    """
+    import socket
+    with socket.socket() as sock:
+        sock.settimeout(0.4)
+        try:
+            return sock.connect_ex((host, port)) == 0
+        except OSError:
+            return False
+
+
+def open_in_background(db_path=None, host: str = "127.0.0.1", port: int = 8765,
+                       docs_base=None, config_path=None) -> str | None:
+    """Start a dashboard that outlives this process, and return its URL.
+
+    A scan takes over an hour and the first pass is usable after five minutes,
+    so the dashboard should be there when it becomes worth looking at rather
+    than when the scan happens to end. Detached, because the scan has another
+    seventy minutes to run and the person wants to click things now.
+
+    Returns None and starts nothing if a dashboard is already up: they would
+    contend for the same database, and the one that lost would print a SQLite
+    traceback at somebody who had done nothing wrong.
+    """
+    import subprocess
+    import sys
+
+    if already_serving(host, port):
+        return None
+    cmd = [sys.executable, "-m", "jobradar.cli"]
+    if config_path:
+        cmd += ["-c", str(config_path)]
+    cmd += ["serve", "--no-browser", "--host", host, "--port", str(port)]
+    if db_path:
+        cmd += ["--db", str(db_path)]
+    if docs_base:
+        cmd += ["--docs", str(docs_base)]
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        return None
+    # Wait for the bind rather than guessing at it, so the browser is not
+    # opened at a port nothing is answering yet.
+    import time
+    for _ in range(40):
+        if already_serving(host, port):
+            return f"http://{host}:{port}/"
+        time.sleep(0.25)
+    return None
+
+
 def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
           docs_base=None, config_path=None) -> int:
     # Gates are recomputed on start, so a fixed check corrects the rows it got

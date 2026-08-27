@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import traceback
+import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -38,6 +39,35 @@ def _load(path: Path):
     sys.modules[path.stem] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def _collect(mod) -> list[tuple[str, object]]:
+    """Module-level `test_*` functions, and unittest.TestCase methods.
+
+    The house style here is plain functions, but unittest is what most people
+    reach for, and a TestCase file that silently runs nothing is worse than
+    one that fails to import.
+    """
+    out = [(n, f) for n, f in sorted(vars(mod).items())
+           if n.startswith("test_") and callable(f)
+           and not isinstance(f, type)]
+    for cname, cls in sorted(vars(mod).items()):
+        if not (isinstance(cls, type) and issubclass(cls, unittest.TestCase)
+                and cls is not unittest.TestCase):
+            continue
+        for mname in sorted(dir(cls)):
+            if mname.startswith("test"):
+                out.append((f"{cname}.{mname}", _as_callable(cls, mname)))
+    return out
+
+
+def _as_callable(cls, mname):
+    """Run one TestCase method with its setUp/tearDown, raising on failure.
+
+    `TestCase.run` swallows the exception into a result object, so calling it
+    directly would report every test as passing. `debug()` lets it out.
+    """
+    return lambda: cls(mname).debug()
 
 
 def main() -> int:
@@ -59,8 +89,18 @@ def main() -> int:
             bad += 1
             total += 1
             continue
-        fns = [(n, f) for n, f in sorted(vars(mod).items())
-               if n.startswith("test_") and callable(f)]
+        fns = _collect(mod)
+        if not fns:
+            # A test file with nothing runnable in it is a failure, not a
+            # quiet zero. tests/test_scan_open.py was written as
+            # unittest.TestCase classes, which this runner did not look for:
+            # the file appeared in the listing, contributed no tests, and the
+            # suite still printed a full pass. That is the same shape the
+            # runner was written to stop.
+            print(f"  FAIL  {path.name} defines no runnable tests")
+            bad += 1
+            total += 1
+            continue
         for name, fn in fns:
             total += 1
             try:

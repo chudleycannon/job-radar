@@ -335,6 +335,10 @@ def first_scan(config_path: Path) -> int:
         # the longest run this tool ever does and the one most likely
         # to be started and walked away from.
         no_caffeine = False
+        # False, so a brand new user gets the dashboard opened for them
+        # five minutes in rather than being left at a counter for an
+        # hour. This is the run where it matters most.
+        no_open = False
 
     try:
         rc = cli.cmd_scan(_Args())
