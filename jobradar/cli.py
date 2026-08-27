@@ -659,6 +659,35 @@ def cmd_scan(args) -> int:
         _coverage_note(kept, srcs, cfg)
     _staleness_note(cfg)
 
+    # A scan that could not read anything is not a scan that found nothing,
+    # and until this existed the two were the same run from the outside: exit
+    # 0, the working dashboard overwritten with an empty one, and the verdict
+    # "Nothing matched. Most often this is the titles. Check
+    # `titles.include`" -- which blames the reader's config for their wifi.
+    # The proof was already on screen and unread: the "Where they went"
+    # breakdown printed empty, because nothing had been screened at all.
+    #
+    # `ok` is how many sources answered. When that is none of them, say so
+    # instead, leave `out/` alone rather than replacing a dashboard that
+    # still has yesterday's roles on it, and exit non-zero so a cron job
+    # notices.
+    # Keyed on results rather than on `len(srcs)`, so "we asked everybody and
+    # nobody answered" is distinguished from "nothing was asked". A caller
+    # that hands back no results at all has not tried, and several tests stub
+    # exactly that.
+    blind = bool(results) and ok == 0
+    if blind:
+        _say("")
+        _say(f"  None of your {len(results):,} sources answered. This is not "
+             f"a scan that found nothing, it is a scan that could not look.")
+        _say("  Check your connection first. Your existing dashboard and "
+             "database are untouched.")
+        if throttled:
+            _say(f"  {len(throttled)} host(s) were slowing us down, which may "
+                 f"be the whole story: {', '.join(sorted(throttled)[:4])}")
+        con.close()
+        return 2
+
     if not kept:
         # An empty page reads as "the market is empty" when it usually means
         # the filters or the sources do not fit the person running it.
