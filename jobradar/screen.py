@@ -55,7 +55,7 @@ _COUNTRY_MARKERS = {
     # Lowercase in the guard because the markers are matched against a
     # lowercased string; spelling it "TX" made the guard dead and filed
     # Nederland, Texas in the Netherlands.
-    "NL": r"netherlands|\bnederland\b(?!,?\s*(?:tx|co)\b)",
+    "NL": r"netherlands|\bnederland\b(?!,?\s*(?:tx|co|texas|colorado)\b)",
     "CA": r"\bcanada\b", "AU": r"\baustralia\b",
     "NZ": r"new zealand", "AE": r"\buae\b|united arab emirates",
     "SG": r"\bsingapore\b", "HK": r"hong kong", "IN": r"\bindia\b",
@@ -713,7 +713,14 @@ _MORE_CITIES = {
            "naaldwijk", "boxmeer", "oosterhout", "wageningen", "terneuzen",
            "'s-hertogenbosch", "den bosch", "alkmaar", "enschede", "venlo",
            "roosendaal", "helmond", "hilversum", "veenendaal", "dongen",
-           "etten-leur"),
+           "etten-leur",
+           # Missing outright, and each the only place of that name of any
+           # size. "Maastricht" was the visible one: the sixth city of the
+           # Netherlands, with a university and a tech scene, and a posting
+           # there was dropped as "location not recognised" for anyone whose
+           # countries list said NL.
+           "maastricht", "leeuwarden", "heerlen", "sittard", "zoetermeer",
+           "hengelo", "zaandam", "purmerend", "middelburg", "delfzijl"),
     "BE": ("bruges", "brugge", "wavre", "machelen", "mechelen", "hasselt",
            "namur", "charleroi", "liege", "liège", "kortrijk", "aalst"),
     "AT": ("linz", "innsbruck", "klagenfurt", "villach", "wels",
@@ -1069,6 +1076,8 @@ _REMOTE_TXT = re.compile(
 # put in front of a place.
 _NOT_A_CITY = re.compile(
     r"^(?:remote|hybrid|on[- ]?site|anywhere|global|worldwide|europe|emea|americas?|apac|"
+    r"north america|south america|latin america|latam|nationwide|"
+    r"home[- ]based|work from home|wfh|"
     r"united kingdom|uk|england|scotland|wales|northern ireland|united states|usa?|"
     r"canada|australia|ireland|germany|france|spain|netherlands|india|singapore|"
     r"various|multiple locations|flexible|tbc|n/?a)$", re.I)
@@ -1116,7 +1125,23 @@ def work_mode(job: Job) -> str:
     # first threw that away: an on-site gym, on-site parking or "occasional
     # on-site visits" anywhere in the body filed a role the ATS had marked
     # remote as office. Prose still decides when no field was set.
-    if job.remote is True:
+    #
+    # But the flag is not evidence when the advert contradicts it. Ashby's
+    # `isRemote` is true on 52.4% of postings, and 87.2% of those name a
+    # physical city and never use the word remote anywhere: measured over
+    # 1,316 postings from 30 real boards on 2026-08-27, roles in New York,
+    # London, Bogota and Sao Paulo were all being filed as remote. Ashby is
+    # the largest platform in the fast pass, so this is most of what a new
+    # user sees in their first five minutes, and "remote" is the one label a
+    # remote-only reader filters on.
+    #
+    # So a named town with no mention of remote anywhere wins. That is not a
+    # guess about Ashby: it is the advert's own statement of where the work
+    # is, against a boolean that no employer had to look at. Anything that
+    # says "Remote - US", "London (Remote)" or "Fully remote" still has the
+    # word in `blob` and is unaffected, which is every honest use of the flag.
+    if job.remote is True and not (city_of(job.location)
+                                   and not _REMOTE_TXT.search(blob)):
         return "remote"
     if _ONSITE.search(blob):
         return "office"
@@ -1136,7 +1161,26 @@ def city_of(location: str) -> str:
     # the same city as everyone else's, so normalise rather than splitting the
     # filter into near-duplicates.
     part = re.sub(r"^[A-Z]{2}-[A-Z]{2}-", "", part)
+    part = re.sub(r"\s+Bay\s+Area$", "", part, flags=re.I)
     part = re.sub(r"\s+Area$", "", part, flags=re.I)
+    # How-you-work words wrapped around the place, in whatever order the
+    # employer felt like. `_NOT_A_CITY` below only ever recognised these when
+    # the word stood ALONE, and the prefix strip above only when a dash or a
+    # comma followed it, so a US board filled the dashboard's city filter with
+    # "US Remote", "Remote (US-based)", "Fully Remote", "Anywhere in the US",
+    # "NYC Hybrid Available" and "HQ - NYC" as if each were a town. Stripped
+    # here rather than added to the list, because the list cannot grow to
+    # cover every arrangement of the same four words.
+    part = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", part)
+    part = re.sub(r"^\s*(?:hq|head office|main office|office)\s*[-–—:]\s*",
+                  "", part, flags=re.I)
+    part = re.sub(r"^\s*anywhere\s+(?:in|within)\s+(?:the\s+)?", "", part, flags=re.I)
+    part = re.sub(r"\b(?:fully|100%|entirely|primarily|mostly)\s+"
+                  r"(?:remote|on[- ]?site|in[- ]?office)\b", "", part, flags=re.I)
+    part = re.sub(r"\b(?:remote|hybrid|on[- ]?site|in[- ]?office)\b"
+                  r"(?:\s+(?:available|optional|only|first|friendly|working|eligible))?",
+                  "", part, flags=re.I)
+    part = re.sub(r"\s{2,}", " ", part).strip(" -–—,;:/")
     part = re.sub(r"\s*\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b\s*$", "", part, flags=re.I)
     if not part or _NOT_A_CITY.match(part) or len(part) > 34:
         return ""
@@ -1400,6 +1444,18 @@ _NO_SPONSOR = re.compile(
     r"|no\s+(?:visa\s+)?sponsorship"
     r"|without\s+(?:the\s+need\s+for\s+)?(?:visa\s+)?sponsorship"
     r"|sponsorship\s+is\s+not\s+(?:available|offered|provided)"
+    # "sponsor" used as a bare verb, with no visa/sponsorship noun after it.
+    # The alternative above requires that noun, so "we do not sponsor work
+    # passes", "unable to sponsor candidates" and the standard US boilerplate
+    # "Employer will not sponsor applicants for this position" all fell
+    # through it -- and then matched _WILL_SPONSOR, whose "(?:can|able to|
+    # will|do)\s+(?:\w+\s+){0,2}?sponsor" happily reads the negated form.
+    # Six of eight real refusal phrasings came back "sponsorship offered",
+    # were flagged as such to a reader who needs a visa, and collected the
+    # +12 "says it will sponsor" score in `rank_one`. The exact opposite of
+    # what the posting says, on the one fact that decides the application.
+    r"|(?:unable|not\s+able|cannot|can.t|do(?:es)?\s+not|do(?:es)?n.t|"
+    r"will\s+not|won.t|not\s+in\s+a\s+position)\s+(?:to\s+)?sponsor\w*"
     r"|must\s+(?:already\s+)?have\s+(?:the\s+)?(?:full\s+)?rights?\s+to\s+work"
     r"|full\s+rights?\s+to\s+work", re.I)
 
@@ -1657,8 +1713,17 @@ def score(job: Job, cfg: Config) -> float:
         comparable_cur = not (cfg.salary_currency and job.salary.currency
                               and job.salary.currency != cfg.salary_currency)
         s += 10 if comparable_cur else 4
-        why.append(f"pay stated ({job.salary.raw})" if comparable_cur
-                   else f"pay stated ({job.salary.raw}), not comparable to your floor")
+        # `label()` rather than `raw`, with the same fallback `clears_floor`
+        # already uses. `raw` is the snippet a text parser cut out of the
+        # advert, and it is absent whenever the figure came from a structured
+        # field instead: every Ashby posting, and every role read out of a
+        # seed shard, whose format carries the numbers and not the snippet.
+        # The f-string printed the missing value straight through, so a new
+        # user's first `list --json` said "pay stated (None)" on 10 of their
+        # 19 priced roles while the row beside it read "$165k - $185k".
+        shown = job.salary.raw or job.salary.label()
+        why.append(f"pay stated ({shown})" if comparable_cur
+                   else f"pay stated ({shown}), not comparable to your floor")
         top = job.salary.annualised()
         # The same currency guard `clears_floor` applies. Without it the
         # filter refused to compare GBP against a EUR floor while the scorer
@@ -1941,6 +2006,16 @@ def run(jobs: list[Job], cfg: Config) -> tuple[list[Job], dict[str, int]]:
             drop(why)
             continue
         score(j, cfg)
+        # The same Job objects are screened more than once in a real scan:
+        # `_flush_phase` screens what has arrived between passes and then the
+        # summary screens `all_jobs` again at the end. `apply_salary`,
+        # `screen` and `score` all append to `job.flags` unconditionally, so
+        # a role that survived two of those passes carried every flag twice
+        # ("salary in USD, floor in EUR, not compared" was rendered twice on
+        # every affected row of the dashboard, and up to five times on a
+        # four-pass scan). Flags are a set in meaning, so make them one here,
+        # keeping the order they were added in.
+        j.flags = list(dict.fromkeys(j.flags))
         kept.append(j)
 
     kept.sort(key=lambda x: (-x.score, x.company.lower()))

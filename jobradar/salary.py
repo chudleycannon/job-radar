@@ -32,7 +32,15 @@ _SINGLE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM})", re.I)
 # on purpose: a bare "600" in a job description is far more likely to be a
 # headcount than a salary. Once the text says "per day", a small number is
 # meaningful and these looser patterns take over.
-_NUM_RATE = r"\d{1,4}(?:\.\d+)?"
+#
+# The trailing lookahead is what stops this eating a thousands separator. The
+# rate patterns run FIRST whenever the block says "per day" or "per hour", and
+# without the guard "$1,200 per day" matched as "$1": four digits at most, and
+# the comma ends the number. That is a 264,000-a-year contract stored as one
+# dollar a day, and then silently dropped by any floor at all. Refusing to
+# match a number that is followed by more digits or by a comma hands
+# "$1,200" back to the annual patterns above, which read the separator.
+_NUM_RATE = r"\d{1,4}(?:\.\d+)?(?![\d,])"
 _RANGE_RATE = re.compile(
     rf"(?P<c1>[£$€])\s?(?P<lo>{_NUM_RATE})\s*(?:-|–|—|to)\s*(?P<c2>[£$€])?\s?(?P<hi>{_NUM_RATE})",
     re.I,
