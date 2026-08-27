@@ -1055,6 +1055,86 @@ def _append_sources(cfg_path: Path, new: list[Source]) -> int:   # used by disco
 
 
 # ---------------------------------------------------------------- validate
+def cmd_seed_build(args) -> int:
+    """Read the slow-phase boards and write a shard set. A maintainer's job.
+
+    Deliberately its own command rather than a flag on `scan`. It screens
+    nothing and stores nothing in anybody's database: a seed is a saved fetch,
+    and the moment it carried a screening decision it would be carrying
+    whoever built it's config into everybody else's search.
+    """
+    from . import seed as seed_mod
+    from . import sources as src_mod
+    from .screen import enrich as enrich_one
+    cfg = load_cfg(args.config)
+    srcs = [x for x in src_mod.load(cfg) if src_mod.phase_of(x) > 1]
+    if args.limit:
+        srcs = srcs[:args.limit]
+    _say(f"Reading {len(srcs):,} slow-phase boards. This is the part a new "
+         f"user should not have to wait for.")
+    jobs, done = [], {"n": 0}
+
+    def tick(res):
+        done["n"] += 1
+        if done["n"] % 250 == 0:
+            _say(f"  {done['n']:,}/{len(srcs):,}")
+        if res.ok:
+            jobs.extend(adapters.parse(res.payload, res.source))
+
+    fetch_all(srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
+              retries=cfg.retries, user_agent=cfg.user_agent,
+              search_terms=cfg.titles_include,
+              api_keys={"reed": cfg.reed_api_key,
+                        "adzuna_app_id": cfg.adzuna_app_id,
+                        "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick)
+    # Country and work mode are read here, not by the reader, because they are
+    # facts about the advert rather than answers to anybody's config, and
+    # doing it once beats a quarter of a million readers doing it each.
+    for j in jobs:
+        enrich_one(j)
+    idx = seed_mod.build(jobs, args.out, boards=len(srcs))
+    total = sum(v["bytes"] for v in idx["shards"].values())
+    _say(f"\n{len(jobs):,} roles in {len(idx['shards'])} shards, "
+         f"{total / 1e6:.0f}MB total, in {args.out}")
+    for name, v in sorted(idx["shards"].items(),
+                          key=lambda kv: -kv[1]["roles"])[:8]:
+        _say(f"  {name:<10}{v['roles']:>8,} roles   {v['bytes'] / 1e6:>6.1f}MB")
+    return 0
+
+
+def cmd_seed_load(args) -> int:
+    """Screen a shard set against THIS config and store what survives."""
+    from . import seed as seed_mod, store
+    cfg = load_cfg(args.config)
+    try:
+        idx = seed_mod.read_index(args.path)
+    except (OSError, ValueError) as exc:
+        _say(f"{exc}")
+        return 1
+    countries = cfg.countries or []
+    _say(seed_mod.describe(idx, countries))
+    jobs = list(seed_mod.load(args.path, countries))
+    if not jobs:
+        _say("Nothing in this index for your countries. Config `locations."
+             "countries`, or run a scan.")
+        return 0
+    kept, _ = screen_run(jobs, cfg)
+    _say(f"{len(jobs):,} roles read, {len(kept):,} match your config.")
+    if args.dry_run:
+        _say("Dry run, so nothing was written.")
+        return 0
+    con = store.connect(args.db)
+    try:
+        store.migrate(con)
+        store.upsert_roles(con, kept)
+        con.commit()
+    finally:
+        con.close()
+    _say("Stored. Run a scan when you can: these are a day old at best and "
+         "the fast half of the sources is not in them at all.")
+    return 0
+
+
 def cmd_validate(args) -> int:
     cfg = _cfg_or_default(args.config)
     srcs = src_mod.load_file(args.file) if args.file else _load_sources(cfg)
@@ -1702,6 +1782,20 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--add", action="store_true", help="write results into your config")
     d.add_argument("--no-validate", action="store_true")
     d.set_defaults(func=cmd_discover)
+
+    sd = sub.add_parser("seed", help="prebuilt roles for the slow half of a scan")
+    sdsub = sd.add_subparsers(dest="seed_cmd", required=True)
+    sb = sdsub.add_parser("build", help="write a shard set (maintainers)")
+    sb.add_argument("--out", default="seed", help="directory to write into")
+    sb.add_argument("--limit", type=int, default=0, help="read only N boards")
+    sb.set_defaults(func=cmd_seed_build)
+    sl = sdsub.add_parser("load", help="import a shard set for your countries")
+    sl.add_argument("path", help="directory holding index.json")
+    sl.add_argument("--db", default=None,
+                    help="database path (default data/job-radar.db)")
+    sl.add_argument("--dry-run", action="store_true",
+                    help="say what would be stored, write nothing")
+    sl.set_defaults(func=cmd_seed_load)
 
     v = sub.add_parser("validate", help="check known sources are alive and are who they claim")
     v.add_argument("--file", default=None, help="a sources.json to check instead of the config set")
