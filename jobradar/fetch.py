@@ -176,9 +176,13 @@ class HostLimiter:
     can measure what the pacing costs; it is not a mode to scan in.
     """
 
-    def __init__(self, rps: float = DEFAULT_PER_HOST_RPS,
+    def __init__(self, rps: float | None = None,
                  overrides: dict[str, float] | None = None) -> None:
-        self.rps = rps
+        # Whether the caller ASKED for this rate or simply got it. `gap_for`
+        # needs to tell those apart, and a bare float cannot: a caller passing
+        # 3.0 deliberately and a caller passing nothing arrived identical.
+        self.rps_was_chosen = rps is not None
+        self.rps = DEFAULT_PER_HOST_RPS if rps is None else rps
         self.overrides = dict(PER_HOST_RPS if overrides is None else overrides)
         self._next_ok: dict[str, float] = defaultdict(float)
         self._blocked_until: dict[str, float] = {}
@@ -194,13 +198,27 @@ class HostLimiter:
     def gap_for(self, host: str) -> float:
         """Seconds between requests to `host`. The stricter of the two rules.
 
-        `min` rather than the override alone: turning the global rate down for
-        a slow connection must not silently turn Workable's rate back UP to
-        0.7 when the caller asked for 0.2.
+        An override BELOW the global rate always wins, because it is a
+        ceiling: turning the global rate down for a slow connection must not
+        silently turn Workable's 0.7 back up when the caller asked for 0.2.
+
+        An override ABOVE it wins only when the caller did not choose the
+        global rate. `min` on its own made every measured override above the
+        default a no-op: Greenhouse and Ashby were set to 5.0 and paced at
+        3.0, SmartRecruiters to 8.0 and paced at 3.0, and the commit that set
+        them claimed a floor of 13.6 minutes that was still 22.7. It shipped
+        because the tests asserted the table's contents rather than the
+        limiter's behaviour, so they were true while nothing had changed.
         """
         if self.rps <= 0:
             return 0.0
-        rps = min(self.rps, self.overrides.get(host, self.rps))
+        over = self.overrides.get(host)
+        if over is None:
+            rps = self.rps
+        elif over < self.rps or self.rps_was_chosen:
+            rps = min(self.rps, over)
+        else:
+            rps = over
         if rps <= 0:
             return 0.0
         # Multiplied, not replaced, so a host that has been slowed by its own

@@ -180,7 +180,14 @@ def test_removing_workable_hands_the_floor_to_greenhouse():
     # this test was written, and 3.0 had never been measured.
     assert PER_HOST_RPS["boards-api.greenhouse.io"] > DEFAULT_PER_HOST_RPS
     assert PER_HOST_RPS["api.ashbyhq.com"] > DEFAULT_PER_HOST_RPS
-    assert abs(floors[0][3] - 1.0 / DEFAULT_PER_HOST_RPS) < 1e-9, floors[0]
+    # The gap the floor host is ACTUALLY paced at, read from the limiter,
+    # not the number in the table and not the default. Asserting the table
+    # was how three measured overrides shipped as no-ops: `gap_for` took
+    # `min(global, override)`, so 5.0 against a 3.0 default paced at 3.0
+    # while the table said 5.0 and the test agreed with it.
+    assert abs(floors[0][3] - 1.0 / PER_HOST_RPS["boards-api.greenhouse.io"]) < 1e-9, floors[0]
+    assert abs(HostLimiter().gap_for("boards-api.greenhouse.io")
+               - 1.0 / PER_HOST_RPS["boards-api.greenhouse.io"]) < 1e-9
 
 
 # ---------------------------------------------------------------------------

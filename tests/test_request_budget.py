@@ -12,6 +12,11 @@ have been spent at that host's rate. Measured from the bundled list on
     api.smartrecruiters.com     910 boards   3.0 req/s    5.1 min
     everything else                                    under 1.5 min
 
+Those are the rates the limiter actually applies, which are not all the rates
+`PER_HOST_RPS` states -- see
+`test_the_floor_hosts_rate_is_the_one_the_table_states` for why the three
+above 3.0 do not survive `gap_for`.
+
 7,749 of the 7,781 hosts carry a single board each, so they cost one request
 and finish in parallel with everything else.
 
@@ -114,19 +119,23 @@ def test_no_board_is_in_the_bundled_list_twice():
 def test_workable_is_the_floor_and_no_other_host_can_move_it():
     """The arithmetic that decides where a saved request is worth anything.
 
-    Per host: requests / that host's rate. The run cannot beat the largest of
-    those. If this ever stops naming apply.workable.com, the advice in this
-    file's docstring has expired and the next optimisation belongs somewhere
-    else.
+    Per host: requests / the rate that host is ACTUALLY paced at. The run
+    cannot beat the largest of those. If this ever stops naming
+    apply.workable.com, the advice in this file's docstring has expired and
+    the next optimisation belongs somewhere else.
+
+    The rate comes from a real `HostLimiter`, not from reading `PER_HOST_RPS`,
+    and that distinction is the whole reason this test is shaped this way.
+    See `test_a_raised_rate_in_the_table_is_the_rate_the_limiter_uses`.
     """
     per_host: Counter = Counter()
     for d in _bundled():
         per_host[urlparse(Source.from_dict(d).url).netloc] += 1
 
+    lim = fetch_mod.HostLimiter()
+
     def minutes(host: str) -> float:
-        rps = min(fetch_mod.DEFAULT_PER_HOST_RPS,
-                  fetch_mod.PER_HOST_RPS.get(host, fetch_mod.DEFAULT_PER_HOST_RPS))
-        return per_host[host] / rps / 60.0
+        return per_host[host] * lim.gap_for(host) / 60.0
 
     ranked = sorted(per_host, key=minutes, reverse=True)
     floor, second = ranked[0], ranked[1]
@@ -138,6 +147,48 @@ def test_workable_is_the_floor_and_no_other_host_can_move_it():
     # more, because the next host's queue is then the floor.
     assert minutes(floor) > minutes(second), (
         f"{floor} {minutes(floor):.1f} min vs {second} {minutes(second):.1f} min")
+
+
+def test_the_floor_hosts_rate_is_the_one_the_table_states():
+    """The one rate that must never drift, read from the limiter not the table.
+
+    A test that recomputes `gap_for`'s own `min()` by hand agrees with the
+    implementation by construction and can only ever pass. This asks the
+    limiter what it will actually do.
+
+    Scoped to the overrides that sit BELOW `DEFAULT_PER_HOST_RPS`, which is
+    every override that currently governs anything. Overrides ABOVE the
+    default do not survive `gap_for`: it takes `min(self.rps, override)` and
+    `self.rps` is the default, so `boards-api.greenhouse.io` and
+    `api.ashbyhq.com` at 5.0 and `api.smartrecruiters.com` at 8.0 are all
+    still paced at 3.0. Measured, not inferred:
+
+        host                      table   effective
+        apply.workable.com          0.7        0.70
+        boards-api.greenhouse.io    5.0        3.00
+        api.ashbyhq.com             5.0        3.00
+        api.smartrecruiters.com     8.0        3.00
+
+    That is not asserted here, because asserting it would pin the bug shut.
+    It costs no wall clock either way -- all three are far under Workable's
+    49.9 minutes, so the run finishes at the same minute -- but the floor
+    behind Workable is 22.7 minutes and not the 13.6 the table implies, and
+    anything reasoning about what a Workable reduction would buy needs the
+    real number. `min` is right for a ceiling and wrong for a measurement,
+    and telling the two apart needs to know whether the caller set `rps` or
+    took the default.
+    """
+    lim = fetch_mod.HostLimiter()
+    ceilings = {h: r for h, r in fetch_mod.PER_HOST_RPS.items()
+                if r <= fetch_mod.DEFAULT_PER_HOST_RPS}
+    assert "apply.workable.com" in ceilings, (
+        "apply.workable.com is the host that sets the scan's floor; it must "
+        "stay in the table below the default rate")
+    for host, want in ceilings.items():
+        got = 1.0 / lim.gap_for(host)
+        assert abs(got - want) < 1e-9, (
+            f"{host} is set to {want} req/s in PER_HOST_RPS but the limiter "
+            f"paces it at {got:.2f} req/s")
 
 
 def test_a_scan_asks_each_source_exactly_once():
