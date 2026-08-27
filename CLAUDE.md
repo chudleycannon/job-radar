@@ -108,7 +108,7 @@ while none of them was true. Derive it, or leave it in the run's own output.
 exactly this reason.
 
 Current, if you need them for a comment: 17,807 employer boards, 17,810
-entries, 3 keyword templates, 21 board platforms in the data, 28 adapters
+entries, 3 keyword templates, 21 board platforms in the data, 27 adapters
 written.
 
 ## Style
