@@ -25,6 +25,14 @@ Real ones, so the shape is recognisable rather than abstract:
 - A pull request titled "Prune 2 dead source(s)" whose diff removed 17,171 of
   17,810. Every guard passed, because all of them reasoned about the run and
   none of them looked at the diff.
+- An adapter reading a key the API does not send. `parse_workable` asked for
+  `j["location"]`, which apply.workable.com has never had, so every posting
+  from 2,094 boards was stored with no location and no error anywhere. The
+  same sweep found iCIMS writing locations in a second markup shape the
+  pattern did not match, and Avature in three.
+- A count stored as a place. Workday and Jobvite collapse a multi-location
+  posting to the string "2 Locations", which was written into the location
+  column, where it sits exactly where a city would and reads as one.
 - A PDF CV read as UTF-8 survived as thousands of characters of `%PDF-1.4`,
   object tables and Flate streams, cleared the "is this empty" length check,
   and became the document every fit score was judged against.
@@ -33,7 +41,12 @@ So the question to ask of any code you add, and of any code you are reviewing:
 **if this failed, would it look different from this succeeding?** If the answer
 is no, that is the bug, and it is worth more than whatever you came to fix.
 
-Two corollaries the codebase already applies:
+Three corollaries the codebase already applies:
+
+- **An adapter that finds nothing is not the same as a board with nothing.**
+  Reading a field that is not there returns empty, silently, forever. When you
+  add or change one, look at a real payload and check the fields you rely on
+  are the fields it sends.
 
 - **An unmeasurable gate is a failed gate.** If a check could not run, record
   `False`, never nothing. Readers count `is False`.
