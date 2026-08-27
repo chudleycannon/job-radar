@@ -2169,8 +2169,25 @@ _ICIMS_ITEM = re.compile(r'<div class="row">(.*?)(?=<div class="row">|</body>)',
 _ICIMS_LINK = re.compile(
     r'<a[^>]+href="(https?://[^"]*?/jobs/\d+/[^"?]+[^"]*)"[^>]*class="iCIMS_Anchor"[^>]*>(.*?)</a>',
     re.S)
+# iCIMS renders the location two different ways, and this matched one of them.
+#
+#   <span class="field-label">Job Locations</span> <span>UK-London</span>
+#   <span class="sr-only field-label">Location : Location</span> </dt>
+#     <dd class="iCIMS_JobHeaderData"><span> US-AZ-Chandler</span></dd>
+#
+# The second is a screen-reader label followed by a definition-list value, and
+# on a sample of 258 boards 55% of iCIMS roles came back with no location
+# because of it. iCIMS is 1,744 of the bundled boards, the second largest
+# platform in the list, and a role with no location cannot be filtered by
+# country.
+#
+# So the label is matched on the word rather than on one exact phrase, and the
+# value is taken from whichever of `<span>` or `<dd>` comes next. `[^<]*` on
+# the label keeps it from running past its own tag into unrelated markup.
 _ICIMS_LOC = re.compile(
-    r'field-label">Job Locations?</span>\s*<span[^>]*>\s*(.*?)\s*</span>', re.S)
+    r'field-label"[^>]*>[^<]*?Locations?[^<]*</span>'      # either label
+    r'(?:\s*</dt>)?\s*'                                    # the dl variant
+    r'(?:<dd[^>]*>)?\s*<span[^>]*>\s*(.*?)\s*</span>', re.S)
 
 # iCIMS states the page's verdict in one div and only when there is a verdict
 # to state. `iCIMS_GenericMessage` is that div. The other two error boxes on
