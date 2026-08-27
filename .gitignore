@@ -59,3 +59,9 @@ applications.local.yaml
 data/
 *.db
 .backups/
+
+# Raw output from tools/probe_rate_limit.py. 571 requests of headers and
+# statuses, and the conclusions drawn from it live in tests/test_rate_model.py
+# and docs/PLATFORMS.md, which is where a reader will look. The log is the
+# working, not the finding.
+tools/rate_probe_log.jsonl
