@@ -651,9 +651,25 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
         # otherwise refuse every generation and every rank for ever.
         if store.clear_locks(con):
             print("  released locks held by a previous run")
-        n = runner.regate(con)
-        if n:
-            print(f"  rechecked {n} document(s)")
+        # Housekeeping, and housekeeping must never be the reason the
+        # dashboard will not start. `regate` rewrites the quality gates on
+        # every stored document, so it writes, and a write loses to anything
+        # else holding the database: a scan, a rank, a second window. That
+        # raised straight out of `serve` and the server never reached its
+        # bind, so a scan running in another terminal meant the dashboard
+        # simply would not open, with a SQLite traceback as the explanation.
+        #
+        # Observed doing exactly that. The gates it refreshes are already
+        # correct on disk from when each document was written; re-checking
+        # them is an upgrade path for documents written before the gate was
+        # fixed, and that can wait for the next start.
+        try:
+            n = runner.regate(con)
+            if n:
+                print(f"  rechecked {n} document(s)", flush=True)
+        except sqlite3.OperationalError as e:
+            print(f"  skipped re-checking documents: {e}. "
+                  f"Something else is using the database.", flush=True)
     finally:
         con.close()
 
