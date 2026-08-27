@@ -223,7 +223,7 @@ REGISTRY: list[Platform] = [
         "workable",
         r"apply\.workable\.com/api",
         platforms.parse_workable,
-        build=lambda t: f"https://apply.workable.com/api/v1/widget/accounts/{t}",
+        build=lambda t: (f"https://apply.workable.com/api/v1/widget/accounts/{t}?details=true"),
         verified=True,
     ),
     Platform(
@@ -649,8 +649,37 @@ def by_name(name: str) -> Platform | None:
     return next((p for p in REGISTRY if p.name == name), None)
 
 
+# apply.workable.com's widget answers with the advert attached only when it is
+# asked to. Without `details=true` the response carries no description at all,
+# and 2,094 boards, fifty minutes and the slowest phase of the whole scan were
+# producing roles that could not be ranked (rank refuses anything under 200
+# characters), could not be checked against a dealbreaker, and had no salary,
+# because `parse_text` was reading an empty string. 219 of 219 stored Workable
+# roles had no description on 2026-08-27.
+#
+# It costs no extra request: same URL, same host, same pacing floor. Measured
+# over five real boards it is 11.5x the bytes and 1.28x the wall time, about
+# two and a half minutes across the phase, against fifty minutes that were
+# already being spent to fetch titles alone.
+#
+# Normalised here rather than in the bundled file alone, so an existing
+# sources.json and anything in `extra_sources` are fixed too. Somebody who
+# already has the list does not have to re-download it to get descriptions.
+_WORKABLE_WIDGET = re.compile(
+    r"^https?://apply\.workable\.com/api/v\d+/widget/accounts/[^/?#]+/?$")
+
+
+def _want_details(url: str) -> str:
+    if not url or not _WORKABLE_WIDGET.match(url.split("?")[0]):
+        return url
+    if "details=true" in url:
+        return url
+    return url.rstrip("/") + "?details=true"
+
+
 def prepare(src: Source) -> Source:
     """Fill in platform and POST body from the URL shape."""
+    src.url = _want_details(src.url)
     p = detect(src.url)
     if not src.platform:
         src.platform = p.name
