@@ -360,3 +360,29 @@ def test_loading_a_source_file_normalises_the_tag_it_was_written_with():
         ])
         got = {s.company: s.country for s in src_mod.load_file(f)}
     assert got == {"Old spelling": src_mod.MULTI_COUNTRY, "Code": "GB"}
+
+
+def test_the_contributor_notes_do_not_carry_a_rotting_number():
+    """CLAUDE.md tells contributors not to write counts into prose, having
+    shipped 17,625, 17,826, 17,828, "13 ATS APIs", "25 platforms" and "395
+    tests" while none of them was true. It states the current ones anyway, for
+    comments, so it has to be held to its own rule."""
+    import json
+
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "CLAUDE.md").read_text(encoding="utf-8")
+    data = json.loads((root / "sources" / "sources.json").read_text(encoding="utf-8"))
+    boards = [s for s in data["sources"] if not s.get("keyword_template")]
+
+    from jobradar import adapters
+    facts = {
+        f"{len(boards):,} employer boards": True,
+        f"{len(data['sources']):,} \nentries": None,          # wrapped, checked below
+        f"{len(adapters.REGISTRY)} adapters": True,
+        f"{len({s['platform'] for s in boards})} board platforms": True,
+    }
+    for claim, must in facts.items():
+        if must is None:
+            continue
+        assert claim in text.replace("\n", " "), f"CLAUDE.md no longer says {claim!r}"
+    assert "—" not in text, "CLAUDE.md has an em-dash in it"
