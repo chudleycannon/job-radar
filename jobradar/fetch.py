@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import random
 import re
+import json
 import threading
+from pathlib import Path
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -186,6 +188,9 @@ class HostLimiter:
         self.overrides = dict(PER_HOST_RPS if overrides is None else overrides)
         self._next_ok: dict[str, float] = defaultdict(float)
         self._blocked_until: dict[str, float] = {}
+        # Where a long block is remembered between runs, if anybody set it.
+        # See `remember_blocks`.
+        self._blocks_path: Path | None = None
         # Consecutive sources on a host that spent all their retries and still
         # got 429. See `note_refusal`.
         self._refusals: dict[str, int] = defaultdict(int)
@@ -242,6 +247,7 @@ class HostLimiter:
             until = time.monotonic() + seconds
             if until > self._blocked_until.get(host, 0.0):
                 self._blocked_until[host] = until
+                self._persist(host, seconds)
 
     def note_ok(self, url: str) -> None:
         """This host answered. Forget any run of refusals against it.
@@ -322,6 +328,80 @@ class HostLimiter:
                 return 0.0       # already blocked for longer, by a real header
             self._blocked_until[host] = until
         return BREAKER_BLOCK_SECONDS
+
+    # ------------------------------------------------------------------
+    # Remembering a long refusal between runs.
+    #
+    # `_blocked_until` is monotonic and per process, so a host that answered
+    # "Retry-After: 82613" -- not for another 23 hours -- was asked again by
+    # the very next `scan` or `validate`, and refused again, every time. The
+    # careful handling inside a run was undone by the run ending. Observed on
+    # apply.workable.com, which is the one host here whose limit is a
+    # long-window quota rather than a rate.
+    #
+    # Only long blocks are worth writing down. The circuit breaker's own short
+    # block is a within-run measure and persisting it would hold a host shut
+    # over a transient wobble, which is the opposite failure.
+    REMEMBER_ABOVE_SECONDS = 900
+
+    def remember_blocks(self, path) -> None:
+        """Read any still-live blocks from `path`, and write new ones there.
+
+        Stored as wall clock, because monotonic means nothing to the next
+        process. Wall clock can move -- a laptop that sleeps, a clock that
+        syncs -- so an entry claiming more than a day is treated as a clock
+        problem and dropped rather than honoured.
+
+        Never raises. A host block that could not be read is not a reason to
+        refuse to scan; it is a reason to be careful, and the host will say no
+        again if it is still saying no.
+        """
+        self._blocks_path = Path(path) if path else None
+        if not self._blocks_path or not self._blocks_path.exists():
+            return
+        try:
+            saved = json.loads(self._blocks_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(saved, dict):
+            # Valid JSON of the wrong shape. A list here raised
+            # AttributeError out of a function whose whole contract is that
+            # it never does, which would have taken a scan down over a file
+            # nothing important depends on.
+            return
+        now = time.time()
+        with self._lock:
+            for host, expires in saved.items():
+                try:
+                    left = float(expires) - now
+                except (TypeError, ValueError):
+                    continue
+                if 0 < left <= 86400 + self.REMEMBER_ABOVE_SECONDS:
+                    self._blocked_until[host] = max(
+                        self._blocked_until.get(host, 0.0),
+                        time.monotonic() + left)
+
+    def _persist(self, host: str, seconds: float) -> None:
+        """Called with the lock held. Never raises."""
+        if not self._blocks_path or seconds < self.REMEMBER_ABOVE_SECONDS:
+            return
+        try:
+            try:
+                saved = json.loads(
+                    self._blocks_path.read_text(encoding="utf-8"))
+                saved = saved if isinstance(saved, dict) else {}
+            except (OSError, ValueError):
+                saved = {}
+            now = time.time()
+            saved = {h: e for h, e in saved.items()
+                     if isinstance(e, (int, float)) and e > now}
+            saved[host] = now + seconds
+            self._blocks_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._blocks_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(saved, indent=1), encoding="utf-8")
+            tmp.replace(self._blocks_path)
+        except OSError:
+            pass
 
     def blocked_for(self, url: str) -> float:
         """Seconds left on this host's block, or 0 if it is not blocked."""
@@ -1799,6 +1879,10 @@ def fetch_all(
     # two configs in one process without them sharing a key.
     api_keys: dict[str, str] | None = None,
     on_result: Callable[[Result], None] | None = None,
+    # Where to remember a host that has shut the door for hours. Optional
+    # because a test, a benchmark or a one-off probe has no business writing
+    # to anybody's state directory; the scan passes it, nothing else does.
+    blocks_path: "str | Path | None" = None,
 ) -> list[Result]:
     out: list[Result] = []
     # Queued so that consecutive tasks land on different hosts. Without this,
@@ -1806,6 +1890,8 @@ def fetch_all(
     # into a pool where every worker is asleep waiting for the same host.
     queue = interleave_by_host(list(sources))
     limiter = HostLimiter(per_host_rps)
+    if blocks_path:
+        limiter.remember_blocks(blocks_path)
     # The old opening stagger, `(i % concurrency) * 0.05`, is gone. It only
     # ever delayed the first `concurrency` tasks, so at four workers it was
     # 0.15 seconds once and nothing at all for the other 17,805 sources. The

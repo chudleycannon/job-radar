@@ -413,7 +413,13 @@ def cmd_scan(args) -> int:
             _say(f"Pass {n} of {len(est)}, {label}: {len(group):,} sources, "
                  f"{_mins(mins)}.")
             results += fetch_all(
-                group, concurrency=cfg.concurrency, timeout=cfg.timeout,
+                group,
+                # Beside the seen-set, so it survives the run that learned it.
+                # A host answering "not for another 23 hours" was being asked
+                # again by the very next scan, because the answer lived only
+                # in the process that heard it.
+                blocks_path=Path(state.path).parent / "host-blocks.json",
+                concurrency=cfg.concurrency, timeout=cfg.timeout,
                 retries=cfg.retries, user_agent=cfg.user_agent,
                 search_terms=cfg.titles_include,
                 api_keys={"reed": cfg.reed_api_key,
