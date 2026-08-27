@@ -870,6 +870,17 @@ _JV_HYBRID = re.compile(r"^\s*hybrid\s+remote\b\s*,?\s*", re.I)
 _JV_REMOTE = re.compile(r"^\s*remote\b\s*,?\s*", re.I)
 
 
+# Split at the meta div rather than matching a closed one. `_JV_ROW` captures
+# the location cell non-greedily and stops at the first `</div>`, so the
+# closing tag is not inside the captured text and a pattern requiring one
+# matches nothing at all -- which looks exactly like a cell that had no meta
+# div in it.
+_JV_META = re.compile(r'<div[^>]*class="[^"]*jv-meta[^"]*"[^>]*>', re.I)
+_JV_META_COUNT = re.compile(
+    r'<div[^>]*class="[^"]*jv-meta[^"]*"[^>]*>\s*(\d+)\s+Locations?\b',
+    re.S | re.I)
+
+
 def parse_jobvite(payload: Any, src: Source) -> Iterator[Job]:
     """Jobvite. The board is `https://jobs.jobvite.com/<company>/jobs`.
 
@@ -894,7 +905,18 @@ def parse_jobvite(payload: Any, src: Source) -> Iterator[Job]:
         if not title:
             continue
 
-        place = _text(m.group(3))
+        # Jobvite collapses a multi-location role to a count in its own div:
+        #   <td class="jv-job-list-location"> Remote<span>,</span>
+        #     <div class="jv-meta"> 4 Locations </div></td>
+        # The count was surviving into the location column, where "4
+        # Locations" reads as a place name that no country logic can parse and
+        # no reader can tell from a real one. 65 of the roles in a 12-board
+        # sample said this. The real text of the cell is beside it and is what
+        # the row actually knows, so the meta div is removed first and the
+        # count kept as a flag instead.
+        cell = m.group(3)
+        cm = _JV_META_COUNT.search(cell)
+        place = _text(_JV_META.split(cell, 1)[0]).strip(" ,")
         if _JV_HYBRID.match(place):
             remote: bool | None = False
             place = _JV_HYBRID.sub("", place)
@@ -920,6 +942,8 @@ def parse_jobvite(payload: Any, src: Source) -> Iterator[Job]:
             url=urljoin(src.url, _text(m.group(1))),
             platform="jobvite",
             location=location,
+            flags=([f"listed in {cm.group(1)} locations; the list page names "
+                    f"none of them"] if cm else []),
             remote=remote,
             department=dept or None,
             # The JSON-LD on the posting page has `datePosted`, but `enrich`
