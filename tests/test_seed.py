@@ -226,3 +226,28 @@ def test_an_empty_shard_file_is_refused_rather_than_read_as_no_roles():
         assert "empty" in str(exc)
     else:
         raise AssertionError("a truncated shard read as an empty one")
+
+
+def test_a_shard_the_index_promises_but_does_not_ship_is_an_error():
+    """The failure a real first-run hit.
+
+    The shard extension changed and the schema number did not, so the index
+    was accepted, every file was missing under its new name, and `load`
+    skipped them all in silence. The run printed the shard sizes it had read
+    out of the index and then "Nothing in this index for your countries.
+    Config locations.countries", blaming the reader for an incomplete file.
+    """
+    d = _tmp(); seed.build(JOBS, d)
+    (d / "UK.jsonl.gz").unlink()
+    try:
+        list(seed.load(d, ["UK"]))
+    except FileNotFoundError as exc:
+        assert "UK" in str(exc) and "ebuild" in str(exc)
+    else:
+        raise AssertionError("a promised shard went missing without a word")
+
+
+def test_a_country_the_index_never_mentions_is_still_quiet():
+    """"No roles in Portugal" is not an error, it is an answer."""
+    d = _tmp(); seed.build(JOBS, d)
+    assert [j.company for j in seed.load(d, ["PT"])]  # unplaced + multiple

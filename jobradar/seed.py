@@ -196,18 +196,59 @@ def _check(schema, where: str) -> None:
             f"wrongly: a half-understood role still looks like a role.")
 
 
+def _wanted(root: Path, countries: Iterable[str]) -> list[str]:
+    """Shard names to read, given a reader's configured countries.
+
+    An EMPTY country list means no country filter: `screen.match` keeps a role
+    wherever it is, and `config.example.yaml` documents the empty list that
+    way. `shards_for([])` answers `unplaced, multiple`, which is right for
+    "these two always come too" and wrong as the whole answer -- it left a
+    reader with no countries set holding 238 of a 2,239-role shard set, every
+    US and UK role thrown away, and a summary line that read like the file was
+    that small. No countries means every shard on disk.
+    """
+    want = [c for c in countries if (c or "").strip()]
+    if want:
+        return shards_for(want)
+    tail = ".jsonl.gz"
+    return sorted(p.name[: -len(tail)] for p in root.glob(f"*{tail}"))
+
+
 def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
     """Every role in the shards these countries need.
 
-    Missing shards are skipped in silence, because "no roles in Portugal" and
-    "no Portugal shard" are the same fact from the reader's side. A shard that
-    exists and cannot be read is not skipped: it raises.
+    A shard the index does not mention is skipped in silence, because "no
+    roles in Portugal" and "no Portugal shard" are the same fact from the
+    reader's side. A shard the index DOES mention and that is not on disk
+    raises, and so does one that cannot be read.
+
+    That distinction was missing and it cost a first run its whole import.
+    The shard extension changed from `.json.gz` to `.jsonl.gz`, `read_index`
+    accepted the set because the schema number had not moved, and this
+    globbed for a name that was not there and skipped every file without a
+    word. The run printed the shard sizes it had just read out of the index
+    and then "Nothing in this index for your countries. Config
+    locations.countries" -- two consecutive lines contradicting each other,
+    with the blame landing on the reader.
     """
     root = Path(src)
     root = root if root.is_dir() else root.parent
-    for name in shards_for(countries):
+    try:
+        listed = read_index(root).get("shards") or {}
+    except (OSError, ValueError):
+        # No readable index. A hand-assembled directory is allowed to be just
+        # files, and there is nothing to be inconsistent with.
+        listed = {}
+    for name in _wanted(root, countries):
         path = root / f"{name}.jsonl.gz"
         if not path.exists():
+            if name in listed:
+                raise FileNotFoundError(
+                    f"the index lists a {name} shard holding "
+                    f"{listed[name].get('roles', '?')} roles, but "
+                    f"{path.name} is not there. This shard set is incomplete "
+                    f"or was written by a different version of job-radar. "
+                    f"Rebuild it rather than importing part of it.")
             continue
         with gzip.open(path, "rt", encoding="utf-8") as fh:
             head = fh.readline()
@@ -226,12 +267,18 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
 
 def describe(idx: dict, countries: Iterable[str]) -> str:
     """One line for the user, naming what they are about to get and its age."""
-    want = shards_for(countries)
-    have = {k: v for k, v in (idx.get("shards") or {}).items() if k in want}
+    # Same rule as `_wanted`: no countries configured means no country filter,
+    # so the reader gets the whole index rather than the two shards that ride
+    # along with every download.
+    asked = [c for c in countries if (c or "").strip()]
+    shards = idx.get("shards") or {}
+    want = shards_for(asked) if asked else sorted(shards)
+    have = {k: v for k, v in shards.items() if k in want}
     roles = sum(v.get("roles", 0) for v in have.values())
     size = sum(v.get("bytes", 0) for v in have.values())
     if not roles:
-        return f"No prebuilt roles for {', '.join(want)} in this index."
+        where = ", ".join(want) if want else "any country"
+        return f"No prebuilt roles for {where} in this index."
     return (f"{roles:,} roles for {', '.join(sorted(have))}, "
             f"{size / 1e6:.0f}MB, built {idx.get('generated', 'at some point')}. "
             f"Your own scan runs anyway and its answer wins.")
