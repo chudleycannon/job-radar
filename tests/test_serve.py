@@ -305,11 +305,19 @@ def test_a_worker_that_dies_before_it_starts_does_not_leave_a_spinner():
         job = store.enqueue(con, "uid-one", "cv")
         assert store.claim(con, "generate")
         real = store.connect
-        calls = {"n": 0}
+        # Keyed to the worker thread, not to a call count, and settling on the
+        # lock rather than on the row. Both faults are the ones its rank twin
+        # was fixed for, and this one kept them: `store.connect` is a module
+        # global, so a counter hands the injected failure to whichever caller
+        # arrives first, and `spawn` marks the row failed before it releases
+        # the lock, so waiting on the row leaves a window the assertion below
+        # can land in. Green on four runners and lost on a loaded Windows one.
+        armed = threading.Event()
+        armed.set()
 
         def flaky(p=None):
-            calls["n"] += 1
-            if calls["n"] == 1:                  # a transient lock, then fine
+            if armed.is_set() and threading.current_thread() is not threading.main_thread():
+                armed.clear()
                 raise sqlite3.OperationalError("database is locked")
             return real(p)
 
@@ -317,8 +325,12 @@ def test_a_worker_that_dies_before_it_starts_does_not_leave_a_spinner():
         try:
             with _quiet_threads():
                 runner.spawn(job, db_path=str(db))
-                _settle(lambda: con.execute("SELECT state FROM jobs WHERE id=?",
-                                            (job,)).fetchone()["state"] != "pending")
+                _settle(lambda: con.execute(
+                    "SELECT state FROM jobs WHERE id=?", (job,)
+                ).fetchone()["state"] != "pending"
+                    and con.execute(
+                        "SELECT 1 FROM locks WHERE name='generate'"
+                    ).fetchone() is None)
         finally:
             store.connect = real
         row = con.execute("SELECT state,error FROM jobs WHERE id=?",
