@@ -80,8 +80,14 @@ merely looks changed.
 ## Format
 
 `index.json` names the schema version, the build date, how many boards were
-read, and every shard with its role count and byte size. Each shard is
-gzipped JSON: `{"schema": 1, "shard": "UK", "roles": [...]}`.
+read, and every shard with its role count and byte size. Each shard is gzipped
+JSON, one object per line: a header (`{"schema":1,"shard":"UK","roles":N}`)
+and then one role per line.
+
+One object per line rather than one array, because an array has to be parsed
+whole before the first role is available. A 35,000-role shard cost 360MB of
+resident memory that way, and the US shard is eight times the size. Per line,
+the reader holds one role at a time.
 
 Row keys are one or two characters because they repeat once per role and
 there are a quarter of a million of them. Nothing else is optimised; it is

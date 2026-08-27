@@ -123,8 +123,8 @@ def test_the_seed_carries_no_answer_that_belongs_to_a_config():
     everybody else's search.
     """
     d = _tmp(); seed.build(JOBS, d)
-    raw = json.loads(gzip.open(d / "UK.json.gz", "rb").read().decode("utf-8"))
-    keys = {k for row in raw["roles"] for k in row}
+    lines = gzip.open(d / "UK.jsonl.gz", "rt", encoding="utf-8").read().splitlines()
+    keys = {k for line in lines[1:] for k in json.loads(line)}
     for banned in ("score", "fit", "reasons", "app_status"):
         assert banned not in keys
     for j in seed.load(d, ["UK"]):
@@ -155,9 +155,9 @@ def test_rebuilding_an_unchanged_set_produces_identical_bytes():
     """So a shard set can be published without every file looking changed."""
     d = _tmp()
     seed.build(JOBS, d, generated="2026-01-01")
-    first = (d / "UK.json.gz").read_bytes()
+    first = (d / "UK.jsonl.gz").read_bytes()
     seed.build(JOBS, d, generated="2026-01-01")
-    assert (d / "UK.json.gz").read_bytes() == first
+    assert (d / "UK.jsonl.gz").read_bytes() == first
 
 
 def test_build_writes_nothing_outside_the_directory_it_was_given():
@@ -196,3 +196,33 @@ def test_remote_false_is_not_confused_with_remote_unknown():
     assert got["A"] == (False, "office")
     assert got["B"] == (True, "remote")
     assert got["C"] == (None, "unstated")
+
+
+def test_a_shard_is_read_one_role_at_a_time_not_parsed_whole():
+    """A single JSON array has to be parsed whole before the first role is
+    available. A 35,000-role shard cost 360MB of resident memory that way,
+    and the US shard is eight times that. One object per line means the
+    reader holds one role and the caller decides what to keep."""
+    d = _tmp(); seed.build(JOBS, d)
+    text = gzip.open(d / "UK.jsonl.gz", "rt", encoding="utf-8").read()
+    lines = [l for l in text.splitlines() if l.strip()]
+    assert json.loads(lines[0])["schema"] == seed.SCHEMA, "no header line"
+    assert len(lines) > 1
+    for line in lines[1:]:
+        json.loads(line)          # every line stands alone
+    import types
+    assert isinstance(seed.load(d, ["UK"]), types.GeneratorType)
+
+
+def test_an_empty_shard_file_is_refused_rather_than_read_as_no_roles():
+    """A shard that exists is one somebody meant to publish. Reading nothing
+    out of a truncated file, silently, is the failure this project keeps
+    finding: it renders exactly like a country with no vacancies."""
+    d = _tmp(); seed.build(JOBS, d)
+    (d / "UK.jsonl.gz").write_bytes(gzip.compress(b""))
+    try:
+        list(seed.load(d, ["UK"]))
+    except ValueError as exc:
+        assert "empty" in str(exc)
+    else:
+        raise AssertionError("a truncated shard read as an empty one")

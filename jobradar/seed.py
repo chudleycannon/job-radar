@@ -152,9 +152,18 @@ def build(jobs: Iterable[Job], out_dir: str | Path, *,
         "shards": {},
     }
     for name, rows in sorted(buckets.items()):
-        blob = json.dumps({"schema": SCHEMA, "shard": name, "roles": rows},
-                          separators=(",", ":"), ensure_ascii=False)
-        path = out / f"{name}.json.gz"
+        # One JSON object per line, header first, rather than one array. A
+        # single array has to be parsed whole before the first role is
+        # available, and a 35,000-role shard cost 360MB of resident memory
+        # that way, on top of the parsed string it was built from. Per line,
+        # the reader holds one role at a time and the caller decides what to
+        # keep. The US shard is eight times that size.
+        blob = "\n".join(
+            [json.dumps({"schema": SCHEMA, "shard": name, "roles": len(rows)},
+                        separators=(",", ":"))]
+            + [json.dumps(r, separators=(",", ":"), ensure_ascii=False)
+               for r in rows]) + "\n"
+        path = out / f"{name}.jsonl.gz"
         # Written whole then renamed, like everything else here that is not
         # cheaply regenerable, so a reader can never open a half-written file
         # and take it for a short one. mtime=0 so rebuilding an unchanged
@@ -197,14 +206,22 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
     root = Path(src)
     root = root if root.is_dir() else root.parent
     for name in shards_for(countries):
-        path = root / f"{name}.json.gz"
+        path = root / f"{name}.jsonl.gz"
         if not path.exists():
             continue
-        with gzip.open(path, "rb") as fh:
-            payload = json.loads(fh.read().decode("utf-8"))
-        _check(payload.get("schema"), str(path))
-        for row in payload.get("roles") or []:
-            yield _unpack(row)
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            head = fh.readline()
+            if not head.strip():
+                # An empty file is not an empty shard. A shard that exists is
+                # a shard somebody meant to publish, and reading nothing out
+                # of it silently is the failure this project keeps finding.
+                raise ValueError(f"{path} is empty, so it was not written "
+                                 f"properly. Refusing to read it as a shard "
+                                 f"with no roles in it.")
+            _check(json.loads(head).get("schema"), str(path))
+            for line in fh:
+                if line.strip():
+                    yield _unpack(json.loads(line))
 
 
 def describe(idx: dict, countries: Iterable[str]) -> str:
