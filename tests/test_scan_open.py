@@ -12,6 +12,7 @@ produces them.
 """
 import ast
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -86,9 +87,28 @@ class ScanOpensTheDashboard(unittest.TestCase):
 
 class ServerDetection(unittest.TestCase):
 
-    def test_nothing_listening_reads_as_not_serving(self):
+    def test_it_reports_a_port_that_is_listening_and_one_that_is_not(self):
+        """Bind a port here rather than assuming one is free.
+
+        This asserted that nothing was on 8799, and something was: a dashboard
+        somebody had left running. A test that depends on the rest of the
+        machine being quiet fails for reasons that have nothing to do with the
+        code, which is how a suite stops being believed.
+        """
+        import socket
         from jobradar import serve
-        self.assertFalse(serve.already_serving(port=8799))
+        with socket.socket() as srv:
+            srv.bind(("127.0.0.1", 0))
+            srv.listen(1)
+            port = srv.getsockname()[1]
+            self.assertTrue(serve.already_serving(port=port))
+        # Closed now, so the same port answers the other way. Retried a few
+        # times because a just-closed listener can linger for a moment.
+        for _ in range(20):
+            if not serve.already_serving(port=port):
+                return
+            time.sleep(0.05)
+        self.fail(f"port {port} still reads as serving after its socket closed")
 
     def test_open_in_background_declines_when_one_is_already_up(self):
         from jobradar import serve

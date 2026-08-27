@@ -106,19 +106,19 @@ prints them again afterwards: one role to two lines, the score, the title, the
 company and either the stated salary or `unconfirmed`, with the role's id and
 location underneath. `job-radar serve` is that same list with buttons.
 
-**17,807 employer boards across 21 platforms**, plus three keyword searches
-(LinkedIn, NHS Jobs, and Workable's own cross-employer search), which is what
-takes `sources/sources.json` to 17,810 entries. Roughly 4,100 of the boards
+**17,807 employer boards across 21 platforms**, plus four keyword searches
+(LinkedIn, NHS Jobs, and two of Workable's own cross-employer feeds), which is
+what takes `sources/sources.json` to 17,811 entries. Roughly 4,100 of the boards
 are Greenhouse and 2,600 Ashby, then Workable, iCIMS, Workday, Personio,
 Breezy, Recruitee, SmartRecruiters and Oracle in the four figures or high
 hundreds, down to Pinpoint and SuccessFactors in the tens. Names you would
 recognise are on it: Barclays, Lloyds, Santander, BP, Shell, Unilever, Tesco,
 Marks & Spencer, John Lewis, Sky, Skyscanner, Accenture, Linklaters, Transport
-for London, Ofcom and the FCA among them. The code carries 27 adapters, four
+for London, Ofcom and the FCA among them. The code carries 29 adapters, five
 more than the bundled list uses.
 
 `job-radar coverage` counts the file rather than trusting that paragraph, and
-prints slightly more than 17,807, because the three keyword templates are
+prints slightly more than 17,807, because the four keyword templates are
 expanded against your own titles and countries. Where the list came from, and
 the two keyed aggregators you can add yourself, are in
 [docs/SOURCES.md](docs/SOURCES.md).
@@ -368,8 +368,8 @@ so these are stated rather than left for you to find.
   flagged, read from the description. Most state nothing, and nothing here is
   filtered on it, so treat an unflagged role as unknown rather than as
   available.
-- **Sector filtering is only as good as the tags.** Of 17,810 sources, 6,089
-  carry a sector tag and 11,721 carry none, because an address harvested from
+- **Sector filtering is only as good as the tags.** Of 17,811 sources, 6,089
+  carry a sector tag and 11,722 carry none, because an address harvested from
   a crawl index does not say what industry the employer is in. A `sectors:`
   filter keeps every untagged source as well as the ones you asked for, so it
   never cuts you down to the tagged few, but you cannot ask this list for
