@@ -70,9 +70,13 @@ suite has already lost a morning to one.
   each place the code relies on that.
 - **Never run `generate` or `rank` to test something.** They call a paid model.
   Stub `runner.claude_bin` or `rank._call` and say so.
-- **Be polite to third parties.** About one request a second per host, stop
-  after two failures on a host. There are 17,807 boards here and every one of
-  them belongs to somebody.
+- **Be polite to third parties.** There are 17,807 boards here and every one of
+  them belongs to somebody. When you are probing or experimenting by hand, one
+  request a second per host and stop after two failures. The scan itself is
+  paced by `fetch.PER_HOST_RPS`, which is higher and is measured: see
+  `docs/PLATFORMS.md` for what each host is documented to allow and what it was
+  actually observed to tolerate. Do not raise a number there without evidence,
+  and never raise Workable's.
 - **No em-dashes anywhere**, prose or generated output. Nothing in the repo has
   one and a test checks the workflows.
 

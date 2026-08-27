@@ -44,6 +44,53 @@ def _load_sources(cfg: Config) -> list[Source]:
     return srcs
 
 
+# ------------------------------------------------------------- pacing
+def pacing_floors(srcs, limiter=None) -> list[tuple[float, str, int, float]]:
+    """How long each paced host takes on its own clock, worst first.
+
+    `(seconds, host, boards, gap)`. This is a floor the scan cannot beat
+    however many workers it runs, because every request to one host queues
+    behind that host's own gap. It exists because a board count hides it
+    completely: apply.workable.com is 12% of the bundled list and 100% of the
+    fifty minutes, purely because it is the one busy host paced below the
+    default rate.
+
+    Two honesty notes, both of which make this a LOWER bound rather than an
+    estimate.
+
+    Boards, not requests. A paged board costs several requests to its own
+    host -- Workday walks up to ten pages per search term -- and none of that
+    is counted here. It happens not to distort the answer, because the hosts
+    with enough boards to matter are Greenhouse, Ashby, Workable,
+    SmartRecruiters, Jobvite and the two Lever deployments, and every one of
+    those is one request per board. The paged platforms put one board on each
+    host, so their extra requests are spread over thousands of clocks rather
+    than queued behind one.
+
+    Hosts holding a single board are left out, and on the bundled list that is
+    the overwhelming majority of them. A gap only ever delays a SECOND request
+    to the same host, so on a host asked once the rate is a number that is
+    never consulted, and those boards are limited by `fetch.concurrency`
+    alone. That is why the two dials are not interchangeable, and why neither
+    can be tuned by looking at the total.
+    """
+    limiter = limiter or HostLimiter()
+    boards: dict[str, int] = {}
+    for s in srcs:
+        host = urlparse(s.url).netloc
+        boards[host] = boards.get(host, 0) + 1
+    out = []
+    for host, n in boards.items():
+        gap = limiter.gap_for(host)
+        # `n * gap` rather than `(n - 1) * gap`, to agree with
+        # `tools/bench_fetch.py --platforms`, which is where the 49.9 and 22.7
+        # minute figures in the history came from. The difference is one gap.
+        if gap > 0 and n > 1:
+            out.append((n * gap, host, n, gap))
+    out.sort(reverse=True)
+    return out
+
+
 # ---------------------------------------------------------------- scan
 def cmd_scan(args) -> int:
     cfg = load_cfg(args.config)
@@ -73,6 +120,27 @@ def cmd_scan(args) -> int:
              f"{cfg.concurrency} is mostly waiting. "
              f"`fetch.concurrency: {fetch_defaults.DEFAULT_CONCURRENCY}` in "
              f"{cfg.path or 'your config'} is the new default.")
+
+    # Say where the time goes before spending it, not after. The scan has two
+    # floors and cannot beat the larger: one host's own clock, and the machine
+    # divided by the workers. Only the first can be known before the run, and
+    # it is the one nobody would guess, because it is not proportional to the
+    # board count -- 12% of the bundled list has been 100% of the wall clock.
+    #
+    # It is also the number that decides whether raising `fetch.concurrency`
+    # would do anything at all. While a paced host sets the floor, more
+    # workers only park more of them in `HostLimiter.wait`.
+    floors = pacing_floors(srcs)
+    if floors and floors[0][0] >= 120:
+        secs, host, n, gap = floors[0]
+        paced = sum(1 for f in floors)
+        on_paced = sum(f[2] for f in floors)
+        _say(f"  the floor is {host}: {n:,} boards at "
+             f"{1 / gap:.3g}/s is {secs / 60:.0f} min on that host alone, "
+             f"whatever concurrency is set to.")
+        _say(f"  {on_paced:,} of {len(srcs):,} sources sit on the {paced} host(s) "
+             f"where pacing applies at all; the rest hold one board each and "
+             f"are limited by concurrency ({cfg.concurrency}), not by rate.")
 
     done = {"n": 0}
     all_jobs: list = []

@@ -115,3 +115,222 @@ portal number, and cannot be read by the same parser. Cook County and EFSA are
 both on that generation. Those boards are reported as unreadable by name
 rather than counted as empty, which matters because `validate --prune` deletes
 what reads as dead.
+
+## How fast each platform is asked, and where that number came from
+
+Politeness here is a per-host rate, not a global one, because the work is
+bimodal. Seven hosts carry more than half the bundled list between them and
+about 7,749 hosts carry one board each. A single concurrency number cannot
+serve both: set it low enough for the seven and it wastes an hour on the long
+tail, set it high enough for the tail and it becomes a burst against
+Greenhouse. `HostLimiter` in `jobradar/fetch.py` gives every host its own
+clock, `PER_HOST_RPS` holds the exceptions and `DEFAULT_PER_HOST_RPS` is what
+everything else gets.
+
+**The rate is only consulted on a host that is asked twice.** That is the fact
+that makes this table short. A gap delays the SECOND request to a host, so on
+the ~7,749 single-board hosts the default rate is a number that is never read,
+and those boards are limited by `fetch.concurrency` and nothing else. Raising
+the default rate does nothing for them; raising concurrency does nothing for
+the seven. `job-radar scan` now says which of the two it is bound by before it
+starts, and `jobradar.cli.pacing_floors` is the arithmetic behind that line.
+
+### What each busy host is documented to allow
+
+Checked 2026-08-27, by reading each vendor's own developer documentation.
+**The honest summary is that for the public feeds this tool actually reads,
+almost nothing is documented.** The published numbers that do exist are
+attached to the vendors' AUTHENTICATED APIs, and none of those pages says the
+limit extends to the anonymous endpoint.
+
+| Host | Boards | Documented limit for the endpoint this tool calls | Where that comes from |
+|---|---|---|---|
+| `boards-api.greenhouse.io` | 4,078 | **None.** The Job Board API page states no rate limit, no 429 contract and no `Retry-After` behaviour anywhere on it. | [Job Board API](https://docs.greenhouse.io/job-board.html). The limit people quote is [Harvest's](https://docs.greenhouse.io/harvest.html), which is scoped in the text to "Harvest API requests" and never mentions the Job Board API. [Newer Harvest docs](https://harvestdocs.greenhouse.io/docs/api-rate-limiting) decline to publish an absolute number at all, so the widely repeated "50 per 10 seconds" is an example header value, not a documented allowance. |
+| `api.ashbyhq.com` | 2,607 | **None** for `/posting-api/job-board/{name}`, and none for the authenticated posting API either. | [Public job posting API](https://developers.ashbyhq.com/docs/public-job-posting-api). The only number anywhere in Ashby's docs is 15 requests a minute for [`report.generate`](https://developers.ashbyhq.com/reference/reportgenerate), scoped per organisation, and generalising it to postings would be inventing a limit rather than finding one. |
+| `api.smartrecruiters.com` | 910 | **10 requests a second**, 8 concurrent, for most endpoints. The Posting API is not on the 2/s list. | [Throttling policies](https://developers.smartrecruiters.com/docs/throttling-policies). The caveat is real: "All throttling policies are applied to an individual Customer API user", so an unauthenticated Posting API call is formally unaddressed. It documents adaptive throttling, 429 with `Retry-After`, and `X-RateLimit-Remaining`. |
+| `jobs.jobvite.com` | 257 | **Not public.** The developer portal is behind a login; the quotas that circulate come from integration vendors. | Nothing citable. This tool scrapes the server-rendered career site, not an API, so no published policy covers it. |
+| `api.eu.lever.co`, `api.lever.co` | 40, 25 | **None** for reading postings. The one documented number is 2 POSTs a second for application submissions, which is a different endpoint. | [Postings API README](https://github.com/lever/postings-api/blob/master/README.md). The 10/s with bursts to 20 in [Lever's developer docs](https://hire.lever.co/developer/documentation) is explicitly "by API key", and this tool sends no key. |
+| iCIMS, Workday, Personio, Recruitee, Breezy, Teamtailor, BambooHR | 1 board per host | Irrelevant to pacing, because each employer is its own host and is asked once. Where a limit is documented (iCIMS 10,000 calls a day per customer, Recruitee 1,000 a minute per token, Teamtailor 50 per 10 seconds) it is per customer or per token and nowhere near what one board costs. | iCIMS and Recruitee and Teamtailor developer docs. |
+
+Two consequences worth stating plainly.
+
+**Only one host on this list publishes a number that applies.** SmartRecruiters
+says 10 requests a second, and this tool asks it for 3. That is the single
+case where the documentation says the pacing is too conservative rather than
+leaving the question open.
+
+**For Greenhouse and Ashby there is no published safe rate and no promised
+`Retry-After`.** Nothing obliges either host to tell us it is unhappy in a way
+the code can read, which is an argument for a conservative default rather than
+against one, and it is the same argument this file already makes about
+Cornerstone and that `CLAUDE.md` makes about the circuit breaker.
+
+### Where the 3.0 came from
+
+`DEFAULT_PER_HOST_RPS = 3.0` entered in 76d4e98, the commit that stopped a
+rate-limit refusal costing eight hours of sleeping. That commit measured a
+great deal and states its measurements: 181.3s to 4.4s on twelve real Workable
+sources, 97.1 minutes against 49.9 for the interleaving, 1.3x for the pooled
+sessions, 82.8s to 46.3s median over eight runs on a 419-source sample. The
+one number in it with no measurement attached is this one. It appears as
+"3 requests/second by default and 0.7 for Workable, which is the rate the
+maintainer's enumerator has sustained overnight without a 429": the evidence
+cited is for the 0.7, and the 3.0 is stated rather than derived.
+
+So it is a default nobody measured, and the only reason it has never mattered
+is that Workable's 0.7 hid it. Remove Workable and 3.0 becomes the whole
+answer to how long a scan takes.
+
+What can be said for it: no host has been recorded refusing at 3.0, and the
+sample runs behind that commit drew zero 429s. Every full scan since has put
+4,078 requests through `boards-api.greenhouse.io` at that rate, roughly 23
+minutes end to end, without a refusal that reached the report. That is
+genuine evidence, and it is evidence about the floor rather than the ceiling:
+it says 3.0 is safe and says nothing at all about 4, or 6, or 10.
+
+One more thing it is worth being clear about, because it changes what "3.0 is
+conservative" means. `CLAUDE.md` tells contributors to be polite at "about one
+request a second per host". The code has run at three times that since
+per-host pacing was introduced, and nobody updated the sentence.
+
+### A host can be slowed by its own refusals and nothing says so
+
+This is the Workable failure one level up, and it is worth knowing about
+before anyone raises a rate on the strength of "we have never seen a 429".
+
+`fetch_one` calls `HostLimiter.note_throttle` on every 429, including the ones
+that then succeed on retry, and that widens the host's gap by
+`HOST_SLOWDOWN_STEP` up to `MAX_HOST_SLOWDOWN`. That part works and it is the
+right behaviour. What is missing is anyone saying it happened:
+
+* A 429 that succeeds on the retry produces an ordinary `Result` with
+  `status` 200 and `throttled` False. Nothing distinguishes it from a request
+  that was never refused.
+* `detect_throttling` only catches a source that returned nothing and has
+  returned something before, so a board that came back full after one refusal
+  is invisible to it.
+* The scan's "is rate-limiting this connection" line only fires for results
+  carrying a block, which needs `CONSECUTIVE_429_LIMIT` refusals in a row.
+* `HostLimiter.note_throttle` returns the multiplier now in force, and its
+  own docstring says that is "so a caller can say out loud that it has slowed
+  down rather than doing it silently". No caller reads it. `slowdown_for` has
+  no caller either.
+
+So a host refusing one request in four at 3.0 today would look exactly like a
+host that is fine, while quietly running at half or a quarter of the rate the
+table asks for, and the run would be slower than the floor predicts with
+nothing on screen to say why. The fix belongs in `fetch.py` and is small:
+`fetch_all` should return, or hand to `on_result`, the hosts whose slowdown
+ended above 1.0, and the scan should name them the way it already names a
+blocked host. Until that exists, "no 429s were reported" is not the same
+statement as "no 429s happened", and any rate raised on the first should be
+raised knowing it is not the second.
+
+### Concurrency is a separate dial and it becomes the binding one
+
+`DEFAULT_CONCURRENCY` is 16 and `MAX_CONCURRENCY` is 64. While a paced host
+sets the floor, raising the first does nothing at all: the extra workers park
+in `HostLimiter.wait`. Simulating the fetch phase over the bundled list, with
+Workable removed and every other rate left at 3.0, gives the same 22.7 minutes
+at 16, 24, 32, 48 and 64 workers. That is the shape to expect whenever pacing
+binds.
+
+It stops being the shape as soon as the rates come up. The other floor is
+total request-seconds divided by workers, which after Workable is about 259
+request-minutes, so 16 workers cannot beat roughly 16 minutes however polite
+or impolite the pacing is. Raising Greenhouse and Ashby past about 4 requests
+a second therefore buys nothing at all until the worker count goes up with it.
+
+### What each host actually tolerated, measured 2026-08-27
+
+Measured after a full scan had finished, so the hosts had just taken a normal
+day's traffic rather than being rested. Every probe used the scan's own User-
+Agent and Accept headers, real board tokens off the bundled list so nothing
+was answered from a per-URL cache, a pool with one shared per-host slot clock
+so the rate asked for was the rate achieved, and a hard stop on the first 429
+or 403. None of them stopped.
+
+A first attempt is worth recording because it measured the probe rather than
+the host: single threaded, it asked for 6 requests a second and achieved 2.25,
+because a host answering in 0.45s cannot be asked six times a second by one
+thread. Any rate probe that does not report the rate it actually reached is
+reporting its own latency.
+
+| Host | Sustained | Requests | Result |
+|---|---|---|---|
+| `boards-api.greenhouse.io` | **6.39/s for 56s** | 360 | 360 x HTTP 200. No 429, no 403. Latency p50 0.137s. |
+| `api.ashbyhq.com` | **6.36/s for 47s** | 300 | 300 x HTTP 200, 5,193 postings. Empty-board share 0/150 in the first half and 1/150 in the second, so it was not silently answering with empty arrays either. |
+| `api.smartrecruiters.com` | **7.75/s for 39s** | 300 | 300 x HTTP 200. No 429. Documented allowance is 10/s. |
+
+Ashby needed the extra check because a status code cannot answer this question
+there: it returns HTTP 200 with an empty array both for a token that does not
+exist and for one being rate-limited, so a probe watching for 429 on that host
+watches the wrong thing and would report "no refusals" while being refused.
+
+Not probed, deliberately. `jobs.jobvite.com` is 257 boards and 1.4 minutes,
+it is a scraped career site rather than an API, and it sits behind Cloudflare;
+there is no case for pushing it when the whole prize is 84 seconds. The two
+Lever hosts are 65 boards between them, 13 seconds, and equally not worth a
+request. `apply.workable.com` is measured elsewhere and is not touched here.
+
+Neither Greenhouse nor Ashby returns a rate-limit header of any kind. One
+request to each showed `boards-api.greenhouse.io` behind CloudFront with
+`cache-control: max-age=0, private, must-revalidate`, so every board fetch
+reaches their origin, and `api.ashbyhq.com` behind Cloudflare with
+`cache-control: public, max-age=60` and `cf-cache-status: HIT`, so some of
+that load is absorbed at the edge. That is a real difference in what the two
+hosts are being asked to do, and it is the reason Greenhouse gets the more
+cautious of two otherwise identical measurements.
+
+### The rates, and the evidence behind each
+
+| Host | Boards | Documented | Tolerated | Today | Recommended | Why |
+|---|---|---|---|---|---|---|
+| `boards-api.greenhouse.io` | 4,078 | none published | 6.39/s x 360, clean | 3.0 | **5.0** | Nothing is documented, so this rests on measurement alone and keeps about 20% under the highest rate observed clean. Every request is an origin hit. Total volume does not change: 4,078 requests either way, just spread over 13.6 minutes instead of 22.7. |
+| `api.ashbyhq.com` | 2,607 | none published | 6.36/s x 300, clean, no empty-200 drift | 3.0 | **5.0** | Same evidence and same margin. Part of the load is served from Cloudflare's cache, which argues for at least as much headroom as Greenhouse rather than less. |
+| `api.smartrecruiters.com` | 910 | **10/s**, 8 concurrent | 7.75/s x 300, clean | 3.0 | **8.0** | The only host here with a published number. 8.0 sits under it with margin, and under the documented 8-concurrent rule. Worth 3.2 minutes. |
+| `jobs.jobvite.com` | 257 | not public | not probed | 3.0 | **3.0** | 1.4 minutes. Scraped HTML behind Cloudflare, no published policy, nothing to gain. |
+| `api.eu.lever.co` | 40 | none for reads | not probed | 3.0 | **3.0** | 13 seconds. |
+| `api.lever.co` | 25 | none for reads | not probed | 3.0 | **3.0** | 8 seconds. |
+| `*.icims.com` | 1,744 | 10,000/day per customer | n/a | 3.0 | **3.0**, and it is never read | One board per host. The rate is not consulted on a host asked once. |
+| `*.myworkdayjobs.com` | 1,489 | none published | n/a | 3.0 | **3.0** | One board per host, but 5.36 requests per board, so this is the one platform where the default rate is consulted on a single-board host: it paces the pages of one tenant's own board. Leave it. Community reporting is that Workday's edge limits by source IP across all tenants at once, which is an argument for keeping the gap rather than removing it. |
+| `*.jobs.personio.de` and every other single-board host | ~7,749 hosts | mostly none | n/a | 3.0 | **3.0**, unread | One request each. |
+
+`PER_HOST_RPS` and `DEFAULT_PER_HOST_RPS` both live in `jobradar/fetch.py`.
+Adopting the above means three entries in `PER_HOST_RPS` and no change to the
+default, which stays 3.0 for the long tail where it is almost never consulted
+anyway.
+
+### The projected floor
+
+Measured per-platform on 2026-08-27, `tools/bench_fetch.py --platforms`, with
+`apply.workable.com` excluded. Requests rather than boards, because Workday
+costs 5.36 requests a board, Phenom 8.12, SuccessFactors 6.38 and Avature 4.38:
+
+    23,713 requests, 190.6 minutes of request-seconds
+
+Two floors, and the scan cannot beat the larger:
+
+    per-host   Greenhouse   4,078 requests / 3.0 per second  =  22.7 min
+                            4,078 requests / 5.0 per second  =  13.6 min
+               Ashby        2,607 / 3.0 = 14.5 min,  / 5.0 = 8.7 min
+               SmartRecr.     910 / 3.0 =  5.1 min,  / 8.0 = 1.9 min
+    machine    190.6 request-minutes / 16 workers            =  11.9 min
+
+So the fetch phase, simulated over the whole list with the measured rates:
+
+| Setting | Workers | Fetch phase |
+|---|---|---|
+| today, Workable included | 16 | 49.8 min |
+| Workable gone, everything still 3.0 | 16 | 22.7 min |
+| **Greenhouse 5.0, Ashby 5.0, SmartRecruiters 8.0** | **16** | **14.1 min** |
+| the same, 24 workers | 24 | 13.6 min |
+| Greenhouse and Ashby at 6.0 instead | 24 | 11.4 min |
+
+**Concurrency should stay at 16.** While Greenhouse is paced at 5.0 its own
+floor is 13.6 minutes and the machine's is 11.9, so the pacing still binds and
+extra workers only park in `HostLimiter.wait`: 24 workers buys 30 seconds and
+32 buys nothing at all. The number to remember is that at 16 workers Greenhouse
+stops being the constraint above **5.70 requests a second**, and only past
+that point is raising `fetch.concurrency` worth anything.
+

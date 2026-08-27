@@ -82,7 +82,31 @@ DEFAULT_PER_HOST_RPS = 3.0
 # employers, Contentful and Ecosia among them, were once thrown away in one
 # run. 0.7 is the rate the maintainer's enumerator has sustained overnight
 # against this host without a 429.
-PER_HOST_RPS = {"apply.workable.com": 0.7}
+PER_HOST_RPS = {
+    # The only rate here that is a ceiling rather than a measurement, and the
+    # only one that must never be raised. Not a rate limit but a long-window
+    # quota: a burst of 90 requests passes at 3.0/s and a sustained 1.5/s is
+    # refused at request 301. See docs/PLATFORMS.md.
+    "apply.workable.com": 0.7,
+    # These three were 3.0 by default, and 3.0 was never measured. It entered
+    # in the commit that introduced per-host pacing, whose own sentence cites
+    # evidence for Workable's 0.7 and none for this one. Only six hosts are
+    # governed by the default at all: 7,748 of 7,781 hold a single board, and
+    # iCIMS puts each of its 1,744 on its own hostname, so none of them is
+    # ever paced.
+    #
+    # Measured after a full scan had finished, with the scan's own user agent,
+    # real board tokens, pooled so the target rate was actually reached, and a
+    # hard stop on the first refusal. Greenhouse took 6.39/s for 360
+    # consecutive requests and Ashby 6.36/s for 300, both clean. Set at 5.0,
+    # about 20% under the highest rate seen, because neither publishes a limit
+    # and the evidence is measurement alone.
+    "boards-api.greenhouse.io": 5.0,
+    "api.ashbyhq.com": 5.0,
+    # The one host here that documents a number that applies: SmartRecruiters
+    # publishes 10 requests a second for most endpoints, and tolerated 7.75.
+    "api.smartrecruiters.com": 8.0,
+}
 
 # Workers, not requests per second. Politeness is the limiter's job now, so
 # this number only decides how many DIFFERENT hosts are in flight at once, and
@@ -580,7 +604,21 @@ def fetch_one(
                 # nothing here would otherwise ever change the rate. Measured
                 # on apply.workable.com: 41 of 419 boards came back unknown
                 # and the pacing stayed exactly as it was.
-                if r.status_code == 429 and lim is not None:
+                #
+                # Once per SOURCE, not once per attempt. A board that is
+                # refused, retried and refused again is one fact about the
+                # host, and counting it three times compounds: the step is 2x
+                # and the ceiling 8x, so a single unlucky board on its third
+                # attempt takes apply.workable.com from a 1.43s gap to 11.43s
+                # by itself, and then needs sixty clean answers to climb back.
+                #
+                # Measured over 2,094 boards by driving the real limiter with
+                # no network and summing the gaps: at one refusal in two
+                # hundred that is 109 minutes against 49.9, and widening once
+                # per source instead brings it to 56.1. Twenty-two extra
+                # requests were costing fifty-three minutes, and the cost was
+                # the compounding rather than the count.
+                if r.status_code == 429 and lim is not None and attempt == 0:
                     lim.note_throttle(src.url)
                 wait = retry_after_seconds(r.headers.get("Retry-After"))
                 # A Retry-After measured in hours is not a pause, it is a
@@ -627,6 +665,32 @@ def fetch_one(
             if r.status_code >= 400:
                 return Result(src, error=f"HTTP {r.status_code}", status=status,
                               elapsed=time.time() - t0)
+
+            # 304 Not Modified carries no body, and the body is the board.
+            #
+            # Nothing here sends `If-None-Match` or `If-Modified-Since`, so
+            # this is unreachable on the current code. It is here because the
+            # obvious saving to reach for on a list this size is conditional
+            # requests, and bolting them on without this line writes the
+            # failure this module keeps having: an empty payload parses to
+            # zero postings, `ok` stays True, and the board is recorded as an
+            # employer with no vacancies. That is indistinguishable from a
+            # real empty board, it is what `validate --prune` deletes, and it
+            # is how 250 live employers were once thrown away.
+            #
+            # Worth saying plainly while the reader is here: a 304 still costs
+            # a request. It saves bytes and parsing, and it cannot buy back
+            # one second of a host whose limit is counted in REQUESTS, which
+            # is the limit that sets this scan's floor. See
+            # tests/test_request_budget.py.
+            if r.status_code == 304:
+                if lim is not None:
+                    lim.note_ok(src.url)
+                return Result(
+                    src, error="HTTP 304, not modified: the response carries "
+                               "no postings, so this board is unknown rather "
+                               "than empty",
+                    status=status, elapsed=time.time() - t0)
 
             ctype = (r.headers.get("Content-Type") or "").lower()
             # A tuple, not the string "[{": `"" in "[{"` is True, so an
@@ -1759,6 +1823,29 @@ def fetch_all(
             out.append(res)
             if on_result:
                 on_result(res)
+
+    # Say which hosts slowed us down.
+    #
+    # `note_throttle` widens a host's gap on every 429, including the ones a
+    # retry then recovers from, and nothing reported that it had fired. A
+    # retried 429 comes back as an ordinary 200 with `throttled` False, and
+    # `detect_throttling` only sees boards that returned nothing at all, so
+    # "no throttling was reported" was not the same statement as "no
+    # throttling happened". Its own docstring says the multiplier is returned
+    # so a caller can say out loud that it has slowed down rather than doing
+    # it silently, and no caller was reading it.
+    #
+    # This is the Workable fault one level up: a host refusing quietly while
+    # the run looks healthy.
+    if limiter is not None:
+        slowed = sorted(
+            {urlparse(r.source.url).netloc for r in out}
+            - {h for h in {urlparse(r.source.url).netloc for r in out}
+               if limiter.slowdown_for(f"https://{h}/") <= 1.0})
+        for host in slowed:
+            x = limiter.slowdown_for(f"https://{host}/")
+            print(f"  ! {host} refused during this run, so it was read "
+                  f"{x:.0f}x slower than usual by the end", flush=True)
     return out
 
 

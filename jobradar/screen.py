@@ -1143,6 +1143,63 @@ def city_of(location: str) -> str:
     return part.strip()
 
 
+# How many days a week this job wants you in an office.
+#
+# `work_mode` answers remote, hybrid or on-site, and that is not the question
+# somebody with a commute actually asks. Measured on a real board: 271 of
+# 3,029 postings with a readable description state a required number of office
+# days, and of those, 171 had `work_mode: unstated` and **40 were marked
+# remote**. Sanity's posting says "3 days per week in the office" and the
+# dashboard called it remote. That is a confident wrong answer, which is worse
+# than no answer, and it is the decision that ends an application: a role at
+# 120,000 with three days in London is a no that a role at 180,000 with three
+# days might not be.
+#
+# Deliberately narrow. Only a stated NUMBER of days counts, because "hybrid"
+# on its own is what `work_mode` already says. An optional day is not a
+# requirement, so "you are welcome in the office two days a week" is not a
+# match while "at least two days a week in the office" is.
+_OFFICE_OPTIONAL = re.compile(
+    r"\b(?:optional|if you (?:like|prefer|want)|welcome to|you can|as much or "
+    r"as little|no requirement|not required|free to)\b", re.I)
+
+_DAY_WORD = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+             "1": 1, "2": 2, "3": 3, "4": 4, "5": 5}
+
+# A bare "office" counts as the anchor, not only "in the office". The first
+# draft required the preposition and missed "office at least 3 days per week"
+# and "Office / Hybrid (2 days per week", which are both perfectly ordinary
+# ways to write it.
+_OFFICE_WORD = r"(?:offices?|on[-\s]?site|in[-\s]person|hq)"
+
+_OFFICE_DAYS = re.compile(
+    r"(?P<n>one|two|three|four|five|[1-5])\s*\+?\s*days?\s*(?:a|per)\s*week"
+    r"[^.]{0,40}?" + _OFFICE_WORD
+    + r"|" + _OFFICE_WORD + r"[^.]{0,40}?"
+    r"(?P<m>one|two|three|four|five|[1-5])\s*\+?\s*days?\s*(?:a|per)\s*week",
+    re.I)
+
+
+def office_days(text: str) -> int | None:
+    """Days a week this posting requires in an office, or None if it does not say.
+
+    Reads the sentence around the match rather than the whole advert, so a
+    company that is remote-first and mentions an optional office day is not
+    read as requiring one.
+    """
+    if not text:
+        return None
+    for m in _OFFICE_DAYS.finditer(text):
+        start = text.rfind(".", 0, m.start()) + 1
+        end = text.find(".", m.end())
+        sentence = text[start:end if end != -1 else len(text)]
+        if _OFFICE_OPTIONAL.search(sentence):
+            continue
+        n = m.group("n") or m.group("m")
+        return _DAY_WORD.get(n.lower())
+    return None
+
+
 def enrich(job: Job) -> Job:
     """Fill the derived fields the dashboard filters on."""
     job.work_mode = work_mode(job)
@@ -1150,6 +1207,17 @@ def enrich(job: Job) -> Job:
     job.country = job.country or (sorted(found)[0] if len(found) == 1 else
                                   ("multiple" if found else None))
     job.city = city_of(job.location)
+    # A stated number of office days outranks whatever `work_mode` guessed.
+    # It is the posting saying so in words, against a heuristic over a location
+    # string, and 40 postings that say "3 days per week in the office" were
+    # being shown as remote.
+    days = office_days(job.description or "")
+    if days:
+        job.work_mode = "remote" if days == 0 else (
+            "office" if days >= 5 else "hybrid")
+        flag = f"{days} day{'s' if days > 1 else ''} a week in the office"
+        if flag not in job.flags:
+            job.flags.append(flag)
     rights = work_rights(job)
     if rights and rights not in job.flags:
         job.flags.append(rights)
