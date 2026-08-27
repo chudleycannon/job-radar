@@ -226,8 +226,16 @@ def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
             # it per job. An unconditional UPDATE meant every scan threw that
             # work away and re-fetched it, and with --no-enrich it was
             # destroyed and never came back.
+            # `sector` is the BOARD's tag, not something read off the
+            # posting, so a writer that does not carry it is missing it
+            # rather than contradicting it. `seed load` is exactly that
+            # writer: shard rows had no sector, so importing a seed on top
+            # of a scanned database blanked the column on every role it
+            # touched, the dashboard's sector filter collapsed to "Other",
+            # and `seed load` printed "Stored." either way. Empty never
+            # overwrites a value that is there.
             con.execute("""UPDATE roles SET company=?,title=?,url=?,location=?,city=?,
-                country=?,work_mode=?,sector=?,platform=?,department=?,
+                country=?,work_mode=?,sector=COALESCE(NULLIF(?,''),sector),platform=?,department=?,
                 salary_min=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_min END,
                 salary_max=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_max END,
                 salary_currency=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_currency END,

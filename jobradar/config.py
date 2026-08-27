@@ -144,6 +144,19 @@ class Config:
             "|".join(rf"\b{re.escape(v)}\b" for v in sorted(variants, key=len, reverse=True)),
             re.I)
 
+    @staticmethod
+    def _bounded(term: str) -> str:
+        """One exclusion term, escaped and held to whole words.
+
+        \\b only works next to a word character, so the boundary is added on
+        each end only when that end is alphanumeric: a term ending in ")"
+        would never match if it were added unconditionally.
+        """
+        esc = re.escape(term)
+        lead = r"\b" if term[:1].isalnum() else ""
+        trail = r"\b" if term[-1:].isalnum() else ""
+        return f"{lead}{esc}{trail}"
+
     def title_exclude_re(self):
         """Escaped, unlike the include list which is also escaped.
 
@@ -153,20 +166,23 @@ class Config:
         """
         if not self.titles_exclude:
             return None
-        # \b only works next to a word character. A term ending in ")" would
-        # never match if the boundary were added unconditionally.
-        def bounded(term: str) -> str:
-            esc = re.escape(term)
-            lead = r"\b" if term[:1].isalnum() else ""
-            trail = r"\b" if term[-1:].isalnum() else ""
-            return f"{lead}{esc}{trail}"
-
-        return re.compile("|".join(bounded(t) for t in self.titles_exclude), re.I)
+        return re.compile("|".join(self._bounded(t) for t in self.titles_exclude),
+                          re.I)
 
     def location_exclude_re(self):
+        """Whole words, for the same reason the title list is.
+
+        This was a bare substring match, and a substring of a place name is
+        usually a different place: `exclude: [Bath]` silently dropped a role
+        in Bathgate, 400 miles away, and the only trace was one more in the
+        "location excluded" count. "Not London" is the most load-bearing line
+        a UK user writes and the failure it produced looked exactly like it
+        working.
+        """
         if not self.exclude_locations:
             return None
-        return re.compile("|".join(re.escape(x) for x in self.exclude_locations), re.I)
+        return re.compile("|".join(self._bounded(x) for x in self.exclude_locations),
+                          re.I)
 
 
 class ConfigError(ValueError):
@@ -211,6 +227,28 @@ def _as_list(v) -> list:
     if isinstance(v, (list, tuple)):
         return list(v)
     return [v]
+
+
+def _terms(values) -> list[str]:
+    """Search terms, with the blank ones dropped.
+
+    A YAML list with an empty entry in it -- a bare `- `, or `- ""` -- put an
+    empty string in `titles.include`. That is not a title nobody matches, it
+    is a title EVERYBODY matches: `title_include_re` joins the terms into one
+    pattern, an empty term contributes an empty alternative, and an empty
+    regex matches every string there is. So the title gate stopped dropping
+    anything, `score` awarded every posting its 35 points for "title matches
+    your targets", and the scan reported a very large number of matches and
+    looked like it had worked.
+
+    The `titles.include is empty` guard did not catch it, because the list was
+    not empty. Stripping here is what makes that guard true again.
+    """
+    # `v is not None` before the string test, because a bare `- ` in YAML
+    # parses as None and `str(None)` is the four-character title "None",
+    # which is a term that matches a posting rather than one that is skipped.
+    return [" ".join(str(v).split()) for v in _as_list(values)
+            if v is not None and str(v).strip()]
 
 
 VALID_FORMATS = {"html", "json", "markdown", "md"}
@@ -422,8 +460,8 @@ def load(path: str | os.PathLike | None = None) -> Config:
     fet = raw.get("fetch") or {}
 
     cfg = Config(
-        titles_include=_as_list(titles.get("include")),
-        titles_exclude=_as_list(titles.get("exclude")),
+        titles_include=_terms(titles.get("include")),
+        titles_exclude=_terms(titles.get("exclude")),
         countries=_countries(_as_list(loc.get("countries")), "locations.countries"),
         remote_ok=_bool(loc.get("remote_ok", True), "locations.remote_ok"),
         relocate_to=_countries(_as_list(loc.get("relocate_to")), "locations.relocate_to"),

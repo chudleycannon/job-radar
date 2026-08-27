@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+import yaml
+
 from . import adapters, output, sources as src_mod
 import webbrowser
 
@@ -174,8 +176,18 @@ def cmd_scan(args) -> int:
     # was asked for. `--limit 20000` against a 13,440-source config read every
     # one of them and still announced "only 20000 sources were read".
     all_srcs = len(srcs)
-    if args.limit:
-        srcs = srcs[: args.limit]
+    if args.limit and args.limit < all_srcs:
+        # Spread across the list, not the first N of it. The bundled list is
+        # grouped by platform, so a head slice of any size up to the size of
+        # the first group reads ONE platform: `scan --limit 300`, which the
+        # README offers as the quick look, read 300 Ashby boards and touched
+        # no Greenhouse, Workable, iCIMS, Workday or Personio board at all.
+        # Personio is where the European employers are, so the recommended
+        # first look was also the least representative slice of the list for
+        # anyone outside the US. A stride is still deterministic, so repeating
+        # the same command reads the same boards.
+        step = all_srcs // args.limit
+        srcs = srcs[::step][: args.limit] if step > 1 else srcs[: args.limit]
     truncated = len(srcs) < all_srcs
     if not srcs:
         _say("No sources. Run `job-radar setup` or check sources.use_bundled.")
@@ -296,9 +308,15 @@ def cmd_scan(args) -> int:
             _say(f"  {done['n']}/{len(srcs)}")
         absorb(res)
 
-    if len(cfg.titles_include) > 6:
-        _say(f"  note: only the first 6 of your {len(cfg.titles_include)} titles "
-             f"are used as search terms (Workday uses 3). Order matters.")
+    # Derived, not written down. This said "only the first 6" while
+    # `MAX_KEYWORD_TITLES` was 12, and the note ten lines below reads the
+    # constant -- so a 25-title config printed "the first 6" and "your first
+    # 12" one line apart, and neither the user nor this file could say which
+    # was true. Order does matter, so the number has to be the real one.
+    if len(cfg.titles_include) > src_mod.MAX_KEYWORD_TITLES:
+        _say(f"  note: only the first {src_mod.MAX_KEYWORD_TITLES} of your "
+             f"{len(cfg.titles_include)} titles are used as search terms "
+             f"(Workday uses 3). Order matters.")
     # Reed is the one source that needs a credential, and without one it can
     # only 401. Say so here, once, by name: buried in the list of sources that
     # "could not be read" it looks like a broken board rather than a two
@@ -445,7 +463,22 @@ def cmd_scan(args) -> int:
                             if n < len(est) else ""))
                     webbrowser.open(url)
                 elif serve_mod.already_serving():
-                    _say("  your dashboard already has pass 1. Refresh it.")
+                    # Say what is actually known, which is that the port is
+                    # taken. `already_serving` is a TCP connect: it does not
+                    # check that the thing answering is a job-radar dashboard,
+                    # and certainly not that it is reading THIS database. A
+                    # server left running against another `--db`, or anything
+                    # else holding 8765, got the same sentence -- "your
+                    # dashboard already has pass 1, refresh it" -- and sent
+                    # the reader to somebody else's roles believing they were
+                    # their own. That is a claim about a page nothing here has
+                    # looked at, which is the failure that renders as a
+                    # success.
+                    _say("  127.0.0.1:8765 is already in use, so no dashboard "
+                         "was started for this scan.")
+                    _say("  If that is a job-radar dashboard on this database, "
+                         "refresh it. Otherwise run `job-radar serve --port "
+                         "<other>`.")
                 else:
                     _say("  dashboard written. `job-radar serve` opens it.")
             elif n < len(est):
@@ -584,7 +617,7 @@ def cmd_scan(args) -> int:
              f"next scan this line reports only what changed.")
     else:
         _say(f"  {len(kept)} match your config, {len(new)} new")
-    if truncated and kept and not args.dry_run:
+    if truncated and not args.dry_run:
         # Boards 26..307 were never asked. Their roles enter the database on
         # the next full scan and are stamped new then, which is not what new
         # means.
@@ -594,6 +627,16 @@ def cmd_scan(args) -> int:
         # the quick look the wizard recommends by name, never once said it had
         # read a fraction of the list to the one person who most needed to
         # know. The number is what was really read, not what was asked for.
+        #
+        # Not guarded on `kept` either, for the same reason one step further
+        # on. `--limit` takes the head of the source list, which is one
+        # platform's boards rather than a sample of the market, so a limited
+        # scan can very easily match nothing. That run then printed "Nothing
+        # matched. Where they went:" and blamed the titles, and the one fact
+        # that explained it -- that 300 of 17,817 sources had been read --
+        # was suppressed by the `and kept` that used to be on this line.
+        # Zero matches is exactly when somebody needs to be told the list was
+        # cut.
         _say(f"  (only {len(srcs):,} of your {all_srcs:,} sources were read; "
              f"roles on the rest will be marked new when a full scan first "
              f"sees them)")
@@ -621,8 +664,23 @@ def cmd_scan(args) -> int:
         # the filters or the sources do not fit the person running it.
         _say("")
         _say("  Nothing matched. Where they went:")
-        for reason, n in sorted(dropped.items(), key=lambda x: -x[1])[:5]:
+        ranked = sorted(dropped.items(), key=lambda x: -x[1])
+        for reason, n in ranked[:5]:
             _say(f"    {n:>6}  {reason}")
+        if len(ranked) > 5:
+            _say(f"    {sum(n for _, n in ranked[5:]):>6}  in "
+                 f"{len(ranked) - 5} smaller reasons")
+        # `screen.run` dedupes before it starts counting reasons, so the
+        # reasons add up to the post-dedupe total while the line above them
+        # says "5,829 postings", which is pre-dedupe. The two numbers were
+        # 891 apart on a 300-board run and nothing said why. A heading that
+        # reads "Where they went" is a claim to account for all of them, and
+        # an unexplained 15% gap under it is the reader's arithmetic going
+        # wrong rather than ours.
+        merged = len(all_jobs) - len(kept) - sum(dropped.values())
+        if merged > 0:
+            _say(f"    {merged:>6}  the same role posted more than once, "
+                 f"merged")
         total_srcs = len(src_mod.load_file(src_mod.BUNDLED)) if cfg.use_bundled_sources else 0
         if cfg.sectors and total_srcs:
             _say(f"    your `sectors` setting cut the bundled list to {len(srcs)} "
@@ -1079,7 +1137,14 @@ def cmd_seed_build(args) -> int:
         if done["n"] % 250 == 0:
             _say(f"  {done['n']:,}/{len(srcs):,}")
         if res.ok:
-            jobs.extend(adapters.parse(res.payload, res.source))
+            for j in adapters.parse(res.payload, res.source):
+                # The board's own sector tag, the same line `cmd_scan.absorb`
+                # runs. It was missing here, so every role in a shard was
+                # untagged: a seeded dashboard showed one "Other" chip for the
+                # lot, and `seed load` then wrote that emptiness over the
+                # sectors a real scan had already stored.
+                j.sector = j.sector or res.source.sector
+                jobs.append(j)
 
     fetch_all(srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
               retries=cfg.retries, user_agent=cfg.user_agent,
@@ -1108,10 +1173,25 @@ def cmd_seed_load(args) -> int:
     cfg = load_cfg(args.config)
     try:
         idx = seed_mod.read_index(args.path)
-    except (OSError, ValueError) as exc:
-        _say(f"{exc}")
+    except FileNotFoundError:
+        # "[Errno 2] No such file or directory: 'shards/index.json'" is true
+        # and tells somebody who has never seen a shard set nothing at all.
+        _say(f"No seed index at {args.path}. A shard set is a directory "
+             f"holding index.json and one .jsonl.gz per country; "
+             f"`job-radar seed build --out {args.path}` writes one.")
         return 1
-    countries = cfg.countries or []
+    except (OSError, ValueError) as exc:
+        _say(f"Could not read the seed at {args.path}: {exc}")
+        return 1
+    # The relocation countries too, and for the reason `sources.load`
+    # already gives: `screen.match` allows `countries | relocate_to`, so a
+    # config with `countries: [IN]` and `relocate_to: [SG, AE]` screens
+    # Singapore roles happily and was never handed the Singapore shard to
+    # screen. Measured on a 120-board seed: 284 roles read and 0 matches,
+    # against 468 read and 6 matches once SG and AE are included -- and
+    # the six were exactly the roles `relocate_to` exists to find.
+    countries = list(dict.fromkeys(list(cfg.countries)
+                                   + list(cfg.relocate_to)))
     _say(seed_mod.describe(idx, countries))
     jobs = list(seed_mod.load(args.path, countries))
     if not jobs:
@@ -1124,8 +1204,18 @@ def cmd_seed_load(args) -> int:
         _say("Dry run, so nothing was written.")
         return 0
     con = store.connect(args.db)
+    # The legacy import follows the database, not the working directory --
+    # the same rule `cmd_scan` applies, and this call was left on the default.
+    # `seed load <dir> --db /tmp/try.db` read this directory's state/seen.json
+    # and applications.local.yaml and copied a real seen-set and application
+    # history into the scratch file. Verified: a database asked for one seed
+    # role came back holding that role plus every uid in the cwd's state file.
+    # `--db` reads as isolation and was not one.
+    own_db = not args.db or Path(args.db) == store.DEFAULT_PATH
     try:
-        store.migrate(con)
+        store.migrate(con,
+                      state_path="state/seen.json" if own_db else "",
+                      apps_path=None if own_db else "")
         store.upsert_roles(con, kept)
         con.commit()
     finally:
@@ -1746,6 +1836,27 @@ def cmd_setup(args) -> int:
 
 
 # ---------------------------------------------------------------- main
+def _limit(v: str) -> int:
+    """A count of things to read. Never negative.
+
+    `--limit` is applied as `srcs[:n]`, and a negative n is a slice from the
+    END: `job-radar scan --limit -5` read 17,806 of 17,811 sources rather than
+    5, spent 77 minutes doing it against other people's job boards, and then
+    reported "only 17,806 of your 17,811 sources were read", which reads as a
+    limit that worked. A stray minus sign is a plausible typo and the failure
+    it produced was indistinguishable from success.
+    """
+    try:
+        n = int(v)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{v!r} is not a whole number.")
+    if n < 0:
+        raise argparse.ArgumentTypeError(
+            f"{n} is negative. --limit is how many to read, and a negative "
+            f"number would read all but the last {abs(n)}. Use 0 for no limit.")
+    return n
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="job-radar",
@@ -1759,7 +1870,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-o", "--out", default=None)
     s.add_argument("--state", default=None)
     s.add_argument("--db", default=None, help="database path (default data/job-radar.db)")
-    s.add_argument("--limit", type=int, default=0)
+    s.add_argument("--limit", type=_limit, default=0,
+                   help="read only the first N sources, for a quick look. "
+                        "It is the head of the list, not a sample of it, so "
+                        "a small N reads one platform's boards and can "
+                        "match nothing. 0 reads all of them.")
     s.add_argument("--no-enrich", action="store_true",
                    help="skip fetching full postings for headline-only "
                         "sources; they stay unscreenable")
@@ -1787,7 +1902,7 @@ def build_parser() -> argparse.ArgumentParser:
     sdsub = sd.add_subparsers(dest="seed_cmd", required=True)
     sb = sdsub.add_parser("build", help="write a shard set (maintainers)")
     sb.add_argument("--out", default="seed", help="directory to write into")
-    sb.add_argument("--limit", type=int, default=0, help="read only N boards")
+    sb.add_argument("--limit", type=_limit, default=0, help="read only N boards")
     sb.set_defaults(func=cmd_seed_build)
     sl = sdsub.add_parser("load", help="import a shard set for your countries")
     sl.add_argument("path", help="directory holding index.json")
@@ -1800,7 +1915,7 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("validate", help="check known sources are alive and are who they claim")
     v.add_argument("--file", default=None, help="a sources.json to check instead of the config set")
     v.add_argument("--report", default=None)
-    v.add_argument("--limit", type=int, default=0)
+    v.add_argument("--limit", type=_limit, default=0)
     v.add_argument("--prune", action="store_true", help="rewrite --file without dead sources")
     v.add_argument("--force-prune", action="store_true",
                    help="prune even when most of the list came back empty, "
@@ -1832,7 +1947,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     en = sub.add_parser("enrich",
                         help="fetch full postings for headline-only sources")
-    en.add_argument("--limit", type=int, default=0)
+    en.add_argument("--limit", type=_limit, default=0)
     # Defaults to None, not to a number, so "the user asked for a pause" can
     # be told apart from "nobody said". A pause is now a request to go one at
     # a time: each host is paced on its own clock, so a blanket delay between
@@ -1850,7 +1965,7 @@ def build_parser() -> argparse.ArgumentParser:
     rk = sub.add_parser("rank", help="score every role against your CV, cheaply")
     rk.add_argument("--refresh", action="store_true",
                     help="re-score roles that already have a fit")
-    rk.add_argument("--limit", type=int, default=0)
+    rk.add_argument("--limit", type=_limit, default=0)
     rk.add_argument("--top", type=int, default=12, help="how many to print")
     rk.add_argument("--dry-run", action="store_true",
                     help="show what it would cost and send nothing")
@@ -1862,7 +1977,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--remove", action="store_true",
                     help="delete the ones that no longer match and that you "
                          "have not acted on")
-    rs.add_argument("--limit", type=int, default=0, help="how many to list")
+    rs.add_argument("--limit", type=_limit, default=0, help="how many to list")
     rs.add_argument("--db", default=None)
     rs.set_defaults(func=cmd_rescreen)
 
@@ -1872,7 +1987,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="include settled roles and ones no longer on a board")
     ls.add_argument("--new", action="store_true",
                     help="only roles first seen on the most recent scan")
-    ls.add_argument("--limit", type=int, default=0)
+    ls.add_argument("--limit", type=_limit, default=0)
     ls.add_argument("--json", action="store_true")
     ls.add_argument("--db", default=None)
     ls.set_defaults(func=cmd_list)
@@ -1904,17 +2019,23 @@ def main(argv=None) -> int:
         # Before the command, so it is read rather than scrolled past at the
         # end of two hundred lines of scan output.
         if args.cmd in ("scan", "list", "serve", "rank", "coverage"):
+            # Reading the config is NOT part of the nudge, and it is outside
+            # the catch-all for that reason. A nudge must never stop the
+            # command; a config that cannot be read is not a failed nudge, it
+            # is the reason the command is about to give a wrong answer.
+            # `list` never loads the config itself, so swallowing this was the
+            # difference between "sectors: [manufacturing] is not a sector
+            # that exists" and a confident `0 role(s)`.
+            #
+            # It used to be only ConfigError that was let through, which meant
+            # the two ways a config fails BEFORE it can be validated -- YAML
+            # that does not parse, and `-c` pointing at a directory -- landed
+            # in the catch-all instead. `list -c broken.yaml` printed
+            # `0 role(s)` and exited 0. A file the tool cannot read is the
+            # loudest possible config problem and it was the only silent one.
+            cfg_for_nudge = _cfg_or_default(args.config)
             try:
-                _daily_sync_nudge(_cfg_or_default(args.config),
-                                  getattr(args, "db", None))
-            except ConfigError:
-                # A nudge must never stop the command, but a broken config is
-                # not a failed nudge, it is the reason the command is about to
-                # give a wrong answer. `list` never loads the config itself, so
-                # swallowing this was the difference between "sectors:
-                # [manufacturing] is not a sector that exists" and a confident
-                # `0 role(s)`.
-                raise
+                _daily_sync_nudge(cfg_for_nudge, getattr(args, "db", None))
             except Exception:
                 pass          # a nudge must never stop the command
         return args.func(args)
@@ -1925,6 +2046,19 @@ def main(argv=None) -> int:
         # A config mistake is the user's to fix, and a traceback buries the
         # one line that tells them how.
         _say(f"Problem in your config: {e}")
+        return 1
+    except IsADirectoryError as e:
+        # `-c cfg/` rather than `-c cfg/config.yaml`. Caught separately from
+        # FileNotFoundError above, which it is not a subclass of.
+        _say(f"{e}\n-c wants the config file itself, not the directory it "
+             f"is in.")
+        return 1
+    except yaml.YAMLError as e:
+        # The file exists and is not YAML. yaml's own message names the line
+        # and column, which is the whole of the useful part; the traceback
+        # above it is none of it.
+        _say(f"Your config is not valid YAML, so none of your settings were "
+             f"read:\n{e}")
         return 1
     except KeyboardInterrupt:
         _say("\nstopped")

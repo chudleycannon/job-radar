@@ -59,6 +59,26 @@ _TITLE_HINT = re.compile(
 )
 
 
+def _word_pattern(word: str) -> str:
+    """A plain word the user typed, as a regex that matches that word only.
+
+    The prompt says "plain words are fine" and these become HARD
+    dealbreakers, so the pattern has to mean what the typist meant. Bare
+    `re.escape` does not: it is unanchored, so "Java" hid every posting
+    mentioning JavaScript, "Go" hid "Golang" and "we are going to", and a
+    single letter hid the entire result set. The user is then looking at an
+    empty first scan with nothing on screen saying which word emptied it.
+
+    Boundaries are added only where the edge is a word character, because
+    "C++" and ".NET" end and begin on punctuation and `\b` after a "+" would
+    never match at all -- which is the same fault in the other direction.
+    """
+    esc = re.escape(word)
+    lead = r"\b" if word[:1].isalnum() or word[:1] == "_" else ""
+    tail = r"\b" if word[-1:].isalnum() or word[-1:] == "_" else ""
+    return f"{lead}{esc}{tail}"
+
+
 class NoInput(Exception):
     """stdin ended, so there is nobody there to answer the next question."""
 
@@ -488,11 +508,22 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
     print("\n4. Dealbreakers. A match in the job description hides the role.")
     chosen = {}
     for name, pat in COMMON_DEALBREAKERS.items():
-        if _ask_yn(f"   Hide roles mentioning {name}", name == "coding round"):
+        # Every one defaults to no, including this one. `DEFAULTS` above says
+        # why in full and the reason applies here twice over: a dealbreaker
+        # shipped on by default is one the person did not write, and this one
+        # is `hard`, so it hides roles silently rather than flagging them.
+        # "coding round" defaulted to yes here long after the same mistake was
+        # taken out of `--defaults`, so the fix reached the scripted path and
+        # never reached the wizard almost everybody actually runs. Pressing
+        # enter through the questions -- the most ordinary thing a first-time
+        # user does -- wrote a hard pattern matching "technical assessment"
+        # and "take home" into a project manager's config, and every posting
+        # it hit disappeared without a line saying so.
+        if _ask_yn(f"   Hide roles mentioning {name}", False):
             chosen[name] = pat
     own = _ask_list("   Anything else (plain words are fine)", [])
     for w in own:
-        chosen[w] = re.escape(w)
+        chosen[w] = _word_pattern(w)
     a["dealbreakers"] = chosen
 
     # 5. sectors

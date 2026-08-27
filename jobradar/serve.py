@@ -10,6 +10,7 @@ buttons live, from the same database, so the two cannot disagree.
 
 from __future__ import annotations
 
+import errno
 import json
 import sqlite3
 import webbrowser
@@ -747,7 +748,22 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
             _load_cfg(config_path).salary_currency or "").upper()
     except Exception:
         Handler.home_currency = ""
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    try:
+        httpd = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        # A second `serve` in another window, or the last one still running,
+        # is the ordinary way to hit this, and it came out as a nine-frame
+        # socketserver traceback ending in "Address already in use" -- which
+        # reads as a broken tool rather than as a port that is taken.
+        if getattr(exc, "errno", None) in (errno.EADDRINUSE, errno.EACCES):
+            why = ("is already in use, most likely by a `job-radar serve` "
+                   "that is still running"
+                   if exc.errno == errno.EADDRINUSE
+                   else "needs privileges this process does not have")
+            print(f"Port {port} {why}. Either stop that one, or start this "
+                  f"one somewhere else with `--port {port + 1}`.", flush=True)
+            return 1
+        raise
     url = f"http://{host}:{port}/"
     print(f"job-radar is at {url}", flush=True)
     print("  buttons: screen, CV, cover letter, apply, skip", flush=True)
