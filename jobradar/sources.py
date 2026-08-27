@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from . import adapters
 from .config import Config
@@ -206,6 +206,60 @@ def expand_templates(srcs: list[Source], titles: list[str],
                     # return leads with no description and include agencies,
                     # and with the flag gone it counted none of them.
                     keyword_template=True))
+    return out
+
+
+
+# Which pass of a scan a source belongs in.
+#
+# A scan reads 17,807 boards and takes the better part of an hour, and half
+# the roles arrive in the first four minutes. Measured on a real board:
+#
+#   sweeps and every one-board host    4.5 min   1,884 roles   419/min
+#   Ashby                              8.7 min     619 roles    71/min
+#   Greenhouse                        13.6 min     970 roles    71/min
+#   Workable boards                   49.9 min     219 roles   4.4/min
+#
+# Ninety five times the yield per minute in the first pass as in the last.
+# Read as one interleaved lump none of it is usable until all of it is done,
+# so somebody who opens the dashboard at five minutes sees nothing at all.
+#
+# The boundaries are not arbitrary, which is what makes them hold as the list
+# grows: they are drawn by who owns the host. Phase 1 is everything nobody
+# rate limits, because it sits on its own hostname. Workday puts its 1,489
+# boards on 1,467 different hosts, iCIMS gives every customer one, and the
+# cross-employer sweeps are a single request each. Phases 2 and 3 are the two
+# big shared hosts, where thousands of boards queue behind one limit. Phase 4
+# is Workable, which is its own problem and always will be.
+#
+# Every phase runs on every scan. A posting can appear and be filled inside a
+# week, so a pass that is skipped is a role nobody ever saw, and that is a
+# worse failure than a slow scan. The phases decide the ORDER, not what is
+# read.
+PHASES = (
+    (1, "the fast ones", ()),
+    (2, "Ashby", ("api.ashbyhq.com",)),
+    (3, "Greenhouse", ("boards-api.greenhouse.io",)),
+    (4, "Workable's own boards", ("apply.workable.com",)),
+)
+
+
+def phase_of(src: Source) -> int:
+    """Which pass this source belongs in. Phase 1 is everything unclaimed."""
+    host = urlparse(src.url).netloc
+    for num, _, hosts in PHASES:
+        if host in hosts:
+            return num
+    return 1
+
+
+def in_phases(srcs: list[Source]) -> list[tuple[int, str, list[Source]]]:
+    """The sources grouped into passes, in the order they should be read."""
+    out = []
+    for num, label, _ in PHASES:
+        got = [s for s in srcs if phase_of(s) == num]
+        if got:
+            out.append((num, label, got))
     return out
 
 

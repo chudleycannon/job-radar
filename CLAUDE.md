@@ -61,6 +61,13 @@ is not there.
 Do not assert on timings. A timing test is flaky by construction, and this
 suite has already lost a morning to one.
 
+**Do not grep source text for a thing that must be absent.** The comment
+explaining why it is absent contains it, so the test fails on its own
+explanation. That has happened three times here: a test greping cli.py for a
+phrase caught the comment saying why the phrase was wrong, and a test checking
+a Windows flag was unused caught the sentence saying so. Parse it, or read the
+one function rather than the module.
+
 ## What not to do
 
 - **Never work around bot protection.** A 403, a CAPTCHA, a JavaScript

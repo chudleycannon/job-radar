@@ -291,11 +291,18 @@ def first_scan(config_path: Path) -> int:
     # "sources" rather than "boards", because that is the word the very next
     # line uses ("Fetching 13,440 sources at concurrency 16"). Same number,
     # same noun, so the two lines cannot be read as describing two things.
+    # The scan prints its own pass breakdown and its own estimate, derived
+    # from the rates it will actually be paced at. Repeating a number here is
+    # how this line came to promise forty minutes while the next line said
+    # something else, so it promises nothing and lets the scan speak.
     n = _sources_it_will_read(config_path)
-    reads = f"It reads {n:,} sources, paced" if n else "It is paced"
-    print(f"\nRunning your first scan now. {reads}")
-    print("per host so no one of them is hit hard, so give it about an hour.")
-    print("Leave it running. `job-radar scan --limit 200` is the quick look.")
+    reads = f"It reads {n:,} sources" if n else "It reads the bundled list"
+    print(f"\nRunning your first scan now. {reads}, in passes, fastest first.")
+    print("It will tell you how long each pass takes before it starts one.")
+    print("You do not have to wait for the end: the dashboard is worth opening")
+    print("after the first pass and the rest fill in behind it. Your machine")
+    print("is held awake while it runs, though closing the lid will still")
+    print("stop it.")
     print("Nothing is generated and nothing is sent anywhere; this only reads.\n")
 
     # Paths follow the config, not the working directory.
@@ -324,6 +331,10 @@ def first_scan(config_path: Path) -> int:
         # test_three_silent_faults.py compares the two lists so the next flag
         # added fails there instead of in a stranger's first run.
         no_enrich = False
+        # False, so the first scan DOES hold the machine awake. It is
+        # the longest run this tool ever does and the one most likely
+        # to be started and walked away from.
+        no_caffeine = False
 
     try:
         rc = cli.cmd_scan(_Args())

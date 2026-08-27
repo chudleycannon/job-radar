@@ -66,6 +66,7 @@ def _args(d: Path, cfg: Path):
         docs = None
         dry_run = False
         no_enrich = True
+        no_caffeine = True
         limit = 0
     return A
 

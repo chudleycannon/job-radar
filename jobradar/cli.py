@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from . import adapters, output, sources as src_mod
+from .awake import describe, keep_awake
 from .config import Config, ConfigError, load as load_cfg
 from .discover import discover as run_discover, prunable as row_prunable, validate_source
 from . import fetch as fetch_defaults
@@ -92,6 +93,74 @@ def pacing_floors(srcs, limiter=None) -> list[tuple[float, str, int, float]]:
 
 
 # ---------------------------------------------------------------- scan
+def _mins(m: float) -> str:
+    """A duration a person can act on.
+
+    "about 0 minutes" is what `{:.0f}` prints for anything under thirty
+    seconds, and it reads as a bug rather than as fast.
+    """
+    if m < 1:
+        return "under a minute"
+    if m < 90:
+        return f"about {m:.0f} minute{'s' if round(m) != 1 else ''}"
+    return f"about {m / 60:.1f} hours"
+
+
+def _phase_minutes(group) -> float:
+    """Roughly how long a pass will take, from the rates it will be paced at.
+
+    Derived rather than written down, so raising a host's rate moves the
+    estimate without anyone remembering to edit a number. The old estimate was
+    a constant that said 40 minutes while the scan printed a different figure
+    on the next line.
+
+    A pass is bounded by whichever is worse: the slowest single host's queue,
+    or the machine getting through the work at all. 0.48s is the measured mean
+    request time across 41 hosts.
+    """
+    from collections import Counter
+    from urllib.parse import urlparse
+
+    from .fetch import DEFAULT_CONCURRENCY, DEFAULT_PER_HOST_RPS, PER_HOST_RPS
+
+    worst = 0.0
+    for host, n in Counter(urlparse(s.url).netloc for s in group).items():
+        worst = max(worst, n / PER_HOST_RPS.get(host, DEFAULT_PER_HOST_RPS) / 60)
+    return max(worst, len(group) * 0.48 / DEFAULT_CONCURRENCY / 60)
+
+
+def _flush_phase(con, cfg, jobs, args) -> None:
+    """Store and render what the scan has so far, between passes.
+
+    Deliberately quiet and deliberately partial. It screens and writes what
+    has arrived, so the dashboard is usable while the slow passes run, and it
+    says nothing: the counts belong to the summary at the end, and four
+    "N new roles" lines for one scan would read as four scans.
+
+    Nothing here decides what is new. `new_since_last_run` is keyed on the run
+    counter and the counter is bumped once, at the end, so a role found in
+    pass one and a role found in pass four are equally new to the same run.
+    """
+    from . import store
+    from .output import html as html_mod
+
+    kept, _ = screen_run(list(jobs), cfg)
+    if not kept:
+        return
+    try:
+        store.upsert_roles(con, kept)
+        con.commit()
+        outdir = Path(args.out or cfg.out_dir)
+        if "html" in cfg.formats:
+            html_mod.write(outdir / "index.html", new=[], seen=kept, dropped={},
+                           sources_ok=0, sources_total=0, throttled=[],
+                           postings=len(jobs))
+    except Exception:
+        # A dashboard that could not be refreshed mid-scan is not a reason to
+        # lose the scan. The end of the run writes it properly either way.
+        pass
+
+
 def cmd_scan(args) -> int:
     cfg = load_cfg(args.config)
     srcs = _load_sources(cfg)
@@ -107,7 +176,6 @@ def cmd_scan(args) -> int:
         return 1
 
     state = State(Path(args.state) if args.state else None)
-    _say(f"Fetching {len(srcs)} sources at concurrency {cfg.concurrency}...")
     # A config written before per-host pacing existed will still be carrying
     # the old advice to keep this number tiny, and nothing else would ever tell
     # its owner that the advice changed. At four workers against seventeen
@@ -255,14 +323,54 @@ def cmd_scan(args) -> int:
              f"for there: {', '.join(_skipped)}")
         _say("  they are still matched against every employer board.")
 
-    results = fetch_all(
-        srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
-        retries=cfg.retries, user_agent=cfg.user_agent,
-        search_terms=cfg.titles_include,
-        api_keys={"reed": cfg.reed_api_key,
-                  "adzuna_app_id": cfg.adzuna_app_id,
-                  "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick,
-    )
+    # Read in passes, fastest first, and say so before spending an hour.
+    #
+    # Half the roles are on hosts nobody rate limits and arrive in about five
+    # minutes; the last 6% are behind Workable and cost fifty. Read as one
+    # lump, none of it is usable until all of it is, and the way people
+    # actually use this is to set it up, look at the dashboard, apply to
+    # something and shut the laptop. A scan that only pays out at the end pays
+    # out to nobody.
+    #
+    # Every phase still runs. A posting can appear and be gone inside a week,
+    # so skipping one is a role never seen, which is worse than a slow scan.
+    phases = src_mod.in_phases(srcs)
+    # Numbered by position in this run. A `--limit` run can hold only phase 2,
+    # and printing its global id gives "Pass 2 of 1".
+    est = [(i, label, group, _phase_minutes(group))
+           for i, (_, label, group) in enumerate(phases, 1)]
+    total = sum(m for _, _, _, m in est)
+    _say(f"Reading {len(srcs):,} sources in {len(est)} "
+         f"pass{'es' if len(est) != 1 else ''}, {_mins(total)} in total.")
+    for n, label, group, mins in est:
+        _say(f"  {n}. {label:<24}{len(group):>6} sources   {_mins(mins)}")
+    _say("The dashboard is worth opening after the first pass; the rest fill "
+         "in behind it.")
+
+    # Hold the machine awake for the run, and be honest about what that does.
+    # It stops an idle laptop napping; it does not survive the lid closing.
+    results = []
+    with keep_awake("job-radar is scanning",
+                    enabled=not args.no_caffeine) as awake:
+        _say(describe(awake.held) + "\n")
+        for n, label, group, mins in est:
+            _say(f"Pass {n} of {len(est)}, {label}: {len(group):,} sources, "
+                 f"{_mins(mins)}.")
+            results += fetch_all(
+                group, concurrency=cfg.concurrency, timeout=cfg.timeout,
+                retries=cfg.retries, user_agent=cfg.user_agent,
+                search_terms=cfg.titles_include,
+                api_keys={"reed": cfg.reed_api_key,
+                          "adzuna_app_id": cfg.adzuna_app_id,
+                          "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick,
+            )
+            # Written and rendered at the end of every pass, not only the
+            # last, because a dashboard that is usable at five minutes is the
+            # whole point of reading in passes at all.
+            if not args.dry_run and n < len(est):
+                _flush_phase(con, cfg, all_jobs, args)
+                _say(f"  dashboard updated; passes {n + 1} to {len(est)} "
+                     f"still to come.")
 
     # `tick` has already parsed everything `fetch_all` handed it, so on the
     # real path this loop finds nothing to do and costs one set lookup per
@@ -1519,6 +1627,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-enrich", action="store_true",
                    help="skip fetching full postings for headline-only "
                         "sources; they stay unscreenable")
+    s.add_argument("--no-caffeine", action="store_true",
+                   help="do not hold the machine awake during the scan. It is "
+                        "held by default because a full run is about an hour "
+                        "and an idle laptop will otherwise sleep through it.")
     s.add_argument("--dry-run", action="store_true",
                    help="do not record what was seen (re-reports the same roles next time)")
     s.set_defaults(func=cmd_scan)

@@ -514,6 +514,7 @@ def test_a_limited_scan_says_so_on_the_first_run_too():
         docs = None
         dry_run = False
         no_enrich = True
+        no_caffeine = True
         limit = 0
 
     real_fetch, real_parse = cli.fetch_all, cli.adapters.parse
