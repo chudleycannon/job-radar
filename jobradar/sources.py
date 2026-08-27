@@ -278,8 +278,23 @@ def load(cfg: Config, problems: list | None = None) -> list[Source]:
         want = {s.lower() for s in cfg.sectors}
         srcs = [s for s in srcs if not s.sector or s.sector.lower() in want]
     if cfg.source_countries:
+        # `NON_COUNTRY_TAGS` too, not just the untagged ones.
+        #
+        # A board tagged `multi` is a multinational: it is not evidence that
+        # the employer has nothing in your country, it is the absence of a
+        # single answer. Keeping only the untagged and the exact match dropped
+        # all 1,599 multi-tagged boards from `sources.countries: [NL]`,
+        # 17,817 sources down to 5,374, and those are precisely the employers
+        # most likely to have a Dutch vacancy. Nothing said a word.
+        #
+        # Same rule as the seed's `unplaced` and `multiple` shards, and for
+        # the same reason: a tag that means "we cannot say" must never be read
+        # as "no".
         want = {c.upper() for c in cfg.source_countries}
-        srcs = [s for s in srcs if not s.country or s.country.upper() in want]
+        srcs = [s for s in srcs
+                if not s.country
+                or s.country.lower() in NON_COUNTRY_TAGS
+                or s.country.upper() in want]
 
     # The relocation countries too, not just the home one: a search
     # narrowed to where the user already is cannot find the roles that
