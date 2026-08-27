@@ -213,6 +213,49 @@ _PAY_CONTEXT = re.compile(
     r"salary range|annum|per year|pa\b)\b", re.I)
 
 
+# What a bare number most likely means, given where the job is.
+#
+# `enrich` used to pass the READER's configured floor currency as the default
+# for any figure with no symbol on it, anywhere in the world. So an Indian
+# posting reading "Annual salary: 900,000 to 1,100,000" was stored, confirmed,
+# as "$900k - $1,100k" for a reader whose floor was in dollars: about 8,500
+# pounds presented as most of a million, and `confirmed=True`, so it could
+# clear a floor it comes nowhere near.
+#
+# The reader's own currency is the one thing that cannot be evidence here. The
+# job's country can. Where that is unknown the answer is to say nothing: an
+# unconfirmed salary is shown to the reader and labelled, and can never
+# disqualify a role, which is the safe direction. A figure that carries its
+# own symbol never reaches this at all.
+#
+# Only the countries the bundled boards actually produce. A country missing
+# from here is not a bug, it is an unconfirmed salary.
+CURRENCY_OF_COUNTRY = {
+    "UK": "GBP", "GB": "GBP", "IE": "EUR", "US": "USD", "CA": "CAD",
+    "AU": "AUD", "NZ": "NZD", "IN": "INR", "SG": "SGD", "AE": "AED",
+    "JP": "JPY", "CN": "CNY", "HK": "HKD", "CH": "CHF", "SE": "SEK",
+    "NO": "NOK", "DK": "DKK", "PL": "PLN", "CZ": "CZK", "BR": "BRL",
+    "MX": "MXN", "ZA": "ZAR", "IL": "ILS", "TR": "TRY", "KR": "KRW",
+    "PH": "PHP", "MY": "MYR", "TH": "THB", "ID": "IDR", "VN": "VND",
+    "AR": "ARS", "CL": "CLP", "CO": "COP", "NG": "NGN", "KE": "KES",
+    "EG": "EGP", "SA": "SAR", "QA": "QAR", "PK": "PKR", "BD": "BDT",
+    "UA": "UAH", "RO": "RON", "HU": "HUF", "BG": "BGN", "RS": "RSD",
+    "IS": "ISK",
+}
+# The euro, spelled out so the map above stays one line per fact.
+for _cc in ("AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR",
+            "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"):
+    CURRENCY_OF_COUNTRY[_cc] = "EUR"
+
+
+def currency_of_country(country: str | None) -> str | None:
+    """The currency a bare number in that country probably means. None when
+    we do not know, which is not a failure: it means "do not guess"."""
+    if not country:
+        return None
+    return CURRENCY_OF_COUNTRY.get(country.strip().upper())
+
+
 def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     """Best-effort parse of a free-text pay string.
 

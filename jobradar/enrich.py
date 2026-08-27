@@ -714,7 +714,7 @@ def candidates(con, limit: int = 0) -> list:
     """Roles on the board that have a URL we can expand and no description."""
     store._ensure_columns(con)
     likes = [like for _pat, like, _fn in URL_FETCHERS]
-    q = ("SELECT r.uid, r.url, r.platform, r.salary_confirmed, "
+    q = ("SELECT r.uid, r.url, r.platform, r.salary_confirmed, r.country, "
          # The stored length comes back with the row so that `run()` can
          # refuse to replace a long advert with a short one. Without it the
          # stub floors would happily overwrite Oracle's 653 character teaser
@@ -748,7 +748,12 @@ def run(con, cfg=None, rows=None, pause: float = 1.0, on_each=None,
         if text and len(text) >= MIN_DESC and len(text) > _stored_len(r):
             got += 1
             fields = {"description": text[:20000]}
-            s = sal_mod.parse_text(text, cfg.salary_currency if cfg else None)
+            # The job's country, never the reader's floor currency. See
+            # `salary.CURRENCY_OF_COUNTRY` for what that was doing to a
+            # posting priced in rupees.
+            s = sal_mod.parse_text(
+                text, sal_mod.currency_of_country(
+                    r["country"] if "country" in r.keys() else None))
             if s.confirmed and not r["salary_confirmed"]:
                 fields.update({
                     "salary_min": s.min, "salary_max": s.max,
