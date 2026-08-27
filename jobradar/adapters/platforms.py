@@ -563,6 +563,12 @@ def _workday_posted(value: Any, today=None) -> str | None:
     return (base - timedelta(days=days)).isoformat()
 
 
+# Workday collapses a multi-location posting to a count: `locationsText` is
+# the literal string "2 Locations". Stored as-is it becomes a place name that
+# no country logic can read and that no reader can tell from a real one.
+_WD_COUNT = re.compile(r"^\s*(\d+)\s+Locations?\s*$", re.I)
+
+
 def parse_workday(payload: Any, src: Source) -> Iterator[Job]:
     """POST, not GET. Body: {"appliedFacets":{},"limit":20,"offset":0,"searchText":""}
 
@@ -578,6 +584,15 @@ def parse_workday(payload: Any, src: Source) -> Iterator[Job]:
         url = urljoin(f"{base}/en-US/{site}/", path.lstrip("/")) if path else base
         bullets = " ".join(str(b) for b in (j.get("bulletFields") or []))
         loc = _text(j.get("locationsText"))
+        # "2 Locations" is a count, not a place, and it was being stored as
+        # one. Across 12 real tenants, 198 postings said this and every one of
+        # them rendered on the dashboard with "2 Locations" where a city
+        # should be, which reads as a location rather than as the absence of
+        # one. Workday's own `externalPath` names the primary location, and it
+        # resolved to a country for 192 of the 198.
+        more = _WD_COUNT.match(loc)
+        if more:
+            loc = ""
         if not loc:
             # Some tenants leave locationsText empty and put the city in the
             # path instead. Without this the role has no location at all, and
@@ -593,6 +608,11 @@ def parse_workday(payload: Any, src: Source) -> Iterator[Job]:
             url=url,
             platform="workday",
             location=loc,
+            # Said out loud, because the location shown is the primary one and
+            # a role open in London and New York must not look like a role
+            # open only in whichever of them Workday put in the path.
+            flags=([f"listed in {more.group(1)} locations; "
+                    f"the one shown is Workday's primary"] if more else []),
             remote=_remote(loc, j.get("title")),
             department=None,
             posted_at=_workday_posted(j.get("startDate") or j.get("postedOn")),
