@@ -173,3 +173,26 @@ def test_describe_says_the_age_and_does_not_promise_freshness():
     line = seed.describe(idx, ["UK"])
     assert "2026-01-01" in line
     assert "scan" in line.lower()
+
+
+def test_remote_false_is_not_confused_with_remote_unknown():
+    """The falsy-value trap in `_pack`.
+
+    `remote` is True, False or None, and those are three different answers:
+    False means the advert says office, None means it did not say. Omitting
+    every falsy value from the packed row would turn "office" into "we do not
+    know", which is the difference between a role a remote-only reader should
+    never see and one they should see with a caveat.
+    """
+    d = _tmp()
+    seed.build([
+        _job(url="https://x/a", company="A", country="UK",
+             remote=False, work_mode="office"),
+        _job(url="https://x/b", company="B", country="UK",
+             remote=True, work_mode="remote"),
+        _job(url="https://x/c", company="C", country="UK", remote=None),
+    ], d)
+    got = {j.company: (j.remote, j.work_mode) for j in seed.load(d, ["UK"])}
+    assert got["A"] == (False, "office")
+    assert got["B"] == (True, "remote")
+    assert got["C"] == (None, "unstated")
