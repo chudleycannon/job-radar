@@ -1599,13 +1599,29 @@ def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
     text = (job.description or "").strip()
     if len(text) < 200:
         job.flags.append("not screened: no description from this source")
-    if not text:
+
+    # The title and the location are read too, and they were not.
+    #
+    # A role posted at "Hybrid - New York, NY" was kept for a reader with a
+    # hard `hybrid` dealbreaker, because the word was in the location column
+    # rather than the advert. The dashboard printed it, in that exact form, on
+    # the row it should have hidden. Employers routinely put the arrangement
+    # in the location field and nowhere else, and a contract, a night shift or
+    # a clearance requirement often appears only in the title.
+    #
+    # Both fields are short and factual, which is why they are safe to add:
+    # the incidental-mention guard below exists for the description, where a
+    # long advert can mention another team's policy in passing. A location of
+    # "Hybrid - New York" is not mentioning hybrid working, it is stating it.
+    scanned = " ".join(x for x in (job.title, job.location, job.description)
+                       if x).strip()
+    if not scanned:
         return True, []
 
     hits, hard = [], []
     for db in cfg.dealbreakers:
         pat = db.compiled()
-        if not pat.search(job.description):
+        if not pat.search(scanned):
             continue
         hits.append(db.name)
         if not db.hard:
