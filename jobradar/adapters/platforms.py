@@ -2089,6 +2089,84 @@ _AV_LOC = re.compile(r'list-item-location[^>]*>\s*(.*?)\s*</span>', re.S | re.I)
 _AV_POSTED = re.compile(r'list-item-posted[^>]*>\s*(.*?)\s*</span>', re.S | re.I)
 _AV_WORK = re.compile(r'list-item-workplace[^>]*>\s*(.*?)\s*</span>', re.S | re.I)
 
+# A third Avature template, and the one that kept 65% of Avature roles
+# placeless. Frequentis, the University of Colorado and Nva emit no
+# `list-item-location` column at all. The place is still on the card, in an
+# unlabelled pipe-separated subtitle:
+#
+#   Public Safety & Transport Offer Management | Österreich | Wien | FREQUENTIS AG
+#
+# Nothing says which segment is the location, and the order is not the same
+# on every board, so reading by position would be a guess dressed up as a
+# parse. Instead each segment is offered to the country logic this tool
+# already uses to place a role, and the ones it recognises are kept. That
+# logic knows "Österreich" is Austria and "Wien" is in it, so this needs no
+# new place data and inherits every future improvement to it.
+_AV_SUBTITLE = re.compile(
+    r'(?:list__item__text|article__header__text)__subtitle[^>]*>(.*?)</div>',
+    re.S | re.I)
+
+# Avature boards that use the subtitle strip label the place three ways:
+#
+#   Frequentis  ... Offer Management | Österreich | Wien | FREQUENTIS AG
+#   Lenovo      <span>United States of America, North Carolina, Whitsett</span>
+#   Xerox       <p><span>City:</span> Webster</p><p><span>State:</span> NY</p>
+#
+# so a label is read when there is one and the country logic is asked when
+# there is not. Anything else on the strip -- a requisition number, a
+# department, the legal entity -- fails both and is dropped.
+_AV_FIELD = re.compile(
+    r'^(?:city|state(?:/province)?|province|country|location|region)\s*:\s*'
+    r'(.+)$', re.I)
+
+
+def _av_subtitle_place(blk: str, company: str) -> str:
+    """The location parts of an unlabelled subtitle strip, in reading order.
+
+    Nothing on these strips says which part is the location, and the order is
+    not the same on any two boards, so reading by position would be a guess
+    dressed up as a parse. Each part is offered to the country logic this tool
+    already uses to place a role, and the parts it recognises are kept. That
+    logic knows "Österreich" is Austria and "Wien" is in it, so this needs no
+    new place data and inherits every future improvement to it.
+
+    A labelled part ("City: Webster") is taken on its label instead, because
+    the label is better evidence than a lookup and some city names are also
+    surnames, departments or products.
+
+    The employer's own name is dropped explicitly, since a company named after
+    a city would otherwise be read as one.
+
+    Country names sort last so the result reads "Wien, Österreich" rather than
+    the other way round, which is the order the rest of the tool writes a
+    location in. The sort is stable, so "Webster, New York" keeps the order
+    its own labels gave it.
+    """
+    from ..screen import _country_of, names_a_country
+    m = _AV_SUBTITLE.search(blk)
+    if not m:
+        return ""
+    # One candidate per <p> or <br>, plus pipe-separated parts within them, so
+    # all three shapes above reduce to the same list of strings. Deliberately
+    # NOT split on <span>: Xerox puts the label in one and the value beside
+    # it, so splitting there separated "City:" from "Webster" and threw the
+    # city away while keeping the state.
+    chunks = re.split(r"</?(?:p|br)[^>]*>", m.group(1))
+    parts = [_text(x) for chunk in chunks for x in chunk.split("|")]
+    keep = []
+    for seg in parts:
+        if not seg or seg.casefold() == (company or "").casefold():
+            continue
+        f = _AV_FIELD.match(seg)
+        if f:
+            val = _text(f.group(1))
+            if val:
+                keep.append(val)
+        elif _country_of(seg):
+            keep.append(seg)
+    keep.sort(key=names_a_country)
+    return ", ".join(dict.fromkeys(keep))
+
 
 def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
     """Avature's hosted careers site. Server-rendered links to /JobDetail/.
@@ -2145,6 +2223,8 @@ def parse_avature(payload: Any, src: Source) -> Iterator[Job]:
         lm, pm, wm = (_AV_LOC.search(blk), _AV_POSTED.search(blk),
                       _AV_WORK.search(blk))
         loc = _text(lm.group(1)) if lm else ""
+        if not loc:
+            loc = _av_subtitle_place(blk, src.company)
         # "Posted 13-Aug-2026" -- the label is part of the span's text.
         posted = re.sub(r"^posted\s+", "", _text(pm.group(1)), flags=re.I) if pm else ""
         yield Job(
