@@ -251,6 +251,41 @@ REGISTRY: list[Platform] = [
     # name is what lets `directness` give the employer's own board the win.
     # See parse_workable_search for why the search is worth having when the
     # boards are already on the list.
+    # The whole of Workable, by the day it was posted, rather than 2,094
+    # boards one at a time.
+    #
+    # `jobs.workable.com/api/v1/jobs?day_range=7` answers with every posting
+    # created across every Workable employer in that window: 6,333 for a day
+    # and 21,062 for a week, measured. At three requests a second that is 98
+    # seconds for a day and under six minutes for a week, against the 49.9
+    # minutes the 2,094 employer boards cost on a host that will not go above
+    # 0.7 requests a second.
+    #
+    # It is the same payload shape as the keyword search, so it needs no
+    # parser of its own.
+    #
+    # It does NOT replace those boards, and the difference is the point.
+    # Workable lets an employer publish a role to their own careers page
+    # without publishing it to jobs.workable.com, and an entire employer can
+    # be hidden. Measured across 25 employers read both ways: 21 identical,
+    # and one board of 61 roles came back as 25 here, with a Senior
+    # Engineering Manager among the 36 missing. So this is the fast sweep and
+    # the boards are the slow one that catches what it hides.
+    Platform(
+        "workable_recent",
+        r"jobs\.workable\.com/api/v1/jobs\?day_range",
+        platforms.parse_workable_search,
+        build=lambda kw: (
+            "https://jobs.workable.com/api/v1/jobs?day_range="
+            + (kw if kw.isdigit() else "7")
+        ),
+        verified=True,
+        note="every posting created across every Workable employer in the "
+             "window, 21,062 in a week. Twenty a page behind the same opaque "
+             "cursor as the keyword search, and walked to exhaustion rather "
+             "than capped, because the cap is what would silently drop the "
+             "tail of a sweep whose whole job is completeness",
+    ),
     Platform(
         "workable_search",
         r"jobs\.workable\.com/api/v1/jobs",
@@ -265,6 +300,29 @@ REGISTRY: list[Platform] = [
              "carries the full description, so these roles need no enrichment "
              "pass. Twenty results a page behind an opaque cursor; `limit` is "
              "a 400 and every other page-size name is accepted and ignored",
+    ),
+    # And Workable a third way: one employer's board, read off the aggregator
+    # host rather than the boards host. Registered under its own NAME because
+    # `parse` dispatches on `src.platform` first, and under its own URL
+    # pattern because `detect` has to tell it from the search, which lives one
+    # path segment away on the same host. The postings it yields say
+    # `workable_search`, which is deliberate and is explained in the parser.
+    #
+    # No `build`: the address takes Workable's account UUID and there is no
+    # published route from a board slug to one. See the parser for what was
+    # tried. A source using this has to have been given the UUID.
+    Platform(
+        "workable_company",
+        r"jobs\.workable\.com/api/v1/companies/",
+        platforms.parse_workable_company,
+        verified=True,
+        note="one employer's whole board on jobs.workable.com rather than "
+             "apply.workable.com, which refuses 9.8% of a long run at the "
+             "0.7/s it is paced at. Forty read back to back at 2.83/s drew no "
+             "refusal, with a scan saturating apply at the same moment. Pages "
+             "twenty at a time behind an opaque cursor, where the widget "
+             "returns the whole board at once, and is addressed by account "
+             "UUID, which a board slug does not yield",
     ),
     # Workable is the only one. Checked 2026-08-25, every claim below is a
     # real response and not a reading of the vendor's documentation, because

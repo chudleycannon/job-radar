@@ -49,9 +49,17 @@ def _sources() -> list:
 
 
 def _employer_boards() -> list:
-    """Everything except the keyword templates, which are searches, not
-    employers, and are not what `meta.boards` counts."""
-    return [s for s in _sources() if not s.get("keyword_template")]
+    """An employer's own board, which is what `meta.boards` counts.
+
+    Not simply "everything except the keyword templates". A cross-employer
+    sweep is neither a template nor a board: it expands per title for nobody
+    and it belongs to no employer. Counting one as a board is what made this
+    disagree with the header the day a sweep was added. `directness` already
+    knows which platforms are aggregators, so the judgement lives there.
+    """
+    from jobradar.screen import directness
+    return [s for s in _sources()
+            if not s.get("keyword_template") and directness(s["platform"]) >= 2]
 
 
 def _norm(s: str) -> str:

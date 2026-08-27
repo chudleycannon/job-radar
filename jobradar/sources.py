@@ -264,7 +264,15 @@ def save(sources: list[Source], path: str | Path, meta: dict | None = None) -> N
     # further from the truth every Sunday until it read 17,834 for a list of
     # 17,807. Deriving it from what is actually being written is the only
     # version that cannot go stale.
-    boards = sum(1 for x in sources if not x.keyword_template)
+    # An employer's own board, which is not the same as "not a keyword
+    # template". A cross-employer sweep is neither: it expands per title for
+    # nobody and it belongs to no employer. Counting it as a board took the
+    # figure to 17,808 against a header saying 17,807, which is how it was
+    # noticed. `directness` already knows which platforms are aggregators and
+    # is the one place that judgement should live.
+    from .screen import directness
+    boards = sum(1 for x in sources
+                 if not x.keyword_template and directness(x.platform) >= 2)
     body = {
         "meta": {**existing, **(meta or {}), "boards": boards},
         "sources": [s.to_dict() for s in

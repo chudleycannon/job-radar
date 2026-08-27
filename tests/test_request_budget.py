@@ -7,15 +7,16 @@ have been spent at that host's rate. Measured from the bundled list on
 2026-08-27:
 
     apply.workable.com        2,094 boards   0.7 req/s   49.9 min   <- floor
-    boards-api.greenhouse.io  4,078 boards   3.0 req/s   22.7 min
-    api.ashbyhq.com           2,607 boards   3.0 req/s   14.5 min
-    api.smartrecruiters.com     910 boards   3.0 req/s    5.1 min
+    boards-api.greenhouse.io  4,078 boards   5.0 req/s   13.6 min
+    api.ashbyhq.com           2,607 boards   5.0 req/s    8.7 min
+    api.smartrecruiters.com     910 boards   8.0 req/s    1.9 min
     everything else                                    under 1.5 min
 
-Those are the rates the limiter actually applies, which are not all the rates
-`PER_HOST_RPS` states -- see
-`test_the_floor_hosts_rate_is_the_one_the_table_states` for why the three
-above 3.0 do not survive `gap_for`.
+Every rate there is read from a real `HostLimiter`, never from `PER_HOST_RPS`.
+The difference is not pedantry: the three above the default spent one commit
+set in the table and paced at 3.0 anyway, and the tests did not notice because
+they asserted the table's contents. See
+`test_the_floor_hosts_rate_is_the_one_the_table_states`.
 
 7,749 of the 7,781 hosts carry a single board each, so they cost one request
 and finish in parallel with everything else.
@@ -24,7 +25,7 @@ The consequence, and it is the whole reason this file exists: **a request
 saved anywhere except apply.workable.com saves no wall clock at all.** Cutting
 Greenhouse to zero would take 4,078 requests out of the run and end it at the
 same minute. Only Workable's 2,094 move the finish line, and only until the
-run drops below Greenhouse's 22.7 minutes.
+run drops below Greenhouse's 13.6 minutes.
 
 What was measured against the owner's own database, before anything here was
 written. Two readings, and the difference between them is the point:
@@ -44,8 +45,8 @@ written. Two readings, and the difference between them is the point:
     avoids that, and a rotation pays in delay rather than in coverage. A
     weekly cold cycle would cut apply.workable.com from 2,094 requests to
     about 430 (49.9 min to 10.2 min, with the floor then moving to
-    Greenhouse's 22.7) at the cost of seeing a cold board's roles a mean of
-    3.5 days late.
+    Greenhouse's 13.6, so the saving caps at 36.3 min) at the cost of seeing a
+    cold board's roles a mean of 3.5 days late.
   * 2,088 of the 2,094 Workable boards answered with at least one posting, so
     they are not dead boards. They are live boards that happen not to be
     advertising this owner's job today. Across all platforms only 302 boards
@@ -149,46 +150,54 @@ def test_workable_is_the_floor_and_no_other_host_can_move_it():
         f"{floor} {minutes(floor):.1f} min vs {second} {minutes(second):.1f} min")
 
 
-def test_the_floor_hosts_rate_is_the_one_the_table_states():
-    """The one rate that must never drift, read from the limiter not the table.
+def test_every_host_is_paced_at_the_rate_it_was_set_to():
+    """A measured rate in `PER_HOST_RPS` has to reach the limiter.
 
-    A test that recomputes `gap_for`'s own `min()` by hand agrees with the
-    implementation by construction and can only ever pass. This asks the
-    limiter what it will actually do.
+    This is the test that was missing, and its absence shipped. `gap_for` took
+    `min(self.rps, overrides.get(host, self.rps))` while `self.rps` was the
+    3.0 default, so an override ABOVE the default was clamped straight back
+    down: Greenhouse and Ashby were set to 5.0 and paced at 3.0,
+    SmartRecruiters to 8.0 and paced at 3.0, and the commit that set them
+    claimed a floor of 13.6 minutes that was in fact still 22.7. Every
+    existing pacing test passed throughout, because they asserted that the
+    TABLE held 5.0 rather than that the host was read at 5.0. A test that
+    restates the implementation's own arithmetic agrees with it by
+    construction and can only ever pass; this one asks `gap_for` what it will
+    actually do. Fixed in e604a78.
 
-    Scoped to the overrides that sit BELOW `DEFAULT_PER_HOST_RPS`, which is
-    every override that currently governs anything. Overrides ABOVE the
-    default do not survive `gap_for`: it takes `min(self.rps, override)` and
-    `self.rps` is the default, so `boards-api.greenhouse.io` and
-    `api.ashbyhq.com` at 5.0 and `api.smartrecruiters.com` at 8.0 are all
-    still paced at 3.0. Measured, not inferred:
+    Both directions matter, and they are not the same rule:
 
-        host                      table   effective
-        apply.workable.com          0.7        0.70
-        boards-api.greenhouse.io    5.0        3.00
-        api.ashbyhq.com             5.0        3.00
-        api.smartrecruiters.com     8.0        3.00
-
-    That is not asserted here, because asserting it would pin the bug shut.
-    It costs no wall clock either way -- all three are far under Workable's
-    49.9 minutes, so the run finishes at the same minute -- but the floor
-    behind Workable is 22.7 minutes and not the 13.6 the table implies, and
-    anything reasoning about what a Workable reduction would buy needs the
-    real number. `min` is right for a ceiling and wrong for a measurement,
-    and telling the two apart needs to know whether the caller set `rps` or
-    took the default.
+      * An override BELOW the global rate is a CEILING and always wins. A user
+        on a slow line asking for 0.2 req/s must not have Workable's 0.7
+        silently raised back up. Pinned in test_core.py since the limiter was
+        written, and still pinned there.
+      * An override ABOVE it is a MEASUREMENT and wins only when the caller
+        did not choose the global rate.
     """
     lim = fetch_mod.HostLimiter()
-    ceilings = {h: r for h, r in fetch_mod.PER_HOST_RPS.items()
-                if r <= fetch_mod.DEFAULT_PER_HOST_RPS}
-    assert "apply.workable.com" in ceilings, (
-        "apply.workable.com is the host that sets the scan's floor; it must "
-        "stay in the table below the default rate")
-    for host, want in ceilings.items():
+    wrong = []
+    for host, want in fetch_mod.PER_HOST_RPS.items():
         got = 1.0 / lim.gap_for(host)
-        assert abs(got - want) < 1e-9, (
-            f"{host} is set to {want} req/s in PER_HOST_RPS but the limiter "
-            f"paces it at {got:.2f} req/s")
+        if abs(got - want) > 1e-9:
+            wrong.append(f"{host}: table says {want} req/s, paced at {got:.2f}")
+    assert not wrong, (
+        "these hosts are not paced at the rate they were set to, so whatever "
+        "was measured to justify each number is buying nothing: "
+        + "; ".join(wrong)
+        + f" (DEFAULT_PER_HOST_RPS is {fetch_mod.DEFAULT_PER_HOST_RPS})")
+
+    assert fetch_mod.PER_HOST_RPS["apply.workable.com"] == 0.7, (
+        "the host that sets the scan's floor; a long-window quota, not a rate "
+        "limit, and the one number here that must never be raised")
+
+    # The ceiling direction, asserted here too because this file's whole
+    # argument rests on Workable's 0.7 being unraisable from outside.
+    slow = fetch_mod.HostLimiter(rps=0.2)
+    assert abs(1.0 / slow.gap_for("apply.workable.com") - 0.2) < 1e-9, (
+        "a caller asking for 0.2 req/s everywhere had Workable's 0.7 applied "
+        "over the top of it")
+    assert abs(1.0 / slow.gap_for("boards-api.greenhouse.io") - 0.2) < 1e-9, (
+        "a chosen global rate must cap a measured override, not lose to it")
 
 
 def test_a_scan_asks_each_source_exactly_once():

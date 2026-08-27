@@ -1735,7 +1735,7 @@ def directness(platform: str) -> int:
             # employer's own apply.workable.com board on description length
             # and hand the reader Workable's view page instead of the real
             # one. 36% of what it finds is an employer already on the list.
-            "workable_search": 1}.get(
+            "workable_search": 1, "workable_recent": 1}.get(
         (platform or "").lower(), 2)
 
 

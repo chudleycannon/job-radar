@@ -720,7 +720,13 @@ def test_the_board_count_in_the_header_cannot_go_stale():
     assert body["meta"]["note"] == "kept", "the rest of the header survives"
 
     shipped = json.loads(Path(BUNDLED).read_text(encoding="utf-8"))
-    real = sum(1 for x in shipped["sources"] if not x.get("keyword_template"))
+    # An employer's own board, which is not the same as "not a keyword
+    # template": a cross-employer sweep is neither, and counting it as a board
+    # is what made this test fail when one was added. `directness` is where
+    # that judgement lives.
+    from jobradar.screen import directness
+    real = sum(1 for x in shipped["sources"]
+               if not x.get("keyword_template") and directness(x["platform"]) >= 2)
     assert shipped["meta"]["boards"] == real, (
         f"header says {shipped['meta']['boards']}, list holds {real}")
 

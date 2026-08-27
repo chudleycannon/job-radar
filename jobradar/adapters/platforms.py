@@ -326,7 +326,129 @@ def parse_workable_search(payload: Any, src: Source) -> Iterator[Job]:
             platform="workable_search",
             location=location,
             remote=True if workplace == "remote" else (
-                False if workplace in ("hybrid", "on-site", "onsite")
+                # "on_site" with an underscore is what Workable actually
+                # sends. Checked 2026-08-27 over 80 postings from the search,
+                # the day feed and a company board: every one was `remote`,
+                # `hybrid` or `on_site`, and nothing was ever "on-site" or
+                # "onsite". Without the underscore spelling an on-site role
+                # fell through to reading its location text, which is the
+                # guess this flag exists to avoid, and "Remote, Oregon" or a
+                # title mentioning remote work then marked it remote.
+                False if workplace in ("hybrid", "on_site", "on-site", "onsite")
+                else _remote(location)),
+            department=_text(j.get("department")) or None,
+            posted_at=_iso(j.get("created") or j.get("updated")),
+            description=desc,
+            salary=parse_text(desc[:1500]),
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
+# Workable, one employer at a time, on the other host
+#
+# `jobs.workable.com/api/v1/companies/<uuid>` is the same board the widget
+# serves, read from the aggregator's host instead of the boards' host. It is
+# the only alternative path to a Workable board that was found to exist, and
+# it is worth having because apply.workable.com is not merely slow, it is
+# unreliable: `fetch.PER_HOST_RPS` records 41 of 419 boards (9.8%) coming back
+# 429 in a run paced at the 0.7/s that host is supposed to tolerate.
+#
+# Measured 2026-08-27, while a full scan was saturating apply.workable.com at
+# that same moment: forty of these back to back at 2.83 requests a second, no
+# refusal, 0.3s a response. So the two hosts do not share a budget, which is
+# what `fetch_workable_search` already assumed and nobody had shown.
+#
+# It also arrives with the advert on it. The widget URL the bundled list uses
+# has no `details=true`, and without that the response carries no description
+# at all: 3,035 bytes for a three-role board against 28,751 with it. So a
+# board read on apply costs a request now and an enrichment fetch later.
+#
+# Three things it is not.
+#
+# It is not complete. 25 employers were read both ways on 2026-08-27, 1,058
+# postings through the widget and 1,025 through here. 21 matched exactly and
+# 23 lost nothing, but the two that lost postings lost real ones: SPD
+# Technology's board has 61 roles and this returns 25, and among the 36 it
+# drops are "Senior Engineering Manager" and "Senior Data Engineer". Workable
+# lets an employer publish a role to their own careers page without publishing
+# it to jobs.workable.com, and `isHidden` on the company says a whole employer
+# can sit out too. 4% of postings went missing over the sample. That is the
+# reason this is an addition and not a replacement.
+#
+# It pages twenty at a time behind `nextPageToken` where the widget hands back
+# the whole board in one response, so an employer with more than twenty open
+# roles costs more requests here than there. Measured on 40 bundled boards
+# rather than on a sample drawn from postings, which oversamples large
+# employers: median 6.5 roles, 9 of 40 over twenty, 53 pages against 40 widget
+# reads. So the honest saving is 2,764 requests at 3/s against 2,094 at 0.7/s,
+# fifteen minutes against fifty, not the fourfold the host rates suggest.
+#
+# And it cannot find itself. The address needs Workable's own account UUID,
+# and no route was found from the `apply.workable.com/<slug>` the bundled list
+# holds to that UUID. `/api/v1/companies/<slug>` answers "Company not found",
+# so does the numeric account id the embed widget uses, and the UUID is absent
+# from the job payload, the single-job payload and the application-form
+# payload. Searching on the employer's name found 17 of a sample of 40 bundled
+# employers, and one of those 17 was a different company with a similar name.
+# So this parses a board whose UUID is already known. It is not, on its own, a
+# way to stop reading the 2,094.
+# --------------------------------------------------------------------------
+def parse_workable_company(payload: Any, src: Source) -> Iterator[Job]:
+    """jobs.workable.com/api/v1/companies/<uuid>: one employer's whole board.
+
+    The payload is the employer wrapped around a `jobs` list, where the search
+    is a `jobs` list with the employer repeated inside every item. Each item
+    here carries its own `company` too, so the top-level one is only a
+    fallback, and `src.company` is the last resort: the bundled list spells
+    employers from their board slug ("Cqs", "Instanda") and Workable spells
+    them as the employer registered them ("CQS SA", "INSTANDA"). Preferring
+    Workable's own spelling is what lets a role found this way and the same
+    role found through the search meet each other in `dedupe`.
+
+    Deliberately emits `platform="workable_search"` rather than a name of its
+    own. `screen.directness` has to score this below an employer's own board,
+    for the reason it already scores the search there -- the link handed to
+    the reader is a jobs.workable.com view page, not the employer's apply page
+    -- and an unlisted platform name defaults to 2, which would let this beat
+    the real board. Same host, same view URLs, same standing: same name.
+    """
+    if not isinstance(payload, dict):
+        return
+    raw_top = payload.get("company")
+    top = raw_top if isinstance(raw_top, dict) else payload
+    top_name = _text(top.get("title")) if isinstance(top, dict) else ""
+    for j in payload.get("jobs", []) or []:
+        if not isinstance(j, dict):
+            continue
+        # `state` is "published" on everything a board serves. A payload that
+        # ever carries a draft must not put it in front of a reader, and an
+        # absent field is not evidence of one.
+        if j.get("state") and j["state"] != "published":
+            continue
+        co = j.get("company") or {}
+        name = _text(co.get("title")) if isinstance(co, dict) else _text(co)
+        company = name or top_name or src.company
+        if not company:
+            continue
+        loc = j.get("location") or {}
+        if isinstance(loc, dict):
+            location = ", ".join(
+                str(loc.get(k)) for k in ("city", "subregion", "countryName")
+                if loc.get(k))
+        else:
+            location = _text(loc)
+        workplace = (_text(j.get("workplace")) or "").lower()
+        desc = _text(j.get("description"))
+        yield Job(
+            company=company,
+            title=_text(j.get("title")),
+            url=j.get("url") or "",
+            platform="workable_search",
+            location=location,
+            remote=True if workplace == "remote" else (
+                # `on_site` with the underscore: see parse_workable_search.
+                False if workplace in ("hybrid", "on_site", "on-site", "onsite")
                 else _remote(location)),
             department=_text(j.get("department")) or None,
             posted_at=_iso(j.get("created") or j.get("updated")),

@@ -372,7 +372,13 @@ def test_the_contributor_notes_do_not_carry_a_rotting_number():
     root = Path(__file__).resolve().parent.parent
     text = (root / "CLAUDE.md").read_text(encoding="utf-8")
     data = json.loads((root / "sources" / "sources.json").read_text(encoding="utf-8"))
-    boards = [s for s in data["sources"] if not s.get("keyword_template")]
+    # The same definition sources.save() and meta.boards use: an employer's
+    # own board, which excludes a cross-employer sweep as well as a keyword
+    # template. This was the third test carrying the old rule, which is what
+    # changing a definition costs.
+    from jobradar.screen import directness
+    boards = [s for s in data["sources"]
+              if not s.get("keyword_template") and directness(s["platform"]) >= 2]
 
     from jobradar import adapters
     facts = {

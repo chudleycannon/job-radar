@@ -1887,6 +1887,16 @@ def _fetch_dispatch(src, limiter, timeout, retries, ua, terms, keys=None) -> Res
     if src.platform == "workable_search":
         return fetch_workable_search(src, timeout=timeout, retries=retries,
                                      user_agent=ua)
+    if src.platform == "workable_recent":
+        # Walked to exhaustion, not capped. The keyword search caps at fifteen
+        # pages because a very broad title could otherwise page for ever and
+        # the title filter discards most of it anyway. This one is a sweep
+        # whose entire job is completeness, so a cap is the thing that would
+        # silently drop its tail: 21,062 postings in a week is 1,054 pages,
+        # and stopping at fifteen would return the first 300 and look
+        # finished. The window is the bound instead.
+        return fetch_workable_search(src, timeout=timeout, retries=retries,
+                                     user_agent=ua, max_pages=2000)
     if src.platform == "phenom":
         return fetch_phenom(src, terms, timeout=timeout, retries=retries,
                             user_agent=ua)
