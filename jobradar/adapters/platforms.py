@@ -233,16 +233,46 @@ def parse_lever(payload: Any, src: Source) -> Iterator[Job]:
 # --------------------------------------------------------------------------
 # Workable
 # --------------------------------------------------------------------------
+def _workable_where(j: dict) -> tuple[str, bool | None]:
+    """Where a Workable posting is, from the fields the widget actually sends.
+
+    This read `j["location"]` for a dict of city/region/country. The widget
+    has never had a `location` key: it sends `city`, `state` and `country` at
+    the top level, and a `locations` array carrying `countryCode` as well. So
+    the dict was always empty and every posting from these 2,094 boards was
+    stored with no location at all -- 2,509 of a 5,479-posting sample, which
+    was 93% of everything the tool could not place in a country. A role with
+    no location cannot be filtered by country, which is the first thing
+    anybody asks of a job search.
+
+    `locations` first, because it is structured and carries the country code
+    rather than a country name to be matched by spelling. Hidden entries are
+    Workable's way of marking a location the employer does not advertise, so
+    they are skipped. Several are joined with " / ", which is the separator
+    the country logic already reads as a role open in more than one place.
+    """
+    out = []
+    for loc in (j.get("locations") or []):
+        if not isinstance(loc, dict) or loc.get("hidden"):
+            continue
+        part = ", ".join(str(loc[k]) for k in ("city", "region", "country")
+                         if loc.get(k))
+        if part:
+            out.append(part)
+    if not out:
+        part = ", ".join(str(j[k]) for k in ("city", "state", "country")
+                         if j.get(k))
+        if part:
+            out.append(part)
+    remote = bool(j.get("telecommuting")) or any(
+        (loc.get("workplace") == "remote")
+        for loc in (j.get("locations") or []) if isinstance(loc, dict))
+    return " / ".join(dict.fromkeys(out)), (True if remote else None)
+
+
 def parse_workable(payload: Any, src: Source) -> Iterator[Job]:
     for j in (payload or {}).get("jobs", []) or []:
-        loc = j.get("location") or {}
-        if isinstance(loc, dict):
-            location = ", ".join(
-                str(loc.get(k)) for k in ("city", "region", "country") if loc.get(k)
-            )
-            remote = loc.get("workplace") == "remote" or bool(loc.get("telecommuting"))
-        else:
-            location, remote = _text(loc), None
+        location, remote = _workable_where(j)
         desc = _text(j.get("description"))
         yield Job(
             company=src.company,
