@@ -1951,7 +1951,18 @@ def score(job: Job, cfg: Config) -> float:
         # The f-string printed the missing value straight through, so a new
         # user's first `list --json` said "pay stated (None)" on 10 of their
         # 19 priced roles while the row beside it read "$165k - $185k".
-        shown = job.salary.raw or job.salary.label()
+        # And only when it carries a figure. `raw` is the snippet the parser
+        # matched in, and on Greenhouse that is routinely the HEADING sitting
+        # in the same field as the numbers: "Annual base salary range
+        # (excluding equity and bonus):" and "Local Pay Range". So the top row
+        # of a dashboard read "pay stated (Annual base salary range (excluding
+        # equity and bonus):)" beside a perfectly good label of INR 6.6M.
+        #
+        # `Salary.label` exists for exactly this and says so three lines above
+        # its own definition. The None case was fixed and the heading case was
+        # not, which is the same fault with something in the variable.
+        raw = (job.salary.raw or "").strip()
+        shown = raw if any(c.isdigit() for c in raw) else job.salary.label()
         why.append(f"pay stated ({shown})" if comparable_cur
                    else f"pay stated ({shown}), not comparable to your floor")
         top = job.salary.annualised()
@@ -1992,6 +2003,30 @@ def score(job: Job, cfg: Config) -> float:
             elif age <= 21:
                 s += 8
                 why.append(f"posted {age} days ago")
+            elif age >= 180:
+                # Age only ever ADDED points, so an old posting was scored as
+                # though its date were unknown and sat wherever the rest of
+                # the scoring put it. Measured on one board: 89 of 442 roles
+                # were over 180 days old and 26 over a year, the oldest posted
+                # 2022-02-23, and a 2023 posting scored 85 and outranked
+                # fresher roles with nothing anywhere saying it was two years
+                # old.
+                #
+                # Flagged rather than dropped. Some of those URLs still answer
+                # 200, so the role may genuinely be open, and an employer who
+                # never takes a posting down is not the same as a role that
+                # has gone. What was wrong was silence, not the presence of
+                # the role.
+                #
+                # The penalty is deliberately smaller than the freshness
+                # bonus: this says "check the date", not "this is dead".
+                s -= 10
+                years = age // 365
+                why.append(f"posted over {years} year{'s' if years > 1 else ''} "
+                           f"ago" if years else f"posted {age} days ago")
+                job.flags.append(
+                    f"posted {age} days ago; boards do not always take old "
+                    f"listings down, so check it is still open")
         except ValueError:
             pass
 
