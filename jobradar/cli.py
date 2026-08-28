@@ -695,9 +695,22 @@ def cmd_scan(args) -> int:
     #
     # A dry run has written nothing, so it still shows what it found: there
     # is no board to read that would reflect this run.
-    board = kept if args.dry_run else store.live_jobs(con)
-    new = [j for j in board if j.uid in new_ids]
-    seen = [j for j in board if j.uid not in new_ids]
+    # Read AFTER this run's own cleanup, not before it.
+    #
+    # It was read here, and `repair_smartrecruiters_urls`, `merge_duplicates`
+    # and the enrichment pass all run fifty lines below, so the page was
+    # written from a snapshot taken before the scan had finished tidying. It
+    # showed roles that same run had closed, showed a merged duplicate twice
+    # with identical company and title, and carried a uid that no longer
+    # existed in the database. The counts disagreed on the same minute:
+    # index.html 1066, list 1063.
+    #
+    # Deferred to `_board_now`, called once the cleanup is done.
+    board = None
+    # What THIS SCAN found that is new, which is what the lines below report.
+    # Distinct from the board-scale `new` built after the cleanup, which is
+    # what the page and roles.json describe.
+    new_now = [j for j in kept if j.uid in new_ids]
     if args.dry_run and kept:
         _say(f"  {len(kept)} match your config. Dry run, so nothing was "
              f"recorded and none can be marked new.")
@@ -715,7 +728,7 @@ def cmd_scan(args) -> int:
              f"of them are new and the dashboard shows them that way; from the "
              f"next scan this line reports only what changed.")
     else:
-        _say(f"  {len(kept)} match your config, {len(new)} new")
+        _say(f"  {len(kept)} match your config, {len(new_now)} new")
     if truncated and not args.dry_run:
         # Boards 26..307 were never asked. Their roles enter the database on
         # the next full scan and are stamped new then, which is not what new
@@ -819,14 +832,6 @@ def cmd_scan(args) -> int:
         _say("  and add employers yourself with `job-radar discover <company>"
              " --add`.")
 
-    meta = {
-        "sources_ok": ok, "sources_total": len(srcs),
-        # The raw count, matching what the CLI printed. The HTML used to sum
-        # the drop reasons instead, which is post-dedupe, so the two numbers
-        # disagreed by however many duplicate postings there were.
-        "postings": len(all_jobs), "matching": len(kept),
-        "new": len(new), "throttled": throttled, "dropped": dropped,
-    }
     outdir = Path(args.out or cfg.out_dir)
     written = []
     unwritable = ""
@@ -841,6 +846,29 @@ def cmd_scan(args) -> int:
     # drops, someone changes a mode. What must not happen is what used to --
     # a bare traceback out of `atomic_write_text` as the last act of a
     # 77-minute run, reading exactly like the scan itself was lost.
+    # The board as it stands now: after the repair, the merge and the
+    # enrichment, which is the state a reader opening the page will find in
+    # the database behind it.
+    board = kept if args.dry_run else store.live_jobs(con)
+    new = [j for j in board if j.uid in new_ids]
+    seen = [j for j in board if j.uid not in new_ids]
+
+    # `meta` describes the same thing the payload beside it does.
+    #
+    # It carried the SCAN's counts while the page and roles.json carried the
+    # BOARD's, so `roles.json` shipped `meta.matching = 24` above 1,064
+    # entries. `postings` and `sources_ok` stay scan-scale and are labelled as
+    # such by the page, which says "N postings across M boards": that is a
+    # statement about the run, and it is the one number here a reader would
+    # expect to be about the run.
+    meta = {
+        "sources_ok": ok, "sources_total": len(srcs),
+        "postings": len(all_jobs), "matching": len(board),
+        "new": len(new), "scanned_matching": len(kept),
+        "scanned_new": len(new_now),
+        "throttled": throttled, "dropped": dropped,
+    }
+
     try:
         if args.dry_run:
             _say("  (dry run, so out/ was left alone)")
