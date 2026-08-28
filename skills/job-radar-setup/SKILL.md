@@ -6,9 +6,9 @@ description: Set up or adjust a job-radar config by talking it through, includin
 # job-radar-setup
 
 Writes `config.yaml` for job-radar by asking, rather than making someone
-hand-edit YAML. There is a plain CLI wizard (`job-radar setup`) that does the
-same job; this is the conversational front door to the same file, so the two
-cannot drift.
+hand-edit YAML. Browser setup is the normal first-run path, and the plain CLI
+wizard (`job-radar setup`) remains for scripts. This is the conversational
+front door to the same file, so the paths cannot drift.
 
 ## Before anything else
 

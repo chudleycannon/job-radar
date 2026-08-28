@@ -24,6 +24,7 @@ import pathlib
 import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
@@ -152,6 +153,41 @@ def test_a_file_where_the_output_directory_should_be_is_named_as_one():
         blocker.write_text("not a directory", encoding="utf-8")
         why = cli.out_dir_problem(blocker)
         assert "is a file, not a directory" in why, why
+
+
+def test_scan_progress_callback_counts_sources_as_the_unit_of_work():
+    with _tmp() as root:
+        events = []
+
+        def fetch_with_progress(srcs, **kw):
+            from jobradar.fetch import Result
+            out = []
+            for s in srcs:
+                r = Result(source=s, payload=_payload(s), status=200)
+                out.append(r)
+                kw["on_result"](r)
+            return out
+
+        args = SimpleNamespace(
+            config=str(_cfg(root, n_sources=8)),
+            db=str(root / "db.db"),
+            state=str(root / "state" / "seen.json"),
+            out=str(root / "out"),
+            limit=0,
+            dry_run=False,
+            no_enrich=True,
+            no_caffeine=True,
+            no_open=True,
+            progress=events.append,
+        )
+        with mock.patch("jobradar.cli.fetch_all", side_effect=fetch_with_progress):
+            rc = cli.cmd_scan(args)
+
+        assert rc == 0
+        assert events[-1]["done"] == 8
+        assert events[-1]["total"] == 8
+        assert events[-1]["responded"] == 8
+        assert events[-1]["postings"] == 8
 
 
 def test_a_write_that_fails_at_the_end_says_where_the_roles_are():

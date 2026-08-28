@@ -14,6 +14,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -105,6 +106,58 @@ def _rank_with(tmp, reply, rows_n=3):
 
 
 # ------------------------------------------------------------------ rank.py
+
+def test_ranking_can_use_the_anthropic_api_without_the_claude_cli():
+    with _Tmp() as tmp:
+        cv = tmp / "cv.txt"
+        cv.write_text(CV_TEXT, encoding="utf-8")
+        con = store.connect(tmp / "jobs.db")
+        try:
+            _seed(con, 1)
+            rows = rank.candidates(con)
+            cfg = _Cfg(cv)
+            cfg.ai_provider = "anthropic"
+            cfg.ai_model = "claude-sonnet-5"
+            cfg.anthropic_api_key = "sk-ant-api03-test"
+            cfg.ai_max_tokens = 1024
+            reply = '[{"role":1,"fit":88,"why":"matches leadership scope"}]'
+            with mock.patch("jobradar.ai.complete", lambda *a, **k: reply), \
+                    mock.patch("jobradar.runner.claude_bin", lambda: ""):
+                assert rank.rank(con, cfg, rows, width=1) == 1
+            got = con.execute("SELECT fit,fit_why FROM roles WHERE uid='u1'").fetchone()
+            assert got["fit"] == 88, dict(got)
+            assert "leadership" in got["fit_why"], dict(got)
+        finally:
+            con.close()
+
+
+def test_anthropic_compatible_base_url_can_point_at_deepseek():
+    from jobradar import ai
+
+    calls = []
+
+    class Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}]}
+
+    def fake_post(url, **kw):
+        calls.append((url, kw))
+        return Resp()
+
+    with mock.patch("requests.post", fake_post):
+        assert ai.anthropic_complete(
+            "hello",
+            api_key="sk-test",
+            model="deepseek-v4-pro",
+            base_url="https://api.deepseek.com/anthropic",
+        ) == "ok"
+
+    assert calls[0][0] == "https://api.deepseek.com/anthropic/v1/messages"
+    assert calls[0][1]["json"]["model"] == "deepseek-v4-pro"
+
 
 def test_a_fit_outside_the_scale_is_refused_rather_than_clamped():
     """`max(0, min(100, ...))` turned nonsense into the two most consequential

@@ -1,0 +1,15 @@
+services:
+  job-radar:
+    build: .
+    image: job-radar:local
+    command: ["serve", "--host", "0.0.0.0", "--port", "8765", "--no-browser"]
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./.docker-data:/data
+    environment:
+      REED_API_KEY: ${REED_API_KEY:-}
+      ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
+      ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      JOB_RADAR_DOCS: /data/job-applications

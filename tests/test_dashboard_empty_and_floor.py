@@ -180,7 +180,7 @@ def test_a_board_with_no_scan_behind_it_says_to_run_one():
     database and was told its filters were hiding everything."""
     body = _empty(interactive.render(_con()))
     assert "No scan has run yet" in body
-    assert "job-radar scan" in body
+    assert "Start one here" in body
 
 
 def test_a_board_that_scanned_and_stored_nothing_says_that_instead():

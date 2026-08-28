@@ -86,19 +86,18 @@ def test_no_read_command_invents_a_database():
         for argv in (["list"],
                      ["applied", "https://example.invalid/1"],
                      ["rescreen"],
-                     ["enrich"],
-                     ["serve", "--no-browser"]):
+                     ["enrich"]):
             code, out = _run(cfg, *argv, "--db", str(typo))
             assert code == 1, (argv, out)
             assert "No database at" in out, (argv, out)
             assert not typo.exists(), f"{argv[0]} created the database"
 
         # The other half of the rule, kept in the same test so it cannot be
-        # deleted on its own. This is about READ commands: `scan` and `seed
-        # load` exist to fill a database and must go on making one, or a first
-        # run has nowhere to write. `scan --dry-run` runs on `:memory:`, which
-        # exists on no filesystem, and the path rules must not read that as a
-        # typo either.
+        # deleted on its own. This is about READ commands: `scan`, `seed load`
+        # and now `serve` exist to fill or expose a fresh database and must go
+        # on making one, or a first browser run has nowhere to write.
+        # `scan --dry-run` runs on `:memory:`, which exists on no filesystem,
+        # and the path rules must not read that as a typo either.
         fresh = root / "sub" / "fresh.db"
         store.connect(fresh).close()
         assert fresh.exists(), "a writer stopped creating the database"

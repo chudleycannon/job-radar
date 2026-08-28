@@ -77,6 +77,16 @@ def test_the_bundled_list_still_holds_the_boards_its_own_meta_claims():
     assert d["meta"]["boards"] == 17807
 
 
+def test_shared_ats_platforms_count_as_employer_boards_not_platforms():
+    """Progress is source-based. These three hosts are not three units of work."""
+    from collections import Counter
+    counts = Counter(s["platform"] for s in _employer_boards())
+    assert counts["ashby"] == 2607
+    assert counts["greenhouse"] == 4078
+    assert counts["workable"] == 2094
+    assert counts["ashby"] + counts["greenhouse"] + counts["workable"] == 8779
+
+
 def test_no_board_is_named_after_a_url_or_a_bare_hostname():
     """A name that is a URL is a scrape that kept the wrong string.
 

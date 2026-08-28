@@ -1,9 +1,8 @@
 """Generation jobs: screen a role, draft a CV, draft a cover letter.
 
-Work is done by headless `claude -p` rather than by an API call from here,
-because the quality of these documents depends on skills that already exist --
-`rate-cv`, `natural-writing`, `screen-role` -- and reimplementing their rules
-as a prompt string would throw all of that away.
+Work can use a direct provider API, or fall back to headless `claude -p`.
+The local process always writes the files and runs the gates afterwards, so a
+provider response never gets write access to anything outside the role folder.
 
 Nothing runs unless a button was clicked. There is no schedule, no watcher and
 no speculative generation: every token spent is one somebody asked for.
@@ -562,6 +561,98 @@ def build_prompt(kind: str, cfg_path: str, cv_source: str) -> str:
                                 untrusted=UNTRUSTED)
 
 
+EXPECTED_FILES = {
+    "cv": ("CV.md", "cv-rating.txt"),
+    "cover_letter": ("cover-letter.md", "overlap.txt"),
+    "screen": ("screening.md", "verdict.txt"),
+}
+
+
+def _api_file_prompt(kind: str, prompt: str, d: Path,
+                     expected: tuple[str, ...] | None = None) -> str:
+    expected = expected or EXPECTED_FILES[kind]
+
+    def block(name: str) -> str:
+        p = d / name
+        if not p.exists():
+            return f"===== BEGIN LOCAL FILE: {name} =====\n(missing)\n===== END LOCAL FILE ====="
+        return (f"===== BEGIN LOCAL FILE: {name} =====\n"
+                f"{p.read_text(encoding='utf-8', errors='ignore')}\n"
+                f"===== END LOCAL FILE =====")
+
+    inputs = ["job-description.md", "source-cv.txt"]
+    if kind == "cover_letter":
+        inputs.append("CV.md")
+    return (
+        f"{prompt}\n\n"
+        "You are being called through a text API, not through a local coding "
+        "agent. You cannot read or write files yourself. Use the file contents "
+        "below as the complete local workspace, then return only named file "
+        "blocks for the files requested.\n\n"
+        f"{_api_skill_context(kind)}\n\n"
+        + "\n\n".join(block(n) for n in inputs)
+        + "\n\nReturn exactly this format, with no prose outside the blocks:\n"
+        + "\n".join(
+            f"===== BEGIN FILE: {name} =====\n<contents>\n===== END FILE: {name} ====="
+            for name in expected)
+    )
+
+
+def _api_skill_context(kind: str) -> str:
+    """Relevant bundled skill instructions for a direct API call."""
+    names = SKILLS_FOR.get(kind, ())
+    chunks: list[str] = []
+    for name in names:
+        root = next((r / name for r in _skill_roots() if (r / name).exists()), None)
+        if root is None:
+            continue
+        for rel in ("SKILL.md", "references/rubric.md", "references/craft.md"):
+            p = root / rel
+            if p.exists() and p.is_file():
+                chunks.append(
+                    f"===== BEGIN SKILL: {name}/{rel} =====\n"
+                    f"{p.read_text(encoding='utf-8', errors='ignore')[:12000]}\n"
+                    f"===== END SKILL: {name}/{rel} =====")
+    return "\n\n".join(chunks)
+
+
+def _parse_file_blocks(text: str) -> dict[str, str]:
+    pat = re.compile(
+        r"^===== BEGIN FILE: ([^\n]+) =====\n(.*?)\n===== END FILE: \1 =====\s*",
+        re.M | re.S)
+    return {m.group(1).strip(): m.group(2).strip() + "\n" for m in pat.finditer(text)}
+
+
+def _write_api_files(d: Path, text: str, expected: tuple[str, ...]) -> None:
+    files = _parse_file_blocks(text)
+    missing = [name for name in expected if name not in files]
+    if missing:
+        raise RuntimeError("AI response did not include " + ", ".join(missing))
+    for name in expected:
+        (d / name).write_text(files[name], encoding="utf-8")
+
+
+def _run_api_prompt(kind: str, cfg, d: Path, prompt: str) -> str:
+    from . import ai
+
+    expected = EXPECTED_FILES[kind]
+    text = ai.complete(_api_file_prompt(kind, prompt, d, expected),
+                       cfg, timeout=TIMEOUT)
+    _write_api_files(d, text, expected)
+    return text[-4000:]
+
+
+def _run_api_revision(cfg, d: Path, expected: str, problems: list[str]) -> str:
+    from . import ai
+
+    prompt = _revision_prompt(expected, problems)
+    prompt = _api_file_prompt("cv" if expected == "CV.md" else "cover_letter",
+                              prompt, d, (expected,))
+    text = ai.complete(prompt, cfg, timeout=TIMEOUT)
+    _write_api_files(d, text, (expected,))
+    return text[-2000:]
+
+
 def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             config_path=None) -> None:
     """Execute one queued job. Called on a background thread."""
@@ -577,14 +668,22 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
 
         store.mark_job(con, job_id, "running")
 
-        # First, before anything is created. This check used to sit below the
-        # folder and the job-description snapshot, so a machine with no CLI
-        # answered a click by writing a directory and a file for a document
-        # that was never going to be drafted, and only then said why. Nothing
-        # here is expensive, but "it failed and left something behind" is a
-        # worse first impression than "it failed immediately".
-        claude = claude_bin()
-        if not claude:
+        cfg_obj = None
+        cfg_err = ""
+        try:
+            from .config import load as _load
+            cfg_obj = _load(config_path)
+        except Exception as e:
+            cfg_err = f"{type(e).__name__}: {e}"[:200]
+
+        from . import ai
+        use_api = bool(cfg_obj and ai.configured(cfg_obj))
+
+        # First, before anything is created. This used to only check for the
+        # CLI; a direct API key is now just as valid, and does not need a
+        # `claude` executable inside Docker.
+        claude = "" if use_api else claude_bin()
+        if not use_api and not claude:
             store.mark_job(con, job_id, "failed", error=_no_claude_msg())
             return
 
@@ -604,17 +703,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         # Same reason: copy the base CV in rather than referencing it. The
         # path comes from the config, which validates it exists on load, so a
         # CV that has been moved fails loudly instead of being invented.
-        cv_cfg = ""
-        cfg_err = ""
-        try:
-            from .config import load as _load
-            cv_cfg = _load(config_path).cv_path
-        except Exception as e:
-            # Swallowing this reported a config that will not parse as "No CV
-            # configured", which sends someone to fix a `cv.path` that is
-            # already correct. A malformed `titles:` block failed here and the
-            # dashboard said the CV was missing.
-            cfg_err = f"{type(e).__name__}: {e}"[:200]
+        cv_cfg = cfg_obj.cv_path if cfg_obj is not None else ""
         # Path("") is PosixPath("."), which exists, so the "no CV configured"
         # guard below never fired and shutil.copy2 raised IsADirectoryError.
         chosen = cv_source or cv_cfg or os.environ.get("JOB_RADAR_CV") or ""
@@ -624,7 +713,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                    f"is unknown. Fix the config and click again."
                    if cfg_err and not chosen else
                    "No CV configured. Set `cv.path` in your config, or run "
-                   "`job-radar setup`."
+                   "browser setup."
                    if not chosen else
                    f"the CV at {src} is not a readable file. Check `cv.path` "
                    f"in your config.")
@@ -644,56 +733,79 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             (d / "source-cv.txt").write_text(text, encoding="utf-8")
         elif src.suffix.lower() in (".txt", ".md"):
             shutil.copy2(src, d / "source-cv.txt")
+        elif src.suffix.lower() == ".pdf":
+            from .rank import _pdf_to_text
+            text = _pdf_to_text(src)
+            if not text:
+                store.mark_job(con, job_id, "failed",
+                               error=f"could not read any text out of {src.name}")
+                return
+            (d / "source-cv.txt").write_text(text, encoding="utf-8")
 
         prompt = build_prompt(job["kind"], cfg, str(src))
 
-        try:
-            # Copy the skills in rather than granting the tree.
-            #
-            # `--add-dir ~/.claude/skills` with `--permission-mode acceptEdits`
-            # gave this subprocess write access to every skill the user has,
-            # while the job description in its working directory is text from
-            # a third-party server anyone can post a job to. A successful
-            # injection could edit the skills themselves, which is the one
-            # change that outlives the run and affects every later one. A copy
-            # can only damage a folder that exists for this job.
-            copied = _copy_skills(d, job["kind"])
-            # The warning `_copy_skills` prints goes to whatever console
-            # started the process, and for the dashboard that is a launchd
-            # log nobody reads. It goes in the job log as well, which is the
-            # thing on screen next to the document it degraded.
-            missing = [n for n in SKILLS_FOR.get(job["kind"], ())
-                       if n not in copied]
-            note = (f"! drafted without {', '.join(missing)}: not installed "
-                    f"in ~/.claude/skills and not bundled.\n" if missing else "")
-            cmd = [claude, "-p", prompt,
-                   "--permission-mode", "acceptEdits",
-                   "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
-                   # Narrowed to the one script a prompt asks for, rather than
-                   # any Python at all. If the pattern stops matching, the
-                   # model simply cannot run the linter: the gate still runs it
-                   # afterwards, so that failure is quiet and safe.
-                   f"Bash(python3 {SKILL_DIR}/natural-writing/scripts/detect.py:*)",
-                   f"Bash(python {SKILL_DIR}/natural-writing/scripts/detect.py:*)"]
-            proc = subprocess.run(cmd, cwd=str(d), capture_output=True,
-                                  text=True, encoding="utf-8",
-                                  stdin=subprocess.DEVNULL, timeout=TIMEOUT)
-            out = note + (proc.stdout or "")[-4000:]
-            if proc.returncode != 0:
-                hit = looks_like_limit(proc.stderr, proc.stdout)
+        if use_api:
+            try:
+                out = _run_api_prompt(job["kind"], cfg_obj, d, prompt)
+            except ai.AILimitReached as exc:
                 store.mark_job(
                     con, job_id, "failed",
-                    error=(f"out of credit or rate limited: {hit}. Nothing was "
+                    error=(f"out of credit or rate limited: {exc}. Nothing was "
                            f"written and nothing partial was charged; the "
-                           f"button works again once the limit resets."
-                           if hit else
-                           (proc.stderr or "claude exited non-zero")[:400]),
-                    log=out)
+                           f"button works again once the limit resets."))
                 return
-        except subprocess.TimeoutExpired:
-            store.mark_job(con, job_id, "failed",
-                           error=f"timed out after {TIMEOUT}s")
-            return
+            except Exception as exc:
+                store.mark_job(con, job_id, "failed",
+                               error=f"{type(exc).__name__}: {exc}"[:400])
+                return
+        else:
+            try:
+                # Copy the skills in rather than granting the tree.
+                #
+                # `--add-dir ~/.claude/skills` with `--permission-mode acceptEdits`
+                # gave this subprocess write access to every skill the user has,
+                # while the job description in its working directory is text from
+                # a third-party server anyone can post a job to. A successful
+                # injection could edit the skills themselves, which is the one
+                # change that outlives the run and affects every later one. A copy
+                # can only damage a folder that exists for this job.
+                copied = _copy_skills(d, job["kind"])
+                # The warning `_copy_skills` prints goes to whatever console
+                # started the process, and for the dashboard that is a launchd
+                # log nobody reads. It goes in the job log as well, which is the
+                # thing on screen next to the document it degraded.
+                missing = [n for n in SKILLS_FOR.get(job["kind"], ())
+                           if n not in copied]
+                note = (f"! drafted without {', '.join(missing)}: not installed "
+                        f"in ~/.claude/skills and not bundled.\n" if missing else "")
+                cmd = [claude, "-p", prompt,
+                       "--permission-mode", "acceptEdits",
+                       "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
+                       # Narrowed to the one script a prompt asks for, rather than
+                       # any Python at all. If the pattern stops matching, the
+                       # model simply cannot run the linter: the gate still runs it
+                       # afterwards, so that failure is quiet and safe.
+                       f"Bash(python3 {SKILL_DIR}/natural-writing/scripts/detect.py:*)",
+                       f"Bash(python {SKILL_DIR}/natural-writing/scripts/detect.py:*)"]
+                proc = subprocess.run(cmd, cwd=str(d), capture_output=True,
+                                      text=True, encoding="utf-8",
+                                      stdin=subprocess.DEVNULL, timeout=TIMEOUT)
+                out = note + (proc.stdout or "")[-4000:]
+                if proc.returncode != 0:
+                    hit = looks_like_limit(proc.stderr, proc.stdout)
+                    store.mark_job(
+                        con, job_id, "failed",
+                        error=(f"out of credit or rate limited: {hit}. Nothing was "
+                               f"written and nothing partial was charged; the "
+                               f"button works again once the limit resets."
+                               if hit else
+                               (proc.stderr or "claude exited non-zero")[:400]),
+                        log=out)
+                    return
+            except subprocess.TimeoutExpired:
+                store.mark_job(con, job_id, "failed",
+                               error=f"timed out after {TIMEOUT}s")
+                return
 
         expected = {"cv": "CV.md", "cover_letter": "cover-letter.md",
                     "screen": "screening.md"}[job["kind"]]
@@ -725,22 +837,29 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                     break
                 out += ("\n\nsent back for revision:\n"
                         + "\n".join(f"  {p}" for p in problems))
-                try:
-                    rev = subprocess.run(
-                        [claude, "-p", _revision_prompt(expected, problems),
-                         "--permission-mode", "acceptEdits",
-                         "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
-                         f"Bash(python3 {SKILL_DIR}/natural-writing/scripts/detect.py:*)",
-                         f"Bash(python {SKILL_DIR}/natural-writing/scripts/detect.py:*)"],
-                        cwd=str(d), capture_output=True, text=True,
-                        encoding="utf-8", stdin=subprocess.DEVNULL, timeout=TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    out += "\n  revision timed out; keeping the draft as it stands"
-                    break
-                if rev.returncode != 0:
-                    out += "\n  revision failed; keeping the draft as it stands"
-                    break
-                out += (rev.stdout or "")[-2000:]
+                if use_api:
+                    try:
+                        out += _run_api_revision(cfg_obj, d, expected, problems)
+                    except Exception:
+                        out += "\n  revision failed; keeping the draft as it stands"
+                        break
+                else:
+                    try:
+                        rev = subprocess.run(
+                            [claude, "-p", _revision_prompt(expected, problems),
+                             "--permission-mode", "acceptEdits",
+                             "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep",
+                             f"Bash(python3 {SKILL_DIR}/natural-writing/scripts/detect.py:*)",
+                             f"Bash(python {SKILL_DIR}/natural-writing/scripts/detect.py:*)"],
+                            cwd=str(d), capture_output=True, text=True,
+                            encoding="utf-8", stdin=subprocess.DEVNULL, timeout=TIMEOUT)
+                    except subprocess.TimeoutExpired:
+                        out += "\n  revision timed out; keeping the draft as it stands"
+                        break
+                    if rev.returncode != 0:
+                        out += "\n  revision failed; keeping the draft as it stands"
+                        break
+                    out += (rev.stdout or "")[-2000:]
                 was = len(problems)
                 ok, problems, scores = _quality(d, expected, job["kind"])
                 history.append(

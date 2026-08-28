@@ -290,6 +290,23 @@ def cmd_scan(args) -> int:
     counts: dict[str, int] = {}
     absorbed: set = set()
     ok = 0
+    current_phase = {"n": 0, "label": ""}
+
+    def progress(phase: int = 0, label: str = "") -> None:
+        cb = getattr(args, "progress", None)
+        if not cb:
+            return
+        if phase or label:
+            current_phase["n"] = phase
+            current_phase["label"] = label
+        cb({
+            "done": done["n"],
+            "total": len(srcs),
+            "responded": ok,
+            "postings": len(all_jobs),
+            "phase": current_phase["n"],
+            "phase_label": current_phase["label"],
+        })
 
     def absorb(res):
         """Turn one fetched source into jobs. Called at most once per result.
@@ -364,6 +381,7 @@ def cmd_scan(args) -> int:
         if done["n"] % 25 == 0:
             _say(f"  {done['n']}/{len(srcs)}")
         absorb(res)
+        progress()
 
     # Derived, not written down. This said "only the first 6" while
     # `MAX_KEYWORD_TITLES` was 12, and the note ten lines below reads the
@@ -487,6 +505,7 @@ def cmd_scan(args) -> int:
                     enabled=not args.no_caffeine) as awake:
         _say(describe(awake.held) + "\n")
         for n, label, group, mins in est:
+            progress(n, label)
             _say(f"Pass {n} of {len(est)}, {label}: {len(group):,} sources, "
                  f"{_mins(mins)}.")
             results += fetch_all(
@@ -567,6 +586,7 @@ def cmd_scan(args) -> int:
             elif n < len(est):
                 _say(f"  dashboard updated; passes {n + 1} to {len(est)} "
                      f"still to come.")
+            progress(n, label)
 
     # `tick` has already parsed everything `fetch_all` handed it, so on the
     # real path this loop finds nothing to do and costs one set lookup per
@@ -2240,14 +2260,7 @@ def cmd_list(args) -> int:
 
 # ---------------------------------------------------------------- serve
 def cmd_serve(args) -> int:
-    from . import store
     from .serve import serve
-    # Checked here rather than inside `serve`, because the server opens a
-    # connection per request: a bad `--db` would otherwise be found by the
-    # first page load, after a browser had already been launched at a
-    # dashboard that cannot answer. The connection is closed straight away;
-    # this is a check on the path, not the server's own handle.
-    store.connect(args.db, must_exist=True).close()
     return serve(db_path=args.db, host=args.host, port=args.port,
                  open_browser=not args.no_browser, docs_base=args.docs,
                  config_path=args.config)
@@ -2524,7 +2537,10 @@ def build_parser() -> argparse.ArgumentParser:
     ls.set_defaults(func=cmd_list)
 
     sv = sub.add_parser("serve", help="open the dashboard you can act from")
-    sv.add_argument("--db", default=None, help=_DB_HELP)
+    sv.add_argument("--db", default=None,
+                    help="database path (default data/job-radar.db). Created "
+                         "when the web UI starts so a fresh install can be set "
+                         "up in the browser.")
     sv.add_argument("--host", default="127.0.0.1",
                     help="address to listen on (default 127.0.0.1). This "
                          "database holds your application history and private "

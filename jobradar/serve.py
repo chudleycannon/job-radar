@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import errno
 import json
+import os
+import re
 import sqlite3
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,7 +22,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from . import runner, store
+from .config import resolve as resolve_config
 from .output import interactive
+from .output import settings as settings_page
+from .output import setup as setup_page
 
 # Nothing this dashboard posts is large: the biggest body is a status plus a
 # note. A Content-Length beyond this is a mistake, and reading it would be
@@ -42,6 +47,12 @@ class Handler(BaseHTTPRequestHandler):
     # the process runs, and re-reading it per request would put a file read
     # on the page load.
     home_currency = ""
+
+    def _config_path(self) -> Path:
+        return resolve_config(self.config_path)
+
+    def _data_home(self) -> Path:
+        return self._config_path().expanduser().resolve().parent
 
     # ------------------------------------------------------------- helpers
     def _json(self, obj, code=200):
@@ -149,9 +160,39 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(
                 {"ok": False, "error": "cross-origin request refused"}, 403)
         path = urlparse(self.path).path
+        if path == "/setup":
+            return self._html(setup_page.render(str(self._config_path())))
+        if path == "/settings":
+            return self._html(settings_page.render(str(self._config_path())))
+        if path == "/api/settings":
+            ok, result = _read_ai_settings(self._config_path())
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+        if path == "/api/scan":
+            con = store.connect(self.db_path)
+            try:
+                done = int(store.get_meta(con, "scan_done", "0") or 0)
+                total = int(store.get_meta(con, "scan_total", "0") or 0)
+                return self._json({
+                    "state": store.get_meta(con, "scan_state", "idle"),
+                    "started": store.get_meta(con, "scan_started", ""),
+                    "finished": store.get_meta(con, "scan_finished", ""),
+                    "error": store.get_meta(con, "scan_error", ""),
+                    "done": done,
+                    "total": total,
+                    "percent": int(done * 100 / total) if total else 0,
+                    "responded": int(store.get_meta(con, "scan_responded", "0") or 0),
+                    "postings": int(store.get_meta(con, "scan_postings", "0") or 0),
+                    "phase": int(store.get_meta(con, "scan_phase", "0") or 0),
+                    "phase_label": store.get_meta(con, "scan_phase_label", ""),
+                })
+            finally:
+                con.close()
         if path in ("/", "/index.html"):
             con = store.connect(self.db_path)
             try:
+                if _needs_setup(con, self._config_path()):
+                    return self._html(setup_page.render(str(self._config_path())))
                 return self._html(
                     interactive.render(con, self.home_currency))
             finally:
@@ -370,6 +411,29 @@ class Handler(BaseHTTPRequestHandler):
                 "message": f"pulled. source list {n or 'unchanged'}",
                 "age": src_mod.age_days()})
 
+        if path == "/api/setup":
+            ok, result = _write_web_config(self._config_path(), data)
+            if not ok:
+                return self._json({"ok": False, "error": result}, 400)
+            try:
+                from .config import load as _load_cfg
+                Handler.home_currency = (_load_cfg(result).salary_currency or "").upper()
+            except Exception:
+                Handler.home_currency = ""
+            return self._json({"ok": True, "path": str(result)})
+
+        if path == "/api/settings":
+            ok, result = _write_ai_settings(self._config_path(), data)
+            if not ok:
+                return self._json({"ok": False, "error": result}, 400)
+            return self._json({"ok": True, "path": str(result)})
+
+        if path == "/api/scan":
+            ok, result = _start_scan(self.db_path, self._config_path())
+            if not ok:
+                return self._json({"ok": False, "error": result}, 409)
+            return self._json({"ok": True, "message": result})
+
         if path == "/api/rank/stop":
             con = store.connect(self.db_path)
             try:
@@ -542,6 +606,301 @@ def _abandon_rank(con, error: str = "") -> None:
         store.release(con, "rank")
     except Exception:
         pass
+
+
+def _needs_setup(con, config_path: Path) -> bool:
+    """A fresh web start should show setup instead of an empty board."""
+    if config_path.exists():
+        return False
+    runs = int(store.get_meta(con, "runs", "0") or 0)
+    roles = con.execute("SELECT COUNT(*) c FROM roles").fetchone()["c"]
+    return runs == 0 and roles == 0
+
+
+def _list(v) -> list[str]:
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    return [x.strip() for x in str(v or "").replace("\n", ",").split(",") if x.strip()]
+
+
+def _write_web_config(path: Path, data: dict) -> tuple[bool, str | Path]:
+    """Validate and write a browser-created config through the setup writer."""
+    from . import setup_wizard
+    from .config import ConfigError, load as load_cfg, _num
+    from .state import atomic_write_text
+
+    cv = Path(str(data.get("cv_path") or "").strip().strip("\"'")).expanduser()
+    if not cv:
+        return False, "CV path is required."
+    if not cv.exists() or not cv.is_file():
+        return False, f"No CV file at {cv}."
+
+    titles = _list(data.get("titles_include"))
+    if not titles:
+        return False, "At least one job title is required."
+
+    floor_raw = str(data.get("salary_floor") or "").strip()
+    try:
+        floor = int(_num(floor_raw, "salary.floor")) if floor_raw else None
+    except (ConfigError, TypeError, ValueError) as exc:
+        return False, str(exc)
+
+    try:
+        concurrency = int(str(data.get("concurrency") or "16").strip())
+    except ValueError:
+        return False, "fetch.concurrency is not a whole number. Write it plainly, like 16."
+
+    answers = dict(setup_wizard.DEFAULTS)
+    answers.update({
+        "cv_path": str(cv.resolve()),
+        "titles_include": titles,
+        "titles_exclude": _list(data.get("titles_exclude")),
+        "countries": [c.upper() for c in _list(data.get("countries"))],
+        "remote_ok": bool(data.get("remote_ok", True)),
+        "work_modes": ["remote"] if data.get("remote_only") else [],
+        "relocate_to": [c.upper() for c in _list(data.get("relocate_to"))],
+        "need_sponsorship": [c.upper() for c in _list(data.get("need_sponsorship"))],
+        "exclude_locations": _list(data.get("exclude_locations")),
+        "salary_floor": floor,
+        "salary_currency": str(data.get("salary_currency") or "GBP").strip().upper(),
+        "dealbreakers": {w: setup_wizard._word_pattern(w)
+                         for w in _list(data.get("dealbreakers"))},
+        "sectors": _list(data.get("sectors")),
+        "source_countries": [c.upper() for c in _list(data.get("source_countries"))],
+        "concurrency": concurrency,
+    })
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.web-setup")
+    old_text = path.read_text(encoding="utf-8") if path.exists() else ""
+    ai_match = re.search(r"(?ms)^ai:\n(?:^[ \t].*\n|^\s*$)*", old_text)
+    try:
+        setup_wizard.write_config(tmp, answers)
+        if ai_match:
+            text = _replace_top_level_block(
+                tmp.read_text(encoding="utf-8"), "ai", ai_match.group(0))
+            atomic_write_text(tmp, text)
+        load_cfg(tmp)
+        setup_wizard.write_config(path, answers)
+        if ai_match:
+            text = _replace_top_level_block(
+                path.read_text(encoding="utf-8"), "ai", ai_match.group(0))
+            atomic_write_text(path, text)
+    except Exception as exc:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False, str(exc)
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    return True, path
+
+
+def _read_ai_settings(path: Path) -> tuple[bool, dict | str]:
+    """Return AI settings without exposing saved secrets."""
+    import yaml
+
+    raw = {}
+    if path.exists():
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            return False, str(exc)
+    ai = raw.get("ai") if isinstance(raw, dict) else {}
+    ai = ai if isinstance(ai, dict) else {}
+    env_key = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    saved_key = bool(str(ai.get("anthropic_api_key") or "").strip())
+    try:
+        max_tokens = int(ai.get("max_tokens") or 4096)
+    except (TypeError, ValueError):
+        return False, "ai.max_tokens is not a whole number."
+    return True, {
+        "ok": True,
+        "provider": str(ai.get("provider") or "claude_cli"),
+        "model": str(ai.get("model") or "claude-sonnet-5"),
+        "base_url": str(ai.get("base_url") or ""),
+        "max_tokens": max_tokens,
+        "anthropic_key_set": saved_key or env_key,
+        "anthropic_key_source": "environment" if env_key and not saved_key else
+                                "config" if saved_key else "",
+    }
+
+
+def _write_ai_settings(path: Path, data: dict) -> tuple[bool, str | Path]:
+    """Write only the top-level `ai:` config block."""
+    import yaml
+    from .config import ConfigError, _ai_provider, _int
+    from .state import atomic_write_text
+
+    try:
+        provider = _ai_provider(data.get("provider"))
+        model = str(data.get("model") or "claude-sonnet-5").strip()
+        base_url = str(data.get("base_url") or "").strip()
+        if not model:
+            return False, "ai.model is required."
+        if base_url and not re.match(r"^https?://", base_url, re.I):
+            return False, "ai.base_url must start with http:// or https://."
+        max_tokens = _int(data.get("max_tokens"), "ai.max_tokens", 4096)
+        if max_tokens < 256:
+            return False, "ai.max_tokens should be at least 256."
+    except (ConfigError, TypeError, ValueError) as exc:
+        return False, str(exc)
+
+    existing_key = ""
+    if path.exists():
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            block = raw.get("ai") if isinstance(raw, dict) else {}
+            if isinstance(block, dict):
+                existing_key = str(block.get("anthropic_api_key") or "").strip()
+        except Exception:
+            existing_key = ""
+
+    incoming = str(data.get("anthropic_api_key") or "").strip()
+    key = "" if data.get("clear_anthropic_key") else (incoming or existing_key)
+    text = path.read_text(encoding="utf-8") if path.exists() else "# job-radar config\n"
+    block = _ai_block(provider, model, base_url, key, max_tokens)
+    next_text = _replace_top_level_block(text, "ai", block)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.ai-settings")
+    try:
+        atomic_write_text(tmp, next_text)
+        yaml.safe_load(tmp.read_text(encoding="utf-8"))
+        atomic_write_text(path, next_text)
+    except Exception as exc:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False, str(exc)
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    return True, path
+
+
+def _ai_block(provider: str, model: str, base_url: str, api_key: str,
+              max_tokens: int) -> str:
+    def q(v: str) -> str:
+        return "\"" + str(v).replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    return (
+        "ai:\n"
+        f"  provider: {provider}\n"
+        f"  model: {q(model)}\n"
+        f"  base_url: {q(base_url)}\n"
+        f"  anthropic_api_key: {q(api_key)}\n"
+        f"  max_tokens: {int(max_tokens)}\n"
+    )
+
+
+def _replace_top_level_block(text: str, key: str, block: str) -> str:
+    pattern = re.compile(rf"(?ms)^{re.escape(key)}:\n(?:^[ \t].*\n|^\s*$)*")
+    if pattern.search(text):
+        return pattern.sub(block, text, count=1)
+    sep = "" if text.endswith("\n") else "\n"
+    return text + sep + "\n" + block
+
+
+def _start_scan(db_path, config_path: Path) -> tuple[bool, str]:
+    """Run a scan from the browser, against the same paths setup wrote."""
+    import threading
+    from datetime import datetime
+    from . import cli
+
+    if not config_path.exists():
+        return False, "Set up your search first."
+
+    home = config_path.expanduser().resolve().parent
+    db = str(db_path or home / "data" / "job-radar.db")
+    con = store.connect(db)
+    try:
+        if not store.claim(con, "scan"):
+            return False, "a scan is already running"
+        store.set_meta(con, "scan_state", "running")
+        store.set_meta(con, "scan_started", datetime.now().isoformat(timespec="seconds"))
+        store.set_meta(con, "scan_finished", "")
+        store.set_meta(con, "scan_error", "")
+        store.set_meta(con, "scan_done", "0")
+        store.set_meta(con, "scan_total", "0")
+        store.set_meta(con, "scan_responded", "0")
+        store.set_meta(con, "scan_postings", "0")
+        store.set_meta(con, "scan_phase", "0")
+        store.set_meta(con, "scan_phase_label", "")
+    finally:
+        con.close()
+
+    class _Args:
+        pass
+
+    args = _Args()
+    args.config = str(config_path)
+    args.db = db
+    args.state = str(home / "state" / "seen.json")
+    args.out = str(home / "out")
+    args.docs = None
+    args.limit = 0
+    args.dry_run = False
+    args.no_enrich = False
+    args.no_caffeine = False
+    args.no_open = True
+
+    progress_last = {"done": -10}
+
+    def progress(update: dict) -> None:
+        done = int(update.get("done") or 0)
+        total = int(update.get("total") or 0)
+        is_phase = bool(update.get("phase_label"))
+        if not is_phase and done < total and done - progress_last["done"] < 10:
+            return
+        progress_last["done"] = done
+        try:
+            c = store.connect(db)
+            try:
+                for key, meta_key in (
+                    ("done", "scan_done"),
+                    ("total", "scan_total"),
+                    ("responded", "scan_responded"),
+                    ("postings", "scan_postings"),
+                    ("phase", "scan_phase"),
+                    ("phase_label", "scan_phase_label"),
+                ):
+                    store.set_meta(c, meta_key, update.get(key, ""))
+            finally:
+                c.close()
+        except Exception:
+            pass
+
+    args.progress = progress
+
+    def work():
+        err = ""
+        rc = 1
+        try:
+            rc = cli.cmd_scan(args)
+            if rc:
+                err = f"scan exited with status {rc}"
+        except BaseException as exc:
+            err = str(exc) or type(exc).__name__
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+        finally:
+            c = store.connect(db)
+            try:
+                store.set_meta(c, "scan_state", "idle")
+                store.set_meta(c, "scan_finished",
+                               datetime.now().isoformat(timespec="seconds"))
+                store.set_meta(c, "scan_error", err[:300])
+                store.release(c, "scan")
+            finally:
+                c.close()
+
+    threading.Thread(target=work, daemon=True).start()
+    return True, "Scan started. Reload the dashboard as roles arrive."
 
 
 def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:

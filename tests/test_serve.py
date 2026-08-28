@@ -28,6 +28,7 @@ import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -215,6 +216,155 @@ def test_a_good_request_still_works():
         _req(base, "/api/status",
              {"uid": "uid-one", "status": "interviewing", "note": ""})
         assert _status(db, "uid-one") == ("interviewing", "")
+
+
+def test_a_fresh_browser_start_shows_setup_instead_of_a_terminal_instruction():
+    """A container starts with no config and no database. `serve` has to be a
+    front door in that state, not a command that tells the user to go back to
+    the terminal before the browser can do anything useful."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "empty.db"
+        store.connect(db).close()
+        with _server(db, config_path=root / "config.yaml") as base:
+            code, body = _req(base, "/")
+            assert code == 200, (code, body)
+            assert "Set up your search" in body, body
+            assert "/data/my-cv.pdf" in body, body
+
+
+def test_the_browser_setup_route_writes_a_loadable_config():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "empty.db"
+        cv = root / "cv.md"
+        cv.write_text("Rowan Ashby\nEngineering Manager\n", encoding="utf-8")
+        store.connect(db).close()
+        cfg = root / "config.yaml"
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/api/setup", {
+                "cv_path": str(cv),
+                "titles_include": ["engineering manager", "head of engineering"],
+                "countries": ["UK"],
+                "remote_ok": True,
+                "remote_only": True,
+                "salary_floor": "70000",
+                "salary_currency": "GBP",
+                "dealbreakers": ["take-home test"],
+                "concurrency": "16",
+            })
+            assert code == 200, (code, body)
+            assert body["ok"] is True, body
+            assert cfg.is_file()
+
+        from jobradar.config import load
+        got = load(cfg)
+        assert got.cv_path == str(cv.resolve())
+        assert got.titles_include == ["engineering manager", "head of engineering"]
+        assert got.work_modes == ["remote"]
+        assert got.salary_floor == 70000
+        assert got.dealbreakers[0].name == "take-home test"
+
+
+def test_the_browser_scan_button_says_setup_first_without_a_config():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "empty.db"
+        store.connect(db).close()
+        with _server(db, config_path=root / "config.yaml") as base:
+            code, body = _req(base, "/api/scan", {})
+            assert code == 409, (code, body)
+            assert "Set up" in body["error"], body
+
+
+def test_the_browser_scan_status_includes_completion_rate():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.set_meta(con, "scan_state", "running")
+            store.set_meta(con, "scan_done", "2")
+            store.set_meta(con, "scan_total", "8")
+            store.set_meta(con, "scan_responded", "2")
+            store.set_meta(con, "scan_postings", "17")
+            store.set_meta(con, "scan_phase", "3")
+            store.set_meta(con, "scan_phase_label", "Greenhouse")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/api/scan")
+            assert code == 200, (code, body)
+            assert body["done"] == 2, body
+            assert body["total"] == 8, body
+            assert body["percent"] == 25, body
+            assert body["responded"] == 2, body
+            assert body["postings"] == 17, body
+            assert body["phase"] == 3, body
+            assert body["phase_label"] == "Greenhouse", body
+
+
+def test_settings_page_saves_ai_credentials_without_echoing_them():
+    with _lab() as (root, db, home):
+        cfg = root / "config.yaml"
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/api/settings")
+            assert code == 200 and body["ok"] is True, (code, body)
+            assert body["anthropic_key_set"] is False, body
+
+            secret = "sk-ant-api03-test-secret"
+            code, body = _req(base, "/api/settings", {
+                "provider": "anthropic",
+                "model": "deepseek-v4-pro",
+                "base_url": "https://api.deepseek.com/anthropic",
+                "max_tokens": "2048",
+                "anthropic_api_key": secret,
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+            assert secret in cfg.read_text(encoding="utf-8")
+
+            code, body = _req(base, "/api/settings")
+            assert code == 200, (code, body)
+            assert body["anthropic_key_set"] is True, body
+            assert body["base_url"] == "https://api.deepseek.com/anthropic", body
+            assert secret not in json.dumps(body), body
+
+            text = cfg.read_text(encoding="utf-8")
+            assert "provider: anthropic" in text, text
+            assert "model: \"deepseek-v4-pro\"" in text, text
+            assert "base_url: \"https://api.deepseek.com/anthropic\"" in text, text
+            assert "max_tokens: 2048" in text, text
+
+
+def test_setup_preserves_saved_ai_credentials():
+    with _lab() as (root, db, home):
+        cv = root / "cv.md"
+        cv.write_text("Rowan Ashby\nEngineering leader.\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: ''\n"
+            "ai:\n"
+            "  provider: anthropic\n"
+            "  model: \"claude-sonnet-5\"\n"
+            "  base_url: \"https://api.deepseek.com/anthropic\"\n"
+            "  anthropic_api_key: \"sk-ant-api03-kept\"\n"
+            "  max_tokens: 2048\n",
+            encoding="utf-8")
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/api/setup", {
+                "cv_path": str(cv),
+                "titles_include": ["Head of Engineering"],
+                "countries": ["UK"],
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+            text = cfg.read_text(encoding="utf-8")
+            assert "anthropic_api_key: \"sk-ant-api03-kept\"" in text, text
+            from jobradar.config import load
+            parsed = load(cfg)
+            assert parsed.ai_provider == "anthropic"
+            assert parsed.ai_base_url == "https://api.deepseek.com/anthropic"
+            assert parsed.anthropic_api_key == "sk-ant-api03-kept"
+            assert parsed.ai_max_tokens == 2048
 
 
 def test_the_ordinary_refusals_keep_their_words():
@@ -454,6 +604,49 @@ def test_generate_without_the_cli_fails_the_job_and_frees_the_lock():
                 "nothing should be written for a job that cannot run"
         finally:
             con.close()
+
+
+def test_generate_can_use_the_anthropic_api_without_the_claude_cli():
+    with _lab() as (root, db, home), _env(
+            JOB_RADAR_CLAUDE=str(root / "no-such-claude")):
+        cv = root / "cv.md"
+        cv.write_text("Rowan Ashby\nEngineering leader.\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n"
+            "ai:\n"
+            "  provider: anthropic\n"
+            "  model: \"claude-sonnet-5\"\n"
+            "  anthropic_api_key: \"sk-ant-api03-test\"\n",
+            encoding="utf-8")
+
+        answer = (
+            "===== BEGIN FILE: screening.md =====\n"
+            "APPLY, strong match.\n\nNo dealbreakers found.\n"
+            "===== END FILE: screening.md =====\n"
+            "===== BEGIN FILE: verdict.txt =====\n"
+            "APPLY\n"
+            "===== END FILE: verdict.txt =====\n")
+        with mock.patch("jobradar.ai.complete", lambda *a, **k: answer), \
+                _server(db, docs=root / "docs", config_path=cfg) as base:
+            code, body = _req(base, "/api/generate",
+                              {"uid": "uid-one", "kind": "screen"})
+            assert code == 200 and body["ok"] is True, (code, body)
+
+            con = store.connect(db)
+            try:
+                _settle(lambda: con.execute(
+                    "SELECT state FROM jobs WHERE id=?",
+                    (body["job"],)).fetchone()["state"] == "done")
+                art = con.execute(
+                    "SELECT summary,body FROM artifacts WHERE kind='screen'"
+                ).fetchone()
+                assert art["summary"] == "APPLY", dict(art)
+                assert "No dealbreakers" in art["body"], dict(art)
+            finally:
+                con.close()
 
 
 @contextmanager

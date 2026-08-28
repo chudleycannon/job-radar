@@ -86,6 +86,12 @@ class Config:
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""
 
+    ai_provider: str = "claude_cli"
+    ai_model: str = "claude-sonnet-5"
+    ai_base_url: str = ""
+    anthropic_api_key: str = ""
+    ai_max_tokens: int = 4096
+
     cv_path: str = ""
     formats: list[str] = field(default_factory=lambda: ["html", "json"])
     out_dir: Path = Path("out")
@@ -318,6 +324,7 @@ KNOWN_KEYS = {
     "cv": {"path"},
     "sources": {"use_bundled", "countries", "extra", "reed_api_key",
                 "adzuna_app_id", "adzuna_app_key"},
+    "ai": {"provider", "model", "base_url", "anthropic_api_key", "max_tokens"},
     "output": {"formats", "dir"},
     "fetch": {"concurrency", "timeout", "retries", "user_agent"},
 }
@@ -476,6 +483,16 @@ def _api_key(value, env_var: str) -> str:
     """
     v = str(value or "").strip()
     return v or os.environ.get(env_var, "").strip()
+
+
+def _ai_provider(v) -> str:
+    p = str(v or "claude_cli").strip().lower().replace("-", "_")
+    aliases = {"cli": "claude_cli", "claude": "anthropic"}
+    p = aliases.get(p, p)
+    if p not in {"claude_cli", "anthropic"}:
+        raise ConfigError(
+            f"ai.provider: {v!r} is not supported. Use anthropic or claude_cli.")
+    return p
 
 
 def _bundled_sector_tags() -> set[str] | None:
@@ -748,6 +765,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
     loc = _block(raw, "locations")
     sal = _block(raw, "salary")
     src = _block(raw, "sources")
+    ai = _block(raw, "ai")
     out = _block(raw, "output")
     fet = _block(raw, "fetch")
 
@@ -771,6 +789,11 @@ def load(path: str | os.PathLike | None = None) -> Config:
         reed_api_key=_api_key(src.get("reed_api_key"), "REED_API_KEY"),
         adzuna_app_id=_api_key(src.get("adzuna_app_id"), "ADZUNA_APP_ID"),
         adzuna_app_key=_api_key(src.get("adzuna_app_key"), "ADZUNA_APP_KEY"),
+        ai_provider=_ai_provider(ai.get("provider")),
+        ai_model=str(ai.get("model") or "claude-sonnet-5").strip(),
+        ai_base_url=str(ai.get("base_url") or "").strip(),
+        anthropic_api_key=_api_key(ai.get("anthropic_api_key"), "ANTHROPIC_API_KEY"),
+        ai_max_tokens=_int(ai.get("max_tokens"), "ai.max_tokens", 4096),
         cv_path=str(_block(raw, "cv").get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
         out_dir=Path(out.get("dir") or "out"),

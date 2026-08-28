@@ -32,7 +32,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
@@ -324,8 +323,16 @@ def _cv_text(cfg) -> str:
     return " ".join(text.split())[:6000]
 
 
-def _call(prompt: str, timeout: int | None = None) -> list[dict]:
+def _call(prompt: str, cfg=None, timeout: int | None = None) -> list[dict]:
+    from . import ai
     from .runner import claude_bin, _no_claude_msg, looks_like_limit, LimitReached
+    if cfg is not None and ai.configured(cfg):
+        try:
+            return _parse(ai.complete(prompt, cfg, timeout=timeout or CALL_TIMEOUT))
+        except ai.AILimitReached as exc:
+            raise LimitReached(str(exc)) from exc
+        except ai.AIError as exc:
+            raise CallFailed(str(exc)) from exc
     exe = claude_bin()
     if not exe:
         raise SystemExit(_no_claude_msg())
@@ -334,7 +341,8 @@ def _call(prompt: str, timeout: int | None = None) -> list[dict]:
     timeout = CALL_TIMEOUT if timeout is None else timeout
     # stdin closed: there is no terminal behind the dashboard or the scheduled
     # jobs, so anything the CLI tried to read would block until the timeout.
-    r = subprocess.run([exe, "-p", prompt, "--model", MODEL, "--allowedTools", ""],
+    model = getattr(cfg, "ai_model", MODEL) if cfg is not None else MODEL
+    r = subprocess.run([exe, "-p", prompt, "--model", model, "--allowedTools", ""],
                        capture_output=True, text=True, encoding="utf-8",
                        stdin=subprocess.DEVNULL, timeout=timeout)
     if r.returncode:
@@ -526,6 +534,7 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
     reason attached is the precise failure the hard error in `_call` exists to
     prevent, and swallowing it per batch would have quietly reintroduced it.
     """
+    from . import ai
     from .runner import LimitReached, require_claude
     # Before the CV is read and before a single batch is built. `_call` looked
     # for the binary, so the answer arrived only once a worker thread ran one:
@@ -533,7 +542,8 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
     # and submitted the first three, printed its progress line, and only then
     # exited on a missing install. Nothing was ever charged, but the person
     # had no way to know that from where the message landed.
-    require_claude()
+    if not ai.configured(cfg):
+        require_claude()
     cv, wants = _cv_text(cfg), _wants(cfg)
     head, tail = _prompt_parts(cv, wants)
     width = max(1, int(WIDTH if width is None else width))
@@ -591,7 +601,7 @@ def rank(con, cfg, rows, on_batch=None, should_stop=None, width=None) -> int:
             while nxt < len(batches) and len(pending) < width and not stopping():
                 chunk = batches[nxt]
                 nxt += 1
-                pending[ex.submit(_call, build(chunk))] = chunk
+                pending[ex.submit(_call, build(chunk), cfg)] = chunk
 
         fill()
         while pending:

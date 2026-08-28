@@ -1,6 +1,7 @@
 # job-radar config
 #
-# Copy this to config.yaml and edit, or run `job-radar setup` to be asked.
+# Copy this to config.yaml and edit, or run `job-radar serve` and use the
+# browser setup.
 # This example is set up for an engineering manager in the UK; replace the
 # titles and dealbreakers with your own and it works for any field.
 
@@ -44,7 +45,7 @@ cv:
   # Your current CV. REQUIRED. Everything that drafts a document works from
   # it, and without it the tool would be inventing a career rather than
   # tailoring one. .docx, .pdf, .md and .txt all work.
-  # `job-radar setup` asks for this and will not finish without a real file.
+  # Browser setup asks for this and will not finish without a real file.
   path: ~/Documents/my-cv.docx
 
 salary:
@@ -149,6 +150,20 @@ sources:
     #   platform: adzuna
     #   country: UK
     #   keyword_template: true
+
+ai:
+  # Set this from the dashboard Settings page. `anthropic` calls Anthropic
+  # directly from the app. `claude_cli` uses an already-authenticated Claude
+  # CLI instead.
+  provider: claude_cli
+  model: "claude-sonnet-5"
+  # Leave blank for Anthropic. For DeepSeek's Anthropic-compatible API, use:
+  # https://api.deepseek.com/anthropic
+  base_url: ""
+  # Leave blank here if you export ANTHROPIC_API_KEY, or if you use the
+  # Claude CLI fallback.
+  anthropic_api_key: ""
+  max_tokens: 4096
 
 output:
   formats: [html, json]

@@ -63,14 +63,60 @@ Already have an environment, or prefer the steps:
 
 ```bash
 pip install -e .
-job-radar setup
+job-radar serve
 ```
 
+Open <http://127.0.0.1:8765>. On a fresh install the first page is setup:
+give it the path to your CV, the titles you want, locations, salary floor and
+dealbreakers, then save. The config is still written as `config.yaml`, so it
+stays editable and all existing commands keep working, but you do not have to
+hand-edit it or answer terminal prompts.
+
+Open **Settings** from the dashboard to add AI credentials. Choose
+`Anthropic-compatible API`, paste an API key, and save. Leave the base URL
+blank for Anthropic, or set it to `https://api.deepseek.com/anthropic` for
+DeepSeek. Ranking, screening, tailored CVs and cover letters will then call
+that API directly from the app. If no key is saved, those AI actions fall back
+to an already authenticated `claude` CLI.
+
+## Docker
+
+You can also run job-radar in a container. The image runs from `/data`, so one
+bind mount can hold your private config, database, scan state, dashboard output
+and generated documents.
+
+```bash
+docker build -t job-radar .
+mkdir -p .docker-data
+```
+
+Put your CV somewhere under `.docker-data`. Paths in the browser setup should
+be container paths, for example `/data/my-cv.pdf`. Then start the web UI:
+
+```bash
+docker run --rm -it -p 8765:8765 -v "$PWD/.docker-data:/data" \
+  job-radar serve --host 0.0.0.0 --no-browser
+```
+
+Open <http://127.0.0.1:8765>, fill in setup, then start the first scan from
+the dashboard. With Compose, the service is already wired to bind the
+container interface and mount `.docker-data`:
+
+```bash
+docker compose up job-radar
+```
+
+If you prefer not to save the API key in `config.yaml`, export
+`ANTHROPIC_API_KEY` before `docker compose`, or pass it with
+`docker run -e ANTHROPIC_API_KEY`. For DeepSeek, also set the Settings base
+URL to `https://api.deepseek.com/anthropic`. Reed and Adzuna credentials work
+the same way with `REED_API_KEY`, `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
+
 **There is no `config.yaml` in the repo.** It is gitignored, so a fresh clone
-has none, `job-radar setup` writes yours, and nothing you put in it ever
-conflicts on a pull. Setup needs a terminal to ask its questions, so for a
-script there is `job-radar setup --defaults --cv PATH --titles "a,b"`, and
-`config.example.yaml` is a starting point to copy.
+has none, the browser setup writes yours, and nothing you put in it ever
+conflicts on a pull. For scripts there is still
+`job-radar setup --defaults --cv PATH --titles "a,b"`, and
+`config.example.yaml` remains a starting point to copy.
 
 Setup asks for your CV first and will not finish without one. Every document
 this writes is built from your real record, and a missing CV does not degrade
@@ -83,7 +129,7 @@ Then:
 job-radar serve       # the dashboard, at http://127.0.0.1:8765
 job-radar list        # the same thing as text
 job-radar list --new  # only what was first seen on the most recent day
-job-radar scan        # read the boards again
+job-radar scan        # read the boards again, if you prefer the terminal
 ```
 
 **Leave that first scan an hour**, and there is a floor under that no setting
@@ -95,14 +141,15 @@ you keep and how many requests you allow in flight (`fetch.concurrency`,
 default 16, capped at 64). `job-radar scan --limit 200` takes a couple of
 minutes if you only want to watch it work.
 
-**The `claude` CLI is a separate prerequisite**, and only for the features
-that write or judge something: the screen, CV and cover letter buttons in the
-dashboard, and the `job-radar rank` and `job-radar generate` commands. Those
-shell out to headless `claude -p` (see `jobradar/runner.py`), so they need
-[Claude Code](https://claude.com/claude-code) installed and signed in, and
-they spend tokens every time you press them. Without it, scanning, filtering
-and the dashboard work in full, and those features report that the CLI cannot
-be found rather than failing quietly.
+**AI credentials are optional for scanning.** The screen, CV, cover letter,
+rank and generate actions spend AI tokens only when you click them. Add an
+Anthropic-compatible API key in dashboard Settings to call an API directly;
+DeepSeek works by setting the base URL to
+`https://api.deepseek.com/anthropic`. Or leave the key blank and use an
+already authenticated [Claude Code](https://claude.com/claude-code) CLI as
+the fallback. Without either one, scanning, filtering and the dashboard still
+work in full, and the AI actions report what is missing rather than failing
+quietly.
 
 ---
 
@@ -252,13 +299,13 @@ judgement, and they should share nothing but your name.
 **Apply** opens the posting and marks it. **Skip** strikes it through and it
 stops coming back.
 
-Generation runs headless `claude -p` in the background using the `rate-cv`,
-`natural-writing` and `screen-role` skills, then runs objective gates: slop
-score, em-dash count, phrase overlap, rating, and any figure or scale word in
-the draft that is not in your CV. The results are recorded and shown against
-the document; nothing is redrafted for you, because a second pass costs tokens
-you did not ask for. A document with a failed gate is one to read before you
-send, not one to trust. It never claims a document is finished, only drafted.
+Generation runs in the background using either the Anthropic-compatible API
+configured in Settings or the Claude CLI fallback. The app writes the returned
+files locally and then runs objective gates: slop score, em-dash count, phrase
+overlap, rating, and any figure or scale word in the draft that is not in your
+CV. The results are recorded and shown against the document. A document with a
+failed gate is one to read before you send, not one to trust. It never claims
+a document is finished, only drafted.
 
 **Nothing generates unless you click it.** No schedule, no watcher, no
 speculative drafting. Every token spent is one you asked for.
@@ -268,12 +315,9 @@ repository, alongside a snapshot of the job description. That snapshot matters:
 postings are pulled the moment they are filled, which is usually just before
 someone calls you about one.
 
-Requires the `claude` CLI on your PATH, and the
-[natural-writing](https://github.com/maccydee/natural-writing) skill installed
-at `~/.claude/skills/natural-writing/`, because the drafting prompts run its
-linter and the slop-score gate reads its output. Without it you still get
-documents, but two of the four gates quietly stop reporting. Everything other
-than generation works with neither.
+The bundled skills are used for prompts and local gates. A personal
+`~/.claude/skills/natural-writing/` copy is still picked up when present, but
+it is no longer required for Docker or API-backed generation.
 
 ### Everything works without a browser
 
@@ -350,7 +394,7 @@ the wording differs. Giving only `org` mutes a whole company.
 
 ## Configuration
 
-`config.yaml` is written by `job-radar setup` and edited by hand afterwards.
+`config.yaml` is written by browser setup and edited by hand afterwards.
 Put private settings in `config.local.yaml`, which takes precedence. Both are
 gitignored, so a fork using the GitHub Actions path has to force-add
 `config.yaml` to commit it.
@@ -481,8 +525,8 @@ so these are stated rather than left for you to find.
   ever obtained here, so **neither has made a successful keyed call**. Treat
   your first run of either as the test, and believe the run over the docs.
 - **Ranking and drafting cost money.** `rank`, `generate` and the dashboard's
-  screen, CV and cover letter buttons run headless `claude -p` and spend
-  tokens. Nothing generates unless you click it.
+  screen, CV and cover letter buttons call the configured AI provider and
+  spend tokens. Nothing generates unless you click it.
 
 ---
 
@@ -552,11 +596,12 @@ as hostile input rather than as content.
   in `job-description.md`, the markers are stripped out of the text first so a
   posting cannot close the fence, and every prompt says that anything inside
   is a claim about a job and never an instruction.
-- **The subprocess cannot reach your skills.** It used to be handed
-  `--add-dir ~/.claude/skills` alongside `--permission-mode acceptEdits`,
-  which meant write access to every skill you have. The skills a job needs are
-  copied into that job's own folder instead, so a compromise can only damage a
-  directory that exists for one role.
+- **AI output cannot reach your real skills.** API mode has no filesystem
+  access at all. CLI fallback used to be handed `--add-dir ~/.claude/skills`
+  alongside `--permission-mode acceptEdits`, which meant write access to every
+  skill you have. The skills a job needs are copied into that job's own folder
+  instead, so a compromise can only damage a directory that exists for one
+  role.
 - **Bash is narrowed to one script**, the writing linter, rather than any
   Python at all.
 - **Ranking numbers roles by position**, not by an id the model could be
@@ -583,8 +628,9 @@ this tool recorded making.
 ## Running it on GitHub Actions
 
 1. Fork this repo and clone your fork.
-2. Write a `config.yaml`: `job-radar setup`, or copy `config.example.yaml`
-   and edit it. The repo ships neither, because `config.yaml` is gitignored.
+2. Write a `config.yaml`: use browser setup locally, or copy
+   `config.example.yaml` and edit it. The repo ships neither, because
+   `config.yaml` is gitignored.
 3. Commit it: `git add -f config.yaml && git commit && git push`. The `-f`
    is required, because the file is gitignored and a plain `git add` refuses
    it in silence. Without it the runner checks out a fork with no config and
@@ -737,10 +783,11 @@ and what the source list holds.
 
 ## Skills
 
-`skills/` holds Claude Code skills that pair with the scanner. `rate-cv` also
-ships as [its own repository](https://github.com/maccydee/rate-cv), which is
-the source of truth; the copy here is synced weekly by a workflow. See
-[skills/README.md](skills/README.md).
+`skills/` holds prompt and quality-gate instructions that pair with the
+scanner. They are used by API mode and by the Claude CLI fallback. `rate-cv`
+also ships as [its own repository](https://github.com/maccydee/rate-cv),
+which is the source of truth; the copy here is synced weekly by a workflow.
+See [skills/README.md](skills/README.md).
 
 ---
 

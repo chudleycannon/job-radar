@@ -61,6 +61,16 @@ _EXTRA_CSS = """
   font-size:.875rem;box-shadow:var(--shadow-up);opacity:0;pointer-events:none;
   transition:opacity var(--dur) var(--ease);z-index:50;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
+.empty button{margin-top:var(--s4);font:inherit;font-size:.9375rem;font-weight:650;
+  border:1px solid var(--accent);background:var(--accent);color:white;
+  border-radius:8px;padding:10px 16px;cursor:pointer}
+.empty button:disabled{opacity:.55;cursor:default}
+.scanstat{display:inline-flex;align-items:center;gap:8px;color:var(--muted);
+  font-size:.875rem;min-height:24px}
+.scanbar{width:150px;height:6px;border-radius:999px;background:var(--line);
+  overflow:hidden;display:inline-block}
+.scanbar i{display:block;height:100%;width:0;background:var(--accent);
+  transition:width var(--dur) var(--ease)}
 /* A facet whose count has fallen to nothing under the current tab. Left
    clickable, because one of them may be the filter you are already in. */
 .chips button.none{opacity:.45}
@@ -313,6 +323,57 @@ if(pullBtn) pullBtn.onclick=async ()=>{
   } else { pullBtn.disabled=false; pullBtn.textContent='Pull'; }
 };
 
+const scanBtn=$('#scan');
+const scanInfo=$('#scaninfo'), scanFill=$('#scanfill'), scanBar=$('#scanbar');
+const settingsBtn=$('#settings');
+if(settingsBtn) settingsBtn.onclick=()=>{ location.href='/settings'; };
+async function scanState(){
+  const r=await fetch('/api/scan'); if(!r.ok) return null;
+  return r.json().catch(()=>null);}
+function paintScanInfo(d){
+  if(!scanInfo) return;
+  const done=+d.done||0, total=+d.total||0, pct=total?Math.floor(done*100/total):0;
+  if(scanFill) scanFill.style.width=Math.max(0,Math.min(100,pct))+'%';
+  if(d.state==='running'){
+    const bits=[];
+    if(total) bits.push(`${pct}%`);
+    if(total) bits.push(`${done.toLocaleString()}/${total.toLocaleString()} sources`);
+    if(d.phase_label) bits.push(d.phase_label);
+    if(d.responded) bits.push(`${(+d.responded).toLocaleString()} responded`);
+    if(d.postings) bits.push(`${(+d.postings).toLocaleString()} postings`);
+    scanInfo.textContent=bits.join(' · ') || 'scan starting';
+    scanInfo.hidden=false;
+    if(scanBar) scanBar.hidden=false;
+  }else if(d.finished&&total){
+    scanInfo.textContent=`last scan ${Math.min(100,pct)}% · ${done.toLocaleString()}/${total.toLocaleString()} sources`;
+    scanInfo.hidden=false;
+    if(scanBar) scanBar.hidden=false;
+  }else{
+    scanInfo.textContent='';
+    scanInfo.hidden=true;
+    if(scanBar) scanBar.hidden=true;
+  }}
+async function paintScan(){
+  if(!scanBtn) return;
+  const d=await scanState(); if(!d) return;
+  paintScanInfo(d);
+  if(d.state==='running'){
+    scanBtn.disabled=true; scanBtn.textContent='Scan running...';
+  }else{
+    scanBtn.disabled=false; scanBtn.textContent='Start scan';
+    if(d.error) say('Last scan failed: '+d.error,9000);
+  }}
+if(scanBtn){
+  scanBtn.onclick=async ()=>{
+    scanBtn.disabled=true; scanBtn.textContent='Starting...';
+    const {ok,data}=await post('/api/scan',{});
+    say(ok ? (data.message||'Scan started') : (data.error||'could not start'), ok?5000:9000);
+    paintScan();
+  };
+  paintScan();
+  setInterval(paintScan,5000);
+}
+
 $('#fcountry').onchange=e=>{country=e.target.value;apply()};
 $('#fcity').onchange=e=>{city=e.target.value;apply()};
 
@@ -554,9 +615,9 @@ def _empty_state(con, rows) -> str:
     runs = int(store.get_meta(con, "runs", "0") or 0)
     if not runs:
         return ('<div class="empty" id="empty"><p><b>No scan has run yet.</b> '
-                'This board is filled by <code>job-radar scan</code>; run it '
-                'in a terminal and reload this page. The first one takes about '
-                'an hour, and roles appear as it goes.</p></div>')
+                'Start one here and reload this page as roles arrive. The '
+                'first one takes about an hour, and roles appear as it goes.'
+                '</p></div>')
     return ('<div class="empty" id="empty"><p><b>The last scan stored no roles.</b> '
             'Nothing here is filtered out: there is nothing to filter. The scan '
             'itself printed where every posting went, which is the thing to '
@@ -698,8 +759,12 @@ def render(con, home_currency: str = "") -> str:
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
+  <button id="scan" type="button">Scan now</button>
+  <button id="settings" type="button">Settings</button>
   <button id="rankstop" type="button" hidden>Stop</button>
-  <span id="rankinfo"></span>{_sync}</div>
+  <span id="rankinfo"></span>
+  <span id="scaninfo" class="scanstat" hidden></span>
+  <span id="scanbar" class="scanbar" aria-hidden="true" hidden><i id="scanfill"></i></span>{_sync}</div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="selects">

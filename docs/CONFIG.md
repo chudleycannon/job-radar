@@ -4,7 +4,7 @@ Every setting, what it accepts, and what happens when it is wrong. The file is
 `config.local.yaml` if present, otherwise `config.yaml`, unless `-c` or the
 `JOB_RADAR_CONFIG` environment variable names one. Both filenames are
 gitignored, so the repo ships neither and a fork using GitHub Actions has to
-`git add -f config.yaml`. `job-radar setup` writes one for you; this is for
+`git add -f config.yaml`. Browser setup writes one for you; this is for
 editing it afterwards, or writing it by hand.
 
 **The config is validated when it loads.** An unknown key, a broken regex, a
@@ -115,6 +115,20 @@ refused at load rather than quietly matching nothing. Check yours with
 | `reed_api_key` | string | Free key from <https://www.reed.co.uk/developers/jobseeker>, needed only if you add the Reed source. Falls back to the `REED_API_KEY` environment variable when blank, which is the route for GitHub Actions. **Put a real key in `config.local.yaml`, never in `config.yaml`**: the second one is the file a fork force-adds for GitHub Actions, so it is the one that ends up committed. Blank means the Reed source is skipped, with a message naming it. |
 | `adzuna_app_id`, `adzuna_app_key` | string | Free pair from <https://developer.adzuna.com/signup>, needed only if you add the Adzuna source. Both fall back to `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` in the environment when blank, which is the route for GitHub Actions. **Real values go in `config.local.yaml`, never in `config.yaml`**, which is the file a fork force-adds for GitHub Actions. Either one missing means no credentials, and the Adzuna source is skipped with a message naming it. Adzuna's free limits are 25 calls a minute, 250 a day, 1,000 a week and 2,500 a month; one scan is one call per job title per page. |
 
+## ai
+
+These settings are written from dashboard **Settings**. They only matter for
+actions that spend AI tokens: ranking, screening, CV drafts and cover letters.
+Scanning and filtering work without them.
+
+| key | type | notes |
+|---|---|---|
+| `provider` | `anthropic` or `claude_cli` | `anthropic` means Anthropic-compatible Messages API. Leave `base_url` blank for Anthropic, or set it to DeepSeek's Anthropic-compatible endpoint. `claude_cli` uses an already-authenticated Claude Code CLI fallback. |
+| `model` | string | Model name to send to the provider. Defaults to `claude-sonnet-5`; for DeepSeek use a DeepSeek model such as `deepseek-v4-pro`. |
+| `base_url` | URL | Optional Anthropic-compatible API base URL. Blank means `https://api.anthropic.com`. DeepSeek documents `https://api.deepseek.com/anthropic`. |
+| `anthropic_api_key` | string | API key for the Anthropic-compatible provider. The settings page can save it here, or you can leave it blank and export `ANTHROPIC_API_KEY`. The key is never echoed back by `/api/settings`, and config text sent into prompts is redacted first. |
+| `max_tokens` | number | Maximum output tokens for direct API calls. Defaults to 4096. |
+
 ## output
 
 | key | type | notes |
@@ -148,4 +162,4 @@ refused at load rather than quietly matching nothing. Check yours with
 | `--refresh`, `--top` | rank | Re-score roles that already have a fit; how many to print. |
 | `--remove` | rescreen | Delete the stored roles that no longer match your config. Off by default: `rescreen` reports and changes nothing without it, and a role you have already given a status is never removed whatever it matches. |
 | `--port`, `--host`, `--no-browser` | serve | |
-| `--defaults`, `--cv`, `--titles` | setup | `setup` asks questions and so refuses anything that is not a terminal. The scriptable form is `job-radar setup --defaults --cv PATH --titles "a,b"`; `--cv` is required with `--defaults`. Add `--scan` to run the first scan straight after. |
+| `--defaults`, `--cv`, `--titles` | setup | Browser setup is the normal path. The CLI wizard remains for scripts: `job-radar setup --defaults --cv PATH --titles "a,b"`; `--cv` is required with `--defaults`. Add `--scan` to run the first scan straight after. |
