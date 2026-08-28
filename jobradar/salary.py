@@ -69,8 +69,18 @@ def currency_of_country(country: str | None) -> str | None:
 # silently deleted. SGD is about 0.74 USD, so that is a Singapore role priced
 # a third high, on a `confirmed=True` figure, which is the only kind allowed
 # to disqualify a role against a floor. C$, A$, NZ$, HK$ and R$ all did it.
+#
+# The rupee sign was the next one along, and it cost a whole market. INR
+# floors were enabled the day this was found, and on the published seed of
+# 2026-08-28 there are 101 Indian adverts writing pay with a "\u20b9" and not one
+# of them parsed: Litmos state "Salary Range: \u20b922,00,000 to \u20b928,00,000" and
+# came back unconfirmed, so the figure could neither hide the role nor
+# clear the floor. Worse in the range case, because "\u20b9" is not whitespace:
+# Airbnb's "\u20b93,080,000 \u2014 \u20b94,400,000 INR" could not match as a range at all
+# and fell through to the single-value pattern on the trailing ISO code,
+# which reports the TOP of the band as though it were the whole of it.
 _SYMBOL_CUR = {
-    "£": "GBP", "$": "USD", "€": "EUR",
+    "£": "GBP", "$": "USD", "€": "EUR", "\u20b9": "INR",
     "us$": "USD", "c$": "CAD", "ca$": "CAD", "a$": "AUD", "au$": "AUD",
     "nz$": "NZD", "s$": "SGD", "hk$": "HKD", "r$": "BRL",
 }
@@ -112,9 +122,9 @@ _ISO = rf"(?=[A-Z]{{3}})(?:{'|'.join(sorted(KNOWN_CURRENCIES))})"
 # The price of the outer gate is that the country-dollar marks are read only
 # in capitals, which is how anybody writes S$ or HK$ anyway, and the ISO codes
 # were capitals-only already for a different reason.
-_CUR_PRE = (rf"(?-i:(?=[A-Z£$€]))"
+_CUR_PRE = (rf"(?-i:(?=[A-Z£$€\u20b9]))"
             rf"(?:(?<![A-Za-z])(?:(?-i:{_ISO})\$?(?![A-Za-z])|"
-            rf"US\$|CA\$|AU\$|NZ\$|HK\$|S\$|C\$|A\$|R\$)|[£$€])")
+            rf"US\$|CA\$|AU\$|NZ\$|HK\$|S\$|C\$|A\$|R\$)|[£$€\u20b9])")
 
 # A code AFTER the number. "150,000 USD" is as common as "USD 150,000" and
 # neither was read.
@@ -132,7 +142,24 @@ _CUR_SUF = rf"(?<![A-Za-z])(?-i:{_ISO})(?![A-Za-z])"
 # "60.000" is sixty thousand, "60.00" is two digits and stays sixty, and "1.5"
 # is one digit and stays one and a half. Nobody quotes pay to three decimal
 # places, which is what makes the three-digit case have one honest reading.
+#
+# The Indian grouping is the third spelling, and it is the one that bites
+# rather than merely going missing. India writes a lakh as "16,50,000": two
+# digits, then groups of TWO, then a final group of three. Read with the
+# Anglo rule the whole figure fails to match at its first digit, the scan
+# walks forward, and the tail "50,000" matches on its own. So DualEntry's
+# "India: \u20b916,50,000 - \u20b921,78,000 INR", which is in the published seed
+# verbatim, parsed as a confirmed 78,000 INR: twenty-eight times too small,
+# confirmed, and therefore deleted outright by a 4,000,000 floor. Reading a
+# figure wrong is worse than not reading it, because only a confirmed figure
+# is allowed to disqualify a role.
+#
+# It sits after the Anglo alternative and the two are disjoint, so no number
+# that reads today changes: the Anglo form needs every group after the first
+# to be three digits and this one needs at least one group of two, and the
+# engine only reaches this branch at a position where the Anglo one failed.
 _NUM = (r"\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+        r"|\d{1,2}(?:,\d{2})+,\d{3}(?!\d)"
         r"|\d{1,3}(?:\.\d{3})+(?!\d)(?:,\d+)?"
         r"|\d+(?:\.\d+)?\s?[kK]\b"
         r"|\d{4,}(?:\.\d+)?")
@@ -203,9 +230,16 @@ _NUM_RATE = r"\d{1,4}(?:\.\d+)?(?![\d,kK]|\.\d)"
 # as USD is the same wrong-currency confirmation. No trailing-code form
 # here though: a rate number is four digits at most, so "2024 USD" in a
 # sentence would be read as a day rate.
+# The TOP of a rate band is allowed the full number pattern as well, tried
+# second so nothing that reads today changes. `_NUM_RATE` refuses a number
+# followed by a separator, which is right for a lone figure and wrong for the
+# far end of a range: TechnologyAdvice publish "Hourly pay range \u20b9500 \u2014
+# \u20b91,000 INR", the whole range failed to match on the "1,000", and
+# `_SINGLE_RATE` then reported the \u20b9500 as the entire band. Half a rate is
+# half an annualised figure, and the floor deletes on that.
 _RANGE_RATE = re.compile(
     rf"(?P<c1>{_CUR_PRE})\s?(?P<lo>{_NUM_RATE})\s*(?:-|–|—|to)\s*"
-    rf"(?P<c2>{_CUR_PRE})?\s?(?P<hi>{_NUM_RATE})",
+    rf"(?P<c2>{_CUR_PRE})?\s?(?P<hi>{_NUM_RATE}|{_NUM})",
     re.I,
 )
 _SINGLE_RATE = re.compile(rf"(?P<c>{_CUR_PRE})\s?(?P<v>{_NUM_RATE})", re.I)
@@ -387,6 +421,38 @@ def _period(text: str) -> str:
     return "year"
 
 
+# India states pay in units as often as it states it in digits: "\u20b913-16 LPA"
+# is thirteen to sixteen LAKH per annum, and a lakh is a hundred thousand.
+#
+# This exists because teaching the parser the "\u20b9" mark without it made things
+# WORSE rather than better. Eulerity's "Compensation: \u20b913-16 LPA" started
+# matching, as a day rate of thirteen rupees, confirmed, and a confirmed
+# figure is the only kind allowed to delete a role: a 1.3M-1.6M salary was
+# about to be hidden behind a 4,000,000 floor it comfortably fails, which is
+# a worse answer than the unconfirmed one it gave before.
+#
+# "LPA" and "CPA" carry their own period, so they override whatever period
+# word happens to sit nearby -- that is the whole of what the "PA" means. A
+# bare "lakh", "crore" or "L" does not, so those keep the ordinary period
+# rules and "\u20b91 crore in monthly revenue" stays the monthly figure it says
+# it is, which is to say discarded.
+_LAKH_UNIT = re.compile(
+    r"^[\s\u00a0]{0,3}(?:(?P<pa>lpa|cpa)|(?P<lakh>lakhs?|lacs?|L)"
+    r"|(?P<crore>crores?|cr))\b", re.I)
+_LAKH_MULT = {"lakh": 100_000.0, "crore": 10_000_000.0}
+
+
+def _lakh_unit(text: str, end: int) -> tuple[float, bool]:
+    """(multiplier, does the unit state its own period) for the unit, if any,
+    written immediately after a figure. (1.0, False) when there is none."""
+    m = _LAKH_UNIT.match(text[end:end + 12])
+    if not m:
+        return 1.0, False
+    if m.group("pa"):
+        return 100_000.0, True
+    return _LAKH_MULT["crore" if m.group("crore") else "lakh"], False
+
+
 # A number range in prose is not a salary. "40,000 to 120,000 requests per
 # second" and "grew from 25,000 to 90,000 members" both parse as money if the
 # currency symbol is optional, and because this runs over the first 1500
@@ -471,21 +537,49 @@ def _scan(full: str, begin: int, stop: int, default_currency: str | None, *,
                 # preceding stretch of text. Required always for an
                 # unsymbolled range, and everywhere once we are past the
                 # opening block.
+                #
+                # `continue`, not `return`. Abandoning the block on the first
+                # number that fails this gate meant one "40,000 to 120,000
+                # requests per second" high up in an advert deleted the real,
+                # symbolled, pay-labelled range further down, and the second
+                # pass applies the gate to EVERY match, so out there any
+                # unlabelled number at all ended the search. Measured on the
+                # published seed of 2026-08-28: 400 adverts of 33,918 came
+                # back "unconfirmed salary" while plainly stating one, among
+                # them Cohere's "$180,000 - $325,000" and DualEntry's
+                # "$140,000 - $250,000". Nothing is loosened by this; every
+                # match still has to pass the same gate to be believed.
                 lead = t[max(0, m.start() - 120):m.start()]
                 if not _PAY_CONTEXT.search(lead):
-                    return Salary()
+                    continue
             period = _period_near(full, begin + m.start(), begin + m.end()) or (
                 chunk_period if rate or len(t) <= 400 else "year")
-            if period == "month" or (rate and period == "year"):
+            mult, own_period = _lakh_unit(t, m.end()) if cur == "INR" else (1.0, False)
+            if mult > 1.0 and not _PAY_CONTEXT.search(
+                    t[max(0, m.start() - 120):m.start()]):
+                # A unit multiplies by up to ten million, so it is believed
+                # only where pay is being discussed. 2070Health's advert says
+                # the business is "generating approximately \u20b91 crore in
+                # monthly revenue", and taking that for the salary would put a
+                # 10,000,000 figure on a role that states none.
+                mult, own_period = 1.0, False
+            if own_period:
+                period = "year"
+            if period == "month" or (rate and period == "year" and mult == 1.0):
                 # The rate patterns exist only to read day and hour rates:
                 # their number is four digits at most, so believing one as an
                 # annual figure files a 13.45 an hour job as 13.45 a YEAR and
                 # then hides it behind any floor at all. A monthly figure has
                 # no period to be stored in, and reading it as annual is the
                 # same mistake twelve times over.
+                #
+                # A unit is the exception: "\u20b913-16 LPA" is caught by the RATE
+                # patterns, because thirteen is a rate-shaped number, and it
+                # is an annual salary of 1.3 million all the same.
                 continue
-            return Salary(min=lo, max=hi, currency=cur, period=period,
-                          raw=m.group(0).strip(), confirmed=True)
+            return Salary(min=lo * mult, max=hi * mult, currency=cur,
+                          period=period, raw=m.group(0).strip(),
+                          confirmed=True)
 
         for m in single.finditer(t):
             v = _to_float(_match_value(m) or "")
@@ -495,14 +589,23 @@ def _scan(full: str, begin: int, stop: int, default_currency: str | None, *,
                 continue
             if need_context and not _PAY_CONTEXT.search(
                     t[max(0, m.start() - 120):m.start()]):
-                return Salary()
+                # Same reason as the range loop above: skip this figure, do
+                # not give up on the block.
+                continue
             period = _period_near(full, begin + m.start(), begin + m.end()) or (
                 chunk_period if rate or len(t) <= 400 else "year")
-            if period == "month" or (rate and period == "year"):
-                continue
             cur = _match_currency(m) or default_currency
-            return Salary(min=v, max=v, currency=cur, period=period,
-                          raw=m.group(0).strip(), confirmed=True)
+            mult, own_period = _lakh_unit(t, m.end()) if cur == "INR" else (1.0, False)
+            if mult > 1.0 and not _PAY_CONTEXT.search(
+                    t[max(0, m.start() - 120):m.start()]):
+                mult, own_period = 1.0, False
+            if own_period:
+                period = "year"
+            if period == "month" or (rate and period == "year" and mult == 1.0):
+                continue
+            return Salary(min=v * mult, max=v * mult, currency=cur,
+                          period=period, raw=m.group(0).strip(),
+                          confirmed=True)
 
     return Salary()
 
