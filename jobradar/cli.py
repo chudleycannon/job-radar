@@ -1523,7 +1523,13 @@ def cmd_seed_load(args) -> int:
         store.migrate(con,
                       state_path="state/seen.json" if own_db else "",
                       apps_path=None if own_db else "")
-        store.upsert_roles(con, kept)
+        # Stamped with the day the shard set was BUILT, not today. These
+        # roles were first seen by whoever built it, often a week ago, and
+        # calling them all new today made `list --new` answer with the whole
+        # database: a scan said 3 new and `list --new` said 437, one minute
+        # apart, against the same rows, at exactly the point in the README
+        # where that sequence is recommended.
+        store.upsert_roles(con, kept, first_seen=idx.get("generated") or None)
         con.commit()
     finally:
         con.close()

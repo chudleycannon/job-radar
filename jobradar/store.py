@@ -285,11 +285,20 @@ def _ensure_columns(con) -> None:
                 "name TEXT PRIMARY KEY, taken_at TEXT NOT NULL)")
 
 
-def upsert_roles(con, jobs: Iterable, run: int | None = None) -> tuple[int, int]:
+def upsert_roles(con, jobs: Iterable, run: int | None = None,
+                 first_seen: str | None = None) -> tuple[int, int]:
     """Insert or refresh roles. Returns (new, seen_before).
 
     `first_seen` is never overwritten: it is what makes "new since last run"
     meaningful across months rather than across one scan.
+
+    It can be SET on insert, though, because "when this row was written" and
+    "when anybody first saw this job" are not the same date and only one of
+    them is useful. `seed load` imports tens of thousands of roles the builder
+    observed days ago; stamping them with today made `list --new` answer with
+    the entire database. Following the sequence the README recommends, a scan
+    reported 3 new roles and `list --new` reported 437, one minute apart,
+    against the same database. Defaults to today, which is right for a scan.
 
     `run` is the run number to stamp on rows this call inserts. It defaults to
     "one past the counter, read right now", which is only correct while
@@ -302,6 +311,7 @@ def upsert_roles(con, jobs: Iterable, run: int | None = None) -> tuple[int, int]
     """
     _ensure_columns(con)
     today = date.today().isoformat()
+    seen_first = first_seen or today
     run = int(run) if run is not None else int(get_meta(con, "runs", "0")) + 1
     new = seen = 0
     for j in jobs:
@@ -356,7 +366,10 @@ def upsert_roles(con, jobs: Iterable, run: int | None = None) -> tuple[int, int]
                 salary_currency,salary_period,salary_confirmed,salary_label,posted_at,
                 description,score,reasons,flags,last_seen,first_seen,first_run,uid)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                vals + (today, run, j.uid))
+                # last_seen is today (we have just confirmed it), but
+                # first_seen is when it was first OBSERVED, which for a
+                # seeded row is the day the shard set was built.
+                vals + (seen_first, run, j.uid))
             con.execute("INSERT OR IGNORE INTO role_state (uid,status,updated_at) "
                         "VALUES (?,'new',?)", (j.uid, today))
     return new, seen

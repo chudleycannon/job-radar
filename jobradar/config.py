@@ -367,6 +367,24 @@ def _countries(values, where: str) -> list[str]:
     known = _known_country_codes()
     out = []
     for v in values:
+        # YAML 1.1, which is what PyYAML speaks, reads an unquoted NO as the
+        # boolean false. So `countries: [NO]` reached here as `[False]`, and a
+        # Norwegian typing the correct ISO code was told "'False' is not a
+        # country this tool recognises. Did you mean FI, FR?". Norway has 323
+        # roles in the published seed and was unreachable through any config.
+        #
+        # Turned back rather than refused, because among ISO country codes the
+        # mapping is not ambiguous: NO is the only one YAML eats into false.
+        # ON, OFF, YES and TRUE are not countries, so a true has no country
+        # it could have been, and that is worth saying with the fix rather
+        # than guessing one the reader never typed.
+        if v is False:
+            v = "NO"
+        elif v is True:
+            raise ConfigError(
+                f"{where}: YAML read one of these as the boolean true, which "
+                f"happens to an unquoted ON, YES or TRUE. None of those is a "
+                f"country code. Quote it if you meant a country: [\"ON\"].")
         t = str(v).strip()
         if not t:
             continue
