@@ -180,14 +180,33 @@ const byFit=(a,b)=>tier(a)-tier(b)
 //   2  a stated bottom of range, in some other currency
 //   1  a stated top but no bottom, so no floor at all
 //   0  no stated pay
+// Group 2 was every other currency AT ONCE, and then the numbers inside it
+// were compared as bare numbers. So on a board whose home currency is GBP,
+// `INR 6,612,600` (about £62,000) sorted above `USD 260,000` (about
+// £290,000), and `SGD 181,545` and `CAD 180,000` both outranked `USD
+// 179,000`. That is exactly the conversion this comment says the sort stopped
+// making, arrived at by grouping instead of by dividing.
+//
+// Every one of those rows already carries "not compared" against the floor,
+// so the tool knew it could not rank them and ranked them anyway.
+//
+// Foreign rows now hold their group but fall back to the rank order the
+// dashboard already computed, rather than to a number that means a different
+// thing on every row. Ordering by score is not a claim about pay.
 function payGroup(r){
   const floor=+r.dataset.payfloor||0;
   if(floor) return (!HOME_CUR || (r.dataset.paycur||'')===HOME_CUR) ? 3 : 2;
   return (+r.dataset.paytop||0) ? 1 : 0;}
+function homePay(r){
+  // Only a figure in the reader's own currency is a figure this can order by.
+  const g=payGroup(r);
+  return g===3 ? (+r.dataset.payfloor||0) : 0;}
+function homeTop(r){
+  return payGroup(r)===3 ? (+r.dataset.paytop||0) : 0;}
 const bySalary=(a,b)=>tier(a)-tier(b)
   ||payGroup(b)-payGroup(a)
-  ||(+b.dataset.payfloor||0)-(+a.dataset.payfloor||0)
-  ||(+b.dataset.paytop||0)-(+a.dataset.paytop||0)
+  ||homePay(b)-homePay(a)
+  ||homeTop(b)-homeTop(a)
   ||(+b.dataset.score)-(+a.dataset.score);
 const byNew=(a,b)=>tier(a)-tier(b)
   ||(b.dataset.seen||'').localeCompare(a.dataset.seen||'')
