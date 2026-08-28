@@ -75,3 +75,4 @@ seed-build/
 # Local bind mount used by docker-compose.yml. It can hold config.yaml,
 # data/job-radar.db, out/, state/, a CV copy and generated documents.
 .docker-data/
+/.idea/
