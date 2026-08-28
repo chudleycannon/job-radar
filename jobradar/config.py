@@ -12,6 +12,9 @@ import yaml
 
 # The fetcher owns these: it is what has to live with them.
 from .fetch import DEFAULT_CONCURRENCY, MAX_CONCURRENCY
+# The parser owns which currencies exist. `VALID_CURRENCIES` is built from it
+# below so a floor can be written in anything a salary can come back as.
+from .salary import KNOWN_CURRENCIES
 
 # config.local.yaml wins if present. That is how you keep your own settings off
 # a public fork: config.yaml is committed so GitHub Actions can read it, and
@@ -216,6 +219,51 @@ def _num(v, key: str):
             f"{key}: {v!r} is not a number. Write it plainly, like 70000.")
 
 
+def _int(v, key: str, default: int) -> int:
+    """A whole number, or a ConfigError that names the key it came from.
+
+    `fetch.concurrency: loads` raised a bare `ValueError: invalid literal for
+    int() with base 10: 'loads'` out of `load()`. Every other bad value in this
+    file produces a sentence naming the setting and saying what to write; this
+    one produced a Python traceback with no mention of `fetch`, of
+    `concurrency`, or of which file it was reading.
+    """
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        # `retries: yes` is a YAML boolean, and int(True) is 1. That is a
+        # number, so nothing would have complained, and the setting would have
+        # meant something the writer did not ask for.
+        raise ConfigError(f"{key}: {v!r} is true or false, not a number. "
+                          f"Write it plainly, like {default}.")
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        raise ConfigError(f"{key}: {v!r} is not a whole number. "
+                          f"Write it plainly, like {default}.")
+
+
+def _block(raw: dict, name: str) -> dict:
+    """One section of the file, or a ConfigError that names it.
+
+    `titles:` written as a YAML list is the obvious mistake, because what goes
+    under it IS a list of titles. It reached `.get` and came back as
+    "'list' object has no attribute 'get'": no mention of `titles`, no mention
+    of the config file, and it reads like a bug in the tool rather than a typo
+    in the file. `locations:` did the same.
+    """
+    block = raw.get(name)
+    if block is None:
+        return {}
+    if not isinstance(block, dict):
+        keys = sorted(KNOWN_KEYS.get(name, ()))
+        hint = f" The keys that go under it: {', '.join(keys)}." if keys else ""
+        raise ConfigError(
+            f"{name}: expected indented `key: value` settings, not a "
+            f"{type(block).__name__}.{hint}")
+    return block
+
+
 def _bool(v, key: str) -> bool:
     """`remote_ok: "no"` used to mean yes, because bool("no") is True."""
     if isinstance(v, bool):
@@ -337,7 +385,18 @@ def _countries(values, where: str) -> list[str]:
 # Only currencies the salary parser can actually produce. `currency: euro`
 # uppercased to EURO, never matched EUR, and silently switched the floor off
 # on every euro role.
-VALID_CURRENCIES = {"GBP", "USD", "EUR"}
+#
+# Taken FROM the parser rather than written out here, because a hand-kept
+# second copy drifts and the drift is silent in the dangerous direction. This
+# was `{"GBP", "USD", "EUR"}` while the parser could already produce INR, SGD,
+# AED, CAD and the rest from the job's own country, so an Indian or Singapore
+# reader could not state a floor at all. The error message was clear and had
+# no way forward, and the workaround it pushed people to -- pick USD -- is
+# exactly what makes a mis-stamped currency dangerous: a floor in USD compared
+# against a figure the parser has now correctly labelled SGD is refused as a
+# cross-currency comparison, which is safe, but a floor in USD against a
+# figure WRONGLY labelled USD deletes the role.
+VALID_CURRENCIES = set(KNOWN_CURRENCIES)
 
 # What `screen.work_mode` can answer, which is what this can filter on.
 VALID_WORK_MODES = {"remote", "hybrid", "office"}
@@ -401,12 +460,12 @@ def _api_key(value, env_var: str) -> str:
     return v or os.environ.get(env_var, "").strip()
 
 
-def _sectors(values) -> list[str]:
-    """Refuse a sector tag that is not in the bundled list.
+def _bundled_sector_tags() -> set[str] | None:
+    """Every sector tag in the bundled list, or None if it cannot be read.
 
-    `sectors: [hospitality]` is the obvious thing for a restaurant manager to
-    write. It is not a tag, so it matched nothing, switched off 299 of 307
-    sources, and still printed a normal-looking scan.
+    None means "do not judge", not "no tags". A missing or corrupt source list
+    is its own failure and refusing every sector on the back of it would be a
+    second, wronger one.
     """
     from .sources import BUNDLED
     import json as _json
@@ -415,7 +474,20 @@ def _sectors(values) -> list[str]:
         items = raw.get("sources", raw) if isinstance(raw, dict) else raw
         known = {(d.get("sector") or "").lower() for d in items if isinstance(d, dict)}
         known.discard("")
+        return known
     except (OSError, ValueError):
+        return None
+
+
+def _sectors(values) -> list[str]:
+    """Refuse a sector tag that is not in the bundled list.
+
+    `sectors: [hospitality]` is the obvious thing for a restaurant manager to
+    write. It is not a tag, so it matched nothing, switched off 299 of 307
+    sources, and still printed a normal-looking scan.
+    """
+    known = _bundled_sector_tags()
+    if known is None:
         return [str(v).strip().lower() for v in values if str(v).strip()]
     out = []
     for v in values:
@@ -431,6 +503,166 @@ def _sectors(values) -> list[str]:
                 f"--add` to add your own.")
         if t not in out:
             out.append(t)
+    return out
+
+
+# What one `sources.extra` entry may say. Taken from `Source.from_dict`, which
+# is the code that actually reads it.
+EXTRA_SOURCE_KEYS = {"company", "url", "platform", "sector", "country",
+                     "domain", "method", "body", "keyword_template"}
+
+# A source is fetched exactly as written, so this is the whole test of whether
+# it could ever be fetched at all.
+_URL_RE = re.compile(r"^https?://\S+$", re.I)
+
+
+def _extra_sources(values, where: str) -> list[dict]:
+    """Validate the one config block that nothing was checking.
+
+    Every other block in this file is validated. This one was passed straight
+    through to `Source.from_dict`, and each of these was live:
+
+      * `company:` typed `compny:` raised `KeyError: 'company'` out of
+        `sources.load`, which is EVERY command that reads a source list. The
+        traceback named no entry, no key and no file.
+      * a bare `- hello` became an employer called hello with a board at the
+        url hello. It cannot answer, and a board that cannot answer counts in
+        the summary exactly like a board with no vacancies.
+      * `platform: not-a-real-platform` was accepted and then ignored, so the
+        board was parsed as whatever its URL looked like.
+      * `url: just some text` was accepted.
+      * `country: Mars` was quietly rewritten to `unknown` by
+        `sources.normalise_country_tag`, while the same word under
+        `locations.countries` is refused outright. The two disagreed about the
+        same mistake, and the silent one is the one that loses roles.
+
+    The country is normalised here as well as checked, so `country: Germany`
+    reaches `sources.load` as DE rather than being turned into `unknown` on
+    the way past.
+    """
+    from . import adapters
+    from .sources import NON_COUNTRY_TAGS, _COUNTRY_TAG_SYNONYMS
+
+    sector_tags = None
+    out = []
+    for i, entry in enumerate(_as_list(values)):
+        label = f"{where}[{i}]"
+        if isinstance(entry, str):
+            # `sources.load` turns a bare string into company=url=the string,
+            # which is only ever meaningful when the string is a board URL.
+            if not _URL_RE.match(entry.strip()):
+                raise ConfigError(
+                    f"{label}: {entry!r} is not a URL, so it would become an "
+                    f"employer called {entry!r} with a board at {entry!r} that "
+                    f"nothing can fetch. Write it as `- company: Name` with "
+                    f"`url: https://...` indented under it.")
+            entry = {"company": entry.strip(), "url": entry.strip()}
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"{label}: expected `company:` and `url:`, not a "
+                f"{type(entry).__name__}.")
+
+        d = dict(entry)
+        name = d.get("company")
+        if isinstance(name, str) and name.strip():
+            label = f"{where} '{name.strip()}'"
+
+        unknown = set(d) - EXTRA_SOURCE_KEYS
+        if unknown:
+            raise ConfigError(
+                f"{label}: unknown key(s) {sorted(unknown)}. "
+                f"Valid: {sorted(EXTRA_SOURCE_KEYS)}.")
+
+        if not (isinstance(name, str) and name.strip()):
+            raise ConfigError(
+                f"{label}: no `company`. That is the name this board is "
+                f"reported and de-duplicated under, and without it every "
+                f"command that loads sources stops on a KeyError naming "
+                f"nothing at all.")
+        d["company"] = name.strip()
+
+        url = d.get("url")
+        if not (isinstance(url, str) and _URL_RE.match(url.strip())):
+            raise ConfigError(
+                f"{label}: `url` must be an http or https address, not "
+                f"{url!r}. It is fetched exactly as written.")
+        d["url"] = url.strip()
+
+        plat = d.get("platform")
+        if plat is not None and str(plat).strip():
+            known = set(adapters.platform_names()) | {"custom"}
+            if str(plat).strip().lower() not in known:
+                raise ConfigError(
+                    f"{label}: {plat!r} is not a platform this tool has an "
+                    f"adapter for, so the board would be read with the wrong "
+                    f"parser and come back with no postings, which looks "
+                    f"exactly like an employer with no vacancies. Valid: "
+                    f"{', '.join(sorted(known))}. Leave `platform` out "
+                    f"entirely to have it worked out from the URL.")
+            d["platform"] = str(plat).strip().lower()
+        else:
+            d.pop("platform", None)
+
+        cc = d.get("country")
+        if cc is not None and str(cc).strip():
+            t = str(cc).strip()
+            tag = _COUNTRY_TAG_SYNONYMS.get(t.lower())
+            if tag in NON_COUNTRY_TAGS:
+                d["country"] = tag
+            else:
+                # Same refusal as `locations.countries`, and the same message.
+                d["country"] = _countries([t], f"{label}.country")[0]
+        else:
+            d.pop("country", None)
+
+        sec = d.get("sector")
+        if sec is not None and str(sec).strip():
+            if sector_tags is None:
+                sector_tags = _bundled_sector_tags()
+            t = str(sec).strip().lower()
+            if sector_tags and t not in sector_tags:
+                raise ConfigError(
+                    f"{label}: {sec!r} is not a tag in the bundled source "
+                    f"list, so this board would be dropped by any `sectors:` "
+                    f"filter you set and kept by none of them. Valid: "
+                    f"{', '.join(sorted(sector_tags))}. Leave `sector` out to "
+                    f"have the board kept whatever `sectors:` says.")
+            d["sector"] = t
+        else:
+            d.pop("sector", None)
+
+        method = d.get("method")
+        if method is not None and str(method).strip().upper() not in ("GET", "POST"):
+            raise ConfigError(
+                f"{label}: `method` is {method!r}; only GET and POST are sent.")
+        if method is not None:
+            d["method"] = str(method).strip().upper()
+
+        if "body" in d and d["body"] is not None and not isinstance(d["body"], dict):
+            raise ConfigError(
+                f"{label}: `body` is the JSON posted to the board and must be "
+                f"a block of `key: value`, not a {type(d['body']).__name__}.")
+
+        dom = d.get("domain")
+        if dom is not None and not (isinstance(dom, str) and dom.strip()):
+            raise ConfigError(
+                f"{label}: `domain` is the employer's own website, used to "
+                f"check the board really is theirs. Give one or leave it out.")
+
+        if "keyword_template" in d:
+            d["keyword_template"] = _bool(d["keyword_template"],
+                                          f"{label}.keyword_template")
+            if d["keyword_template"] and "{keyword}" not in d["url"]:
+                # `expand_templates` fills `{keyword}` in and produces one
+                # search per title. A URL with no placeholder produces the
+                # same URL per title, so the identical board is fetched up to
+                # twelve times and de-duplicated back to one afterwards.
+                raise ConfigError(
+                    f"{label}: `keyword_template: true` but the url has no "
+                    f"`{{keyword}}` in it, so it would be fetched once per "
+                    f"title and every copy would be the same request.")
+
+        out.append(d)
     return out
 
 
@@ -473,8 +705,11 @@ def _check_keys(raw: dict) -> None:
         raise ConfigError(f"unknown setting(s) {sorted(unknown)}. "
                           f"Valid: {sorted(TOP_LEVEL)}")
     for section, allowed in KNOWN_KEYS.items():
-        block = raw.get(section)
-        if isinstance(block, dict):
+        # `_block`, not `isinstance(..., dict)`. The old test skipped a
+        # section written as a list without a word, which is how
+        # "'list' object has no attribute 'get'" got as far as `load`.
+        block = _block(raw, section)
+        if block:
             extra = set(block) - allowed
             if extra:
                 raise ConfigError(f"{section}: unknown key(s) {sorted(extra)}. "
@@ -491,12 +726,12 @@ def load(path: str | os.PathLike | None = None) -> Config:
     raw: dict[str, Any] = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     _check_keys(raw)
 
-    titles = raw.get("titles") or {}
-    loc = raw.get("locations") or {}
-    sal = raw.get("salary") or {}
-    src = raw.get("sources") or {}
-    out = raw.get("output") or {}
-    fet = raw.get("fetch") or {}
+    titles = _block(raw, "titles")
+    loc = _block(raw, "locations")
+    sal = _block(raw, "salary")
+    src = _block(raw, "sources")
+    out = _block(raw, "output")
+    fet = _block(raw, "fetch")
 
     cfg = Config(
         titles_include=_terms(titles.get("include")),
@@ -514,16 +749,17 @@ def load(path: str | os.PathLike | None = None) -> Config:
         sectors=_sectors(_as_list(raw.get("sectors"))),
         source_countries=_countries(_as_list(src.get("countries")), "sources.countries"),
         use_bundled_sources=_bool(src.get("use_bundled", True), "sources.use_bundled"),
-        extra_sources=_as_list(src.get("extra")),
+        extra_sources=_extra_sources(src.get("extra"), "sources.extra"),
         reed_api_key=_api_key(src.get("reed_api_key"), "REED_API_KEY"),
         adzuna_app_id=_api_key(src.get("adzuna_app_id"), "ADZUNA_APP_ID"),
         adzuna_app_key=_api_key(src.get("adzuna_app_key"), "ADZUNA_APP_KEY"),
-        cv_path=str((raw.get("cv") or {}).get("path") or ""),
+        cv_path=str(_block(raw, "cv").get("path") or ""),
         formats=_as_list(out.get("formats")) or ["html", "json"],
         out_dir=Path(out.get("dir") or "out"),
-        concurrency=int(fet.get("concurrency", DEFAULT_CONCURRENCY)),
-        timeout=int(fet.get("timeout", 20)),
-        retries=int(fet.get("retries", 2)),
+        concurrency=_int(fet.get("concurrency"), "fetch.concurrency",
+                         DEFAULT_CONCURRENCY),
+        timeout=_int(fet.get("timeout"), "fetch.timeout", 20),
+        retries=_int(fet.get("retries"), "fetch.retries", 2),
         # Read, not just accepted. `user_agent` was in KNOWN_KEYS, so setting
         # it passed validation and told the user nothing was wrong, and then
         # the dataclass default won anyway: a config asking to identify itself

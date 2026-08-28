@@ -17,16 +17,164 @@ import re
 
 from .models import Salary
 
-_CUR = {"£": "GBP", "$": "USD", "€": "EUR", "gbp": "GBP", "usd": "USD", "eur": "EUR"}
+# What a bare number most likely means, given where the job is.
+#
+# `enrich` used to pass the READER's configured floor currency as the default
+# for any figure with no symbol on it, anywhere in the world. So an Indian
+# posting reading "Annual salary: 900,000 to 1,100,000" was stored, confirmed,
+# as "$900k - $1,100k" for a reader whose floor was in dollars: about 8,500
+# pounds presented as most of a million, and `confirmed=True`, so it could
+# clear a floor it comes nowhere near.
+#
+# The reader's own currency is the one thing that cannot be evidence here. The
+# job's country can. Where that is unknown the answer is to say nothing: an
+# unconfirmed salary is shown to the reader and labelled, and can never
+# disqualify a role, which is the safe direction. A figure that carries its
+# own symbol never reaches this at all.
+#
+# Only the countries the bundled boards actually produce. A country missing
+# from here is not a bug, it is an unconfirmed salary.
+CURRENCY_OF_COUNTRY = {
+    "UK": "GBP", "GB": "GBP", "IE": "EUR", "US": "USD", "CA": "CAD",
+    "AU": "AUD", "NZ": "NZD", "IN": "INR", "SG": "SGD", "AE": "AED",
+    "JP": "JPY", "CN": "CNY", "HK": "HKD", "CH": "CHF", "SE": "SEK",
+    "NO": "NOK", "DK": "DKK", "PL": "PLN", "CZ": "CZK", "BR": "BRL",
+    "MX": "MXN", "ZA": "ZAR", "IL": "ILS", "TR": "TRY", "KR": "KRW",
+    "PH": "PHP", "MY": "MYR", "TH": "THB", "ID": "IDR", "VN": "VND",
+    "AR": "ARS", "CL": "CLP", "CO": "COP", "NG": "NGN", "KE": "KES",
+    "EG": "EGP", "SA": "SAR", "QA": "QAR", "PK": "PKR", "BD": "BDT",
+    "UA": "UAH", "RO": "RON", "HU": "HUF", "BG": "BGN", "RS": "RSD",
+    "IS": "ISK",
+}
+# The euro, spelled out so the map above stays one line per fact.
+for _cc in ("AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR",
+            "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"):
+    CURRENCY_OF_COUNTRY[_cc] = "EUR"
 
-# 120,000 / 120000 / 120k / 120.5k / 189.6K
-_NUM = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?\s?[kK]\b|\d{4,}(?:\.\d+)?"
+
+def currency_of_country(country: str | None) -> str | None:
+    """The currency a bare number in that country probably means. None when
+    we do not know, which is not a failure: it means "do not guess"."""
+    if not country:
+        return None
+    return CURRENCY_OF_COUNTRY.get(country.strip().upper())
+
+
+# What a currency mark in an advert means.
+#
+# The class used to be `[£$€]` and nothing else. So "S$120,000 - S$160,000"
+# came back as `$120k`, confirmed: the leading S broke the RANGE match, the
+# single-value pattern then found "$120,000" sitting inside it, and the
+# posting was stored with the wrong currency AND with the top of its band
+# silently deleted. SGD is about 0.74 USD, so that is a Singapore role priced
+# a third high, on a `confirmed=True` figure, which is the only kind allowed
+# to disqualify a role against a floor. C$, A$, NZ$, HK$ and R$ all did it.
+_SYMBOL_CUR = {
+    "£": "GBP", "$": "USD", "€": "EUR",
+    "us$": "USD", "c$": "CAD", "ca$": "CAD", "a$": "AUD", "au$": "AUD",
+    "nz$": "NZD", "s$": "SGD", "hk$": "HKD", "r$": "BRL",
+}
+
+# Every currency code this module can put on a Salary. Built from the two
+# tables above rather than written out again, because `config.VALID_CURRENCIES`
+# is built from THIS and a hand-kept second copy is a list that goes stale: a
+# floor the parser can never match is a floor that silently stops filtering.
+KNOWN_CURRENCIES = frozenset(_SYMBOL_CUR.values()) | frozenset(CURRENCY_OF_COUNTRY.values())
+
+# `_CUR` already mapped "gbp", "usd" and "eur", and no pattern in this file
+# ever accepted a letter, so those three entries were dead code and every
+# "USD 150,000", "SGD 120,000" and "INR 4,000,000" came back unconfirmed. US
+# and Asian boards write the code far more often than they write a symbol.
+_CUR = {**_SYMBOL_CUR, **{c.lower(): c for c in KNOWN_CURRENCIES}}
+
+# An ISO code is read only in CAPITALS, because these patterns are
+# case-insensitive and several codes are ordinary English words: "try", "cop"
+# and "sar" would each turn a sentence about effort or policing into a
+# confirmed salary, and confirmed is the only kind that can delete a role.
+_ISO = rf"(?=[A-Z]{{3}})(?:{'|'.join(sorted(KNOWN_CURRENCIES))})"
+
+# A mark in FRONT of the number. The letter-led forms carry a lookbehind so a
+# word that happens to end in one of those letters does not lend them to the
+# currency, and the ISO form allows a trailing "$" for the "AUD$100,000"
+# spelling that would otherwise have matched on its bare "$" and read as USD.
+#
+# The two lookaheads are load-bearing for speed, not for meaning. `parse_text`
+# runs over `desc[:1500]` for EVERY posting EVERY adapter yields, not just the
+# ones that survive the title gate, so this pattern is attempted at something
+# like a thousand positions per posting and a scan reads hundreds of thousands
+# of postings. Written as a bare alternation the engine tries forty-odd
+# literals at each of those positions: measured on a 1,500 character
+# description that states no pay, which is the common case, `parse_text` went
+# from 0.21ms to 0.92ms. `(?-i:(?=[A-Z£$€]))` throws out every position that
+# is not a capital or a symbol in one comparison, and `(?=[A-Z]{3})` inside
+# `_ISO` throws out most of the rest, which brings it back to 0.36ms.
+#
+# The price of the outer gate is that the country-dollar marks are read only
+# in capitals, which is how anybody writes S$ or HK$ anyway, and the ISO codes
+# were capitals-only already for a different reason.
+_CUR_PRE = (rf"(?-i:(?=[A-Z£$€]))"
+            rf"(?:(?<![A-Za-z])(?:(?-i:{_ISO})\$?(?![A-Za-z])|"
+            rf"US\$|CA\$|AU\$|NZ\$|HK\$|S\$|C\$|A\$|R\$)|[£$€])")
+
+# A code AFTER the number. "150,000 USD" is as common as "USD 150,000" and
+# neither was read.
+_CUR_SUF = rf"(?<![A-Za-z])(?-i:{_ISO})(?![A-Za-z])"
+
+# 120,000 / 120000 / 120k / 120.5k / 189.6K, and the European spelling
+# 60.000 / 1.234.567 / 1.500,50.
+#
+# `_NUM` understood only the comma, so "€ 60.000 - € 75.000 per jaar" and
+# "EUR 65.000" were unconfirmed on every Dutch and German advert, and that is
+# how most of that market writes pay.
+#
+# The rule for a dot, and it is the whole rule: a dot is a thousands separator
+# only when EXACTLY three digits follow it and no digit follows those. So
+# "60.000" is sixty thousand, "60.00" is two digits and stays sixty, and "1.5"
+# is one digit and stays one and a half. Nobody quotes pay to three decimal
+# places, which is what makes the three-digit case have one honest reading.
+_NUM = (r"\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+        r"|\d{1,3}(?:\.\d{3})+(?!\d)(?:,\d+)?"
+        r"|\d+(?:\.\d+)?\s?[kK]\b"
+        r"|\d{4,}(?:\.\d+)?")
 
 _RANGE = re.compile(
-    rf"(?P<c1>[£$€])?\s?(?P<lo>{_NUM})\s*(?:-|–|—|to|up to)\s*(?P<c2>[£$€])?\s?(?P<hi>{_NUM})",
+    rf"(?P<c1>{_CUR_PRE})?\s?(?P<lo>{_NUM})\s*(?:-|–|—|to|up to)\s*"
+    rf"(?P<c2>{_CUR_PRE})?\s?(?P<hi>{_NUM})(?:\s?(?P<c3>{_CUR_SUF}))?",
     re.I,
 )
-_SINGLE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM})", re.I)
+_SINGLE = re.compile(
+    rf"(?P<c>{_CUR_PRE})\s?(?P<v>{_NUM})"
+    rf"|(?P<v2>{_NUM})\s?(?P<c2>{_CUR_SUF})", re.I)
+
+
+def _cur_code(tok: str | None) -> str | None:
+    """The currency one mark means. "A$", "AU$" and "AUD$" are one answer."""
+    t = (tok or "").strip().lower()
+    if not t:
+        return None
+    return _CUR.get(t) or _CUR.get(t.rstrip("$"))
+
+
+def _match_currency(m) -> str | None:
+    """The currency named anywhere in one match, the front of it first.
+
+    A match can carry the mark in three places now: in front of the low
+    figure, in front of the high one, or as a code trailing the whole range.
+    Reading only the first two is what left "150,000 - 160,000 USD" as an
+    unsymbolled range needing pay context to be believed at all.
+    """
+    g = m.groupdict()
+    for name in ("c", "c1", "c2", "c3"):
+        code = _cur_code(g.get(name))
+        if code:
+            return code
+    return None
+
+
+def _match_value(m) -> str | None:
+    """The single figure in a match, whichever side its currency sat on."""
+    g = m.groupdict()
+    return g.get("v") or g.get("v2")
 
 # Day and hour rates are small numbers, so the annual patterns above skip them
 # on purpose: a bare "600" in a job description is far more likely to be a
@@ -40,25 +188,48 @@ _SINGLE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM})", re.I)
 # dollar a day, and then silently dropped by any floor at all. Refusing to
 # match a number that is followed by more digits or by a comma hands
 # "$1,200" back to the annual patterns above, which read the separator.
-_NUM_RATE = r"\d{1,4}(?:\.\d+)?(?![\d,])"
+#
+# The guard covers a dot separator and a "k" as well as a comma, because both
+# fail the same way and both were live. "\u20ac 1.500,50 per day" matched as
+# "\u20ac 1" -- the optional decimal group backtracked away and the lookahead
+# had nothing to say about a dot -- and "\u00a31.5k per day" matched as
+# "\u00a31.5", which is a 1,500 a day contract stored as one pound fifty and
+# then dropped by any floor at all. Refusing both hands the string to the
+# annual patterns, which read "1.500,50" and "1.5k" correctly and keep the
+# day period that the words around them state.
+_NUM_RATE = r"\d{1,4}(?:\.\d+)?(?![\d,kK]|\.\d)"
+# The same currency marks as the annual patterns. A day rate is quoted in
+# C$ and S$ exactly as often as a salary is, and reading "C$800 per day"
+# as USD is the same wrong-currency confirmation. No trailing-code form
+# here though: a rate number is four digits at most, so "2024 USD" in a
+# sentence would be read as a day rate.
 _RANGE_RATE = re.compile(
-    rf"(?P<c1>[£$€])\s?(?P<lo>{_NUM_RATE})\s*(?:-|–|—|to)\s*(?P<c2>[£$€])?\s?(?P<hi>{_NUM_RATE})",
+    rf"(?P<c1>{_CUR_PRE})\s?(?P<lo>{_NUM_RATE})\s*(?:-|–|—|to)\s*"
+    rf"(?P<c2>{_CUR_PRE})?\s?(?P<hi>{_NUM_RATE})",
     re.I,
 )
-_SINGLE_RATE = re.compile(rf"(?P<c>[£$€])\s?(?P<v>{_NUM_RATE})", re.I)
+_SINGLE_RATE = re.compile(rf"(?P<c>{_CUR_PRE})\s?(?P<v>{_NUM_RATE})", re.I)
 
 _PER_DAY = re.compile(r"\b(per|a|/)\s?day\b|\bday rate\b|\bdaily\b|\bpd\b", re.I)
 _PER_HOUR = re.compile(r"\b(per|an|/)\s?h(ou)?r\b|\bhourly\b", re.I)
 # Needed as a first-class answer, not just as "no rate word found". A figure
 # can sit between a rate word and a year word -- "$19-$27 per hour (~$39,000 -
 # $56,000 annually)" -- and whichever is NEARER is the one describing it.
+# Dutch and German month words are in here because this file now reads their
+# number format. "EUR 4.500 bruto per maand" was invisible before, so it was
+# harmless; once it parses, a monthly figure with no month word is confirmed
+# as 4,500 A YEAR and then dropped by a floor of any size at all. Teaching the
+# number format without the period word would have turned an unconfirmed
+# salary into a deleted role, which is the worse of the two.
 _PER_MONTH = re.compile(
     r"\bper month\b|\ba month\b|\bmonthly\b|\bpcm\b|\bper calendar month\b|"
-    r"/\s?month\b", re.I)
+    r"/\s?month\b|\bper maand\b|\bp/m\b|\bpro monat\b|\bmonatlich\b",
+    re.I)
 _PER_YEAR = re.compile(
     r"\bper annum\b|\bannually\b|\bannualized\b|\bannualised\b|\bper year\b|"
     r"\ba year\b|\byearly\b|/\s?(?:year|yr|annum)\b|\bp\.?a\.?\b|"
-    r"\bannual (?:base )?(?:salary|pay|compensation)\b", re.I)
+    r"\bannual (?:base )?(?:salary|pay|compensation)\b|"
+    r"\bper jaar\b|\bpro jahr\b|\bj\u00e4hrlich\b", re.I)
 
 # How far either side of a figure a period word still describes it.
 #
@@ -179,14 +350,29 @@ _PAY_WORD = re.compile(
 
 # Text that means "we are not telling you", not "zero"
 _NOISE = re.compile(r"competitive|doe|depending on experience|negotiable", re.I)
+# ...and what counts as "but it also states a figure". This was a literal
+# `[£$€]\s?\d`, so "Competitive, up to SGD 180,000" took the early exit and
+# threw the figure away before any pattern saw it.
+_HAS_FIGURE = re.compile(rf"(?:{_CUR_PRE})\s?\d|\d\s?(?:{_CUR_SUF})", re.I)
+
+
+# The European thousands spelling, and only that. Exactly three digits after
+# each dot, optionally a comma decimal after them: "60.000", "1.234.567",
+# "1.500,50". Anything else keeps the Anglo reading, so "60.00" is sixty and
+# "1.5" is one and a half rather than fifteen hundred.
+_EURO_THOUSANDS = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
 
 
 def _to_float(tok: str) -> float | None:
-    tok = tok.strip().replace(",", "")
+    tok = tok.strip()
     mult = 1.0
     if tok.lower().endswith("k"):
         mult = 1000.0
         tok = tok[:-1].strip()
+    if _EURO_THOUSANDS.match(tok):
+        tok = tok.replace(".", "").replace(",", ".")
+    else:
+        tok = tok.replace(",", "")
     try:
         return float(tok) * mult
     except ValueError:
@@ -213,49 +399,6 @@ _PAY_CONTEXT = re.compile(
     r"salary range|annum|per year|pa\b)\b", re.I)
 
 
-# What a bare number most likely means, given where the job is.
-#
-# `enrich` used to pass the READER's configured floor currency as the default
-# for any figure with no symbol on it, anywhere in the world. So an Indian
-# posting reading "Annual salary: 900,000 to 1,100,000" was stored, confirmed,
-# as "$900k - $1,100k" for a reader whose floor was in dollars: about 8,500
-# pounds presented as most of a million, and `confirmed=True`, so it could
-# clear a floor it comes nowhere near.
-#
-# The reader's own currency is the one thing that cannot be evidence here. The
-# job's country can. Where that is unknown the answer is to say nothing: an
-# unconfirmed salary is shown to the reader and labelled, and can never
-# disqualify a role, which is the safe direction. A figure that carries its
-# own symbol never reaches this at all.
-#
-# Only the countries the bundled boards actually produce. A country missing
-# from here is not a bug, it is an unconfirmed salary.
-CURRENCY_OF_COUNTRY = {
-    "UK": "GBP", "GB": "GBP", "IE": "EUR", "US": "USD", "CA": "CAD",
-    "AU": "AUD", "NZ": "NZD", "IN": "INR", "SG": "SGD", "AE": "AED",
-    "JP": "JPY", "CN": "CNY", "HK": "HKD", "CH": "CHF", "SE": "SEK",
-    "NO": "NOK", "DK": "DKK", "PL": "PLN", "CZ": "CZK", "BR": "BRL",
-    "MX": "MXN", "ZA": "ZAR", "IL": "ILS", "TR": "TRY", "KR": "KRW",
-    "PH": "PHP", "MY": "MYR", "TH": "THB", "ID": "IDR", "VN": "VND",
-    "AR": "ARS", "CL": "CLP", "CO": "COP", "NG": "NGN", "KE": "KES",
-    "EG": "EGP", "SA": "SAR", "QA": "QAR", "PK": "PKR", "BD": "BDT",
-    "UA": "UAH", "RO": "RON", "HU": "HUF", "BG": "BGN", "RS": "RSD",
-    "IS": "ISK",
-}
-# The euro, spelled out so the map above stays one line per fact.
-for _cc in ("AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR",
-            "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"):
-    CURRENCY_OF_COUNTRY[_cc] = "EUR"
-
-
-def currency_of_country(country: str | None) -> str | None:
-    """The currency a bare number in that country probably means. None when
-    we do not know, which is not a failure: it means "do not guess"."""
-    if not country:
-        return None
-    return CURRENCY_OF_COUNTRY.get(country.strip().upper())
-
-
 def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
     """Best-effort parse of a free-text pay string.
 
@@ -266,7 +409,7 @@ def parse_text(text: str | None, default_currency: str | None = None) -> Salary:
         return Salary()
     full = " ".join(_de_entity(text).split())
     t = full[:400]
-    if _NOISE.search(t) and not re.search(r"[£$€]\s?\d", t):
+    if _NOISE.search(t) and not _HAS_FIGURE.search(t):
         return Salary(raw=t.strip()[:120])
 
     got = _scan(full, 0, 400, default_currency, need_context=False)
@@ -321,9 +464,9 @@ def _scan(full: str, begin: int, stop: int, default_currency: str | None, *,
                 continue
             if _is_bonus_figure(full, begin + m.start(), begin + m.end()):
                 continue
-            symbol = m.group("c1") or m.group("c2")
-            cur = _CUR.get((symbol or "").lower()) or default_currency
-            if not symbol or need_context:
+            marked = _match_currency(m)
+            cur = marked or default_currency
+            if not marked or need_context:
                 # Only believe it if pay is being discussed within the
                 # preceding stretch of text. Required always for an
                 # unsymbolled range, and everywhere once we are past the
@@ -345,7 +488,7 @@ def _scan(full: str, begin: int, stop: int, default_currency: str | None, *,
                           raw=m.group(0).strip(), confirmed=True)
 
         for m in single.finditer(t):
-            v = _to_float(m.group("v"))
+            v = _to_float(_match_value(m) or "")
             if v is None or v <= 0:
                 continue
             if _is_bonus_figure(full, begin + m.start(), begin + m.end()):
@@ -357,7 +500,7 @@ def _scan(full: str, begin: int, stop: int, default_currency: str | None, *,
                 chunk_period if rate or len(t) <= 400 else "year")
             if period == "month" or (rate and period == "year"):
                 continue
-            cur = _CUR.get((m.group("c") or "").lower()) or default_currency
+            cur = _match_currency(m) or default_currency
             return Salary(min=v, max=v, currency=cur, period=period,
                           raw=m.group(0).strip(), confirmed=True)
 
