@@ -1570,10 +1570,26 @@ def cmd_seed_load(args) -> int:
         # field the advert never repeated.
         from .salary import currency_of_country, parse_text
         for j in jobs:
-            fresh = parse_text(j.description or "",
-                               currency_of_country(j.country))
-            if fresh.confirmed:
-                j.salary = fresh
+            # Only into a GAP. A re-read that finds a figure where the shard
+            # carried none is a clear gain; one that REPLACES a confirmed
+            # figure is a guess beating a fact.
+            #
+            # Found by a test whose fixture pads its adverts with
+            # `hex(randomblob(200))`: 6 of 300 of those parse as a confirmed
+            # salary, so the re-read overwrote a stored 20,000 with a number
+            # out of random hex and the role then cleared a floor it fails.
+            # It failed on CI and passed here, which is what a 2% chance
+            # looks like.
+            #
+            # The cost is that a seeded figure parsed wrongly by an older
+            # builder stays wrong until the weekly rebuild. That is a week of
+            # one bad number against a chance of inventing one, and the
+            # invented one is worse.
+            if not j.salary.confirmed:
+                fresh = parse_text(j.description or "",
+                                   currency_of_country(j.country))
+                if fresh.confirmed:
+                    j.salary = fresh
         kept, _ = screen_run(jobs, cfg)
     except EOFError as exc:
         # A shard truncated ON DISK, which the index's byte check cannot see
@@ -2177,12 +2193,16 @@ def cmd_rescreen(args) -> int:
             # re-read means this parser found nothing in the text, which is
             # not evidence against a figure that came from a structured field
             # the description never repeated.
+            # Only into a gap, for the reason `cmd_seed_load` gives at
+            # length: a re-read that replaces a confirmed figure is a guess
+            # beating a fact, and text that is not pay parses as pay often
+            # enough to matter.
             from .salary import currency_of_country, parse_text
-            fresh = parse_text(j.description or "",
-                               currency_of_country(r["country"]))
-            if fresh.confirmed and (fresh.min, fresh.max, fresh.currency) != (
-                    j.salary.min, j.salary.max, j.salary.currency):
-                j.salary = fresh
+            if not j.salary.confirmed:
+                fresh = parse_text(j.description or "",
+                                   currency_of_country(r["country"]))
+                if fresh.confirmed:
+                    j.salary = fresh
             # The board's own country tag is the fallback a scan uses when the
             # posting names nowhere, and it is not stored per role, so this
             # command cannot recompute it. Where the location names no country

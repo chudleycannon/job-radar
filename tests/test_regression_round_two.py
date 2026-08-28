@@ -110,3 +110,45 @@ def test_the_page_is_written_after_the_scans_own_cleanup():
     for later in ("merge_duplicates", "_enrich_step"):
         assert src.index(later) < snapshot, \
             f"the board is read before {later} again"
+
+
+def test_a_re_read_never_overwrites_a_salary_that_is_already_confirmed():
+    """A guess must not beat a fact.
+
+    `rescreen` and `seed load` re-read the pay out of the advert, because the
+    parser improves and a stored figure is whatever the code understood on
+    the day. But text that is not pay parses as pay often enough to matter:
+    6 of 300 descriptions padded with `hex(randomblob(200))` come back as a
+    CONFIRMED salary. Left unguarded, the re-read replaced a stored 20,000
+    with a number out of random hex and the role then cleared a floor it
+    fails. It failed on CI and passed here, which is what a 2% chance looks
+    like.
+
+    So the re-read only ever fills a gap. The cost is that a figure parsed
+    wrongly by an older seed builder stays wrong until the weekly rebuild,
+    which is a week of one bad number against a chance of inventing one.
+    """
+    import inspect
+    from jobradar import cli
+    for fn in (cli.cmd_seed_load, cli.cmd_rescreen):
+        src = inspect.getsource(fn)
+        i = src.find("parse_text(")
+        assert i != -1, fn.__name__
+        guard = src[max(0, i - 400):i]
+        assert "not j.salary.confirmed" in guard, \
+            f"{fn.__name__} re-reads pay over a confirmed figure again"
+
+
+def test_random_text_really_can_parse_as_pay():
+    """The premise of the guard above. If this ever stops being true the
+    guard can be reconsidered; while it is true, it cannot."""
+    import sqlite3
+    from jobradar.salary import parse_text
+    con = sqlite3.connect(":memory:")
+    hits = 0
+    for _ in range(300):
+        blob = con.execute("SELECT 'An ordinary advert. ' || "
+                           "hex(randomblob(200))").fetchone()[0]
+        if parse_text(blob).confirmed:
+            hits += 1
+    assert hits > 0, "random hex no longer parses as a salary at all"
