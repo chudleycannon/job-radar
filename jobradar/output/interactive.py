@@ -490,6 +490,82 @@ def _rows(con):
     """).fetchall()
 
 
+def _floor_is_set(rows) -> bool:
+    """Whether the config that produced these rows carries a salary floor.
+
+    The footer used to assert one unconditionally: "Roles with a stated salary
+    below your floor are hidden", to every reader, including the majority who
+    have no floor. `floor: null` is what the setup wizard writes when somebody
+    answers "I do not know", so that sentence was false on the first dashboard
+    a new user ever opened, and it was the only thing on the page explaining
+    why a role might be missing.
+
+    `render` is handed a database connection and a currency and nothing else,
+    so the floor is not available to ask for directly -- `serve.py` reads the
+    config and passes only `salary_currency` through. But the rows carry the
+    answer anyway. `screen.apply_salary` files whatever `salary.clears_floor`
+    hands back as a flag on the role, and `clears_floor` returns an empty
+    reason and files nothing at all when there is no floor. Every reason it
+    can produce for a role it KEEPS names the floor or is the bare string
+    "unconfirmed salary", and nothing else in the tool writes either one into
+    `flags`. So a flag of that shape is proof a floor exists.
+
+    The inference only runs one way, which is the safe way. Present means
+    certain; absent means "no evidence", which happens for a real floor only
+    when every stored role has a confirmed salary in the floor's own currency.
+    That case loses a true sentence, which is a great deal better than the old
+    behaviour of showing a false one to everybody.
+    """
+    for r in rows:
+        try:
+            flags = json.loads(r["flags"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(flags, list):
+            continue
+        for f in flags:
+            if f == "unconfirmed salary" or (isinstance(f, str) and "floor in " in f):
+                return True
+    return False
+
+
+def _empty_state(con, rows) -> str:
+    """The panel shown when the list has nothing in it.
+
+    It said "Nothing matches those filters." in both of the two situations
+    that produce it, and only one of them involves a filter.
+
+    With no rows at all the page loads with nothing selected and no filter
+    hiding anything, so the sentence is false and the next step it implies --
+    go and change a filter -- is a dead end. What the reader needs there is
+    whether a scan has ever run, which the database knows: `store` counts them
+    under `runs`, and zero is the state a fresh clone is in between `setup`
+    and the first `scan`.
+
+    With rows on the page the filters really are the only way to empty it, and
+    the tab strip defaults to Open rather than All, so a board whose roles are
+    all settled lands here on the first load with a filter genuinely applied.
+    That sentence was right; it just never said how to get back.
+    """
+    if rows:
+        return ('<div class="empty" id="empty" hidden><p>Nothing matches those '
+                'filters. Choose <b>All</b> above, and clear any sector, '
+                'working pattern, country or city you picked.</p></div>')
+    runs = int(store.get_meta(con, "runs", "0") or 0)
+    if not runs:
+        return ('<div class="empty" id="empty"><p><b>No scan has run yet.</b> '
+                'This board is filled by <code>job-radar scan</code>; run it '
+                'in a terminal and reload this page. The first one takes about '
+                'an hour, and roles appear as it goes.</p></div>')
+    return ('<div class="empty" id="empty"><p><b>The last scan stored no roles.</b> '
+            'Nothing here is filtered out: there is nothing to filter. The scan '
+            'itself printed where every posting went, which is the thing to '
+            'read.</p><p>Most often this is the titles. Check '
+            '<code>titles.include</code> matches how postings are actually '
+            'worded, and add employers yourself with '
+            '<code>job-radar discover &lt;company&gt; --add</code>.</p></div>')
+
+
 def render(con, home_currency: str = "") -> str:
     rows = _rows(con)
     # Keyed on the scan date rather than the run number, so a second scan the
@@ -599,6 +675,10 @@ def render(con, home_currency: str = "") -> str:
     prelude = (f"const HOME_CUR={json.dumps(home_cur)},"
                f"PROGRESS={json.dumps(store.PROGRESS)};")
 
+    _empty = _empty_state(con, rows)
+    _floor = ("Roles with a stated salary below your floor are hidden. "
+              if _floor_is_set(rows) else "")
+
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body><div class="wrap">
@@ -633,8 +713,8 @@ def render(con, home_currency: str = "") -> str:
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
 <div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run) for r in rows)}</div>
-<p class="empty" id="empty" hidden>Nothing matches those filters.</p>
-<footer>Roles with a stated salary below your floor are hidden. Nothing is generated
+{_empty}
+<footer>{_floor}Nothing is generated
 unless you click for it.</footer>
 </div><div class="toast" id="toast"></div>
 <script>{prelude}{_JS}</script></body></html>"""

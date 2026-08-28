@@ -21,9 +21,16 @@ for:
 
 ```
 $ job-radar discover primer.io
-  ashby              39 jobs  [verified]  https://api.ashbyhq.com/posting-api/job-board/primer.io
-                   board names itself 'primer'
+Looking for primer.io...
+  ashby              32 jobs  [verified]  https://api.ashbyhq.com/posting-api/job-board/primer.io?includeCompensation=true
+                   board names itself 'Primer'
+
+Re-run with --add to write these into your config.
 ```
+
+That is a real run, on the day this paragraph was last checked. The job count
+is whatever Primer happened to be advertising that morning and will not be 32
+when you try it; everything else on the line is the part worth reading.
 
 `[verified]` is the word that took the work. The token is `primer.io`, with
 the dot, and it is not guessable, which is why this reads it off the careers
@@ -106,22 +113,24 @@ prints them again afterwards: one role to two lines, the score, the title, the
 company and either the stated salary or `unconfirmed`, with the role's id and
 location underneath. `job-radar serve` is that same list with buttons.
 
-**17,807 employer boards across 21 platforms**, plus four keyword searches
-(LinkedIn, NHS Jobs, and two of Workable's own cross-employer feeds), which is
-what takes `sources/sources.json` to 17,811 entries. Roughly 4,100 of the boards
-are Greenhouse and 2,600 Ashby, then Workable, iCIMS, Workday, Personio,
-Breezy, Recruitee, SmartRecruiters and Oracle in the four figures or high
-hundreds, down to Pinpoint and SuccessFactors in the tens. Names you would
-recognise are on it: Barclays, Lloyds, Santander, BP, Shell, Unilever, Tesco,
-Marks & Spencer, John Lewis, Sky, Skyscanner, Accenture, Linklaters, Transport
-for London, Ofcom and the FCA among them. The code carries 29 adapters, five
-more than the bundled list uses.
+**17,807 employer boards across 21 platforms**, plus four cross-employer
+feeds: LinkedIn, NHS Jobs and Workable's own search, which are keyword
+templates expanded against your titles, and Workable's recently-posted feed,
+which takes no keyword. That is what takes `sources/sources.json` to 17,811
+entries. Roughly 4,100 of the boards are Greenhouse and 2,600 Ashby, then
+Workable, iCIMS, Workday, Personio, Breezy, Recruitee, SmartRecruiters and
+Oracle in the four figures or high hundreds, down to Pinpoint and
+SuccessFactors in the tens. Names you would recognise are on it: Barclays,
+Lloyds, Santander, BP, Shell, Unilever, Tesco, Marks & Spencer, John Lewis,
+Sky, Skyscanner, Accenture, Linklaters, Transport for London, Ofcom and the
+FCA among them. The code carries 29 adapters, five more than the bundled
+list uses.
 
 `job-radar coverage` counts the file rather than trusting that paragraph, and
-prints slightly more than 17,807, because the four keyword templates are
-expanded against your own titles and countries. Where the list came from, and
-the two keyed aggregators you can add yourself, are in
-[docs/SOURCES.md](docs/SOURCES.md).
+prints rather more than 17,811, because each of the three keyword templates
+becomes one source per title, and per country for the one that takes a
+country. Where the list came from, and the two keyed aggregators you can add
+yourself, are in [docs/SOURCES.md](docs/SOURCES.md).
 
 **Tells you what is new.** State is diffed between runs, so a scan reports the
 roles that appeared since last time rather than the same list again.
@@ -294,6 +303,7 @@ titles:
 locations:
   countries: [UK]
   remote_ok: true
+  work_modes: []     # empty means all; [remote] means remote only
   relocate_to: [US, CA]
   need_sponsorship: [US, CA]
   exclude: [Paris, Dublin]
@@ -301,6 +311,9 @@ locations:
 salary:
   floor: 90000
   currency: GBP
+
+sources:
+  countries: [UK]    # see below: this narrows the list less than it looks
 
 dealbreakers:
   - name: coding round
@@ -325,6 +338,28 @@ Program Manager" does not pass.
 
 `dealbreakers` are read against the job description, which is the part that
 catches roles that look right in a search result and are wrong in the detail.
+
+`locations.work_modes` is an allow-list of `remote`, `hybrid` and `office`,
+and empty, the default, keeps all three. It is the setting `remote_ok` cannot
+express: `remote_ok: false` says you do not want to work from home, which is
+not the same as `work_modes: [remote]`, which says you will not take anything
+else. A posting that states no arrangement at all is **kept whatever you set**
+and marked "not stated", because about half of them state nothing and reading
+"we cannot tell" as "not remote" hides more real remote roles than it removes
+office ones. `unstated` is refused as a value for the same reason: it is not a
+working arrangement anybody chooses.
+
+`sources.countries` narrows the list far less than the name suggests, and
+deliberately. It only drops a board whose country tag names somewhere else.
+Of the 17,811 sources, 5,214 carry no country tag at all and 1,597 are tagged
+`multi`, and both kinds survive whatever you set: "we could not tell" and
+"this employer is in several countries" are not evidence that the employer has
+nothing where you are, and a multinational is one of the likelier places to
+find a vacancy in your country. So `sources.countries: [UK]` leaves 7,745
+sources, not the 934 that carry a `UK` tag. It is a way to skip the boards you
+can prove are somewhere else, not a way to get a UK-only list, and the
+`locations` filters above are what actually decide where a role is. Run
+`job-radar coverage` to see the tag counts for the list you are really using.
 
 ---
 

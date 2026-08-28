@@ -4,9 +4,20 @@
 
 Twenty-three board platforms, and what each one does that a reasonable client
 gets wrong. Each of these cost a debugging session, and they are the reason
-the adapters are shaped the way they are. The bundled source list uses 21 of
-them; the code carries 27 adapters in all, and Cornerstone OnDemand has a row
-here despite being unreadable, because the reason is worth writing down.
+the adapters are shaped the way they are. Cornerstone OnDemand has a row here
+despite being unreadable, because the reason is worth writing down.
+
+**What this file does and does not cover.** The code carries 29 adapters, and
+these rows account for 23 of them, the Lever row covering both its
+deployments. Nineteen of the rows are platforms the bundled source list
+actually uses; JazzHR, Reed and Adzuna have a row and no entry on it, and
+Cornerstone has a row and no adapter. Four platforms the list does use have no
+row here, three of them large: **Workable's own boards** (2,094 sources),
+**Personio** (1,258), **Recruitee** (993) and Workable's recently-posted feed
+(1). Personio and Recruitee are two of the five adapters marked unverified,
+and the closing paragraph says what that means. Workable's own boards are
+neither unverified nor unread, and their absence is a gap in this file rather
+than in the code.
 
 One shape recurs often enough to name before the table: **failure here usually
 looks like success.** Ashby answers HTTP 200 with an empty array both for a

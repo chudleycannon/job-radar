@@ -1547,11 +1547,18 @@ def cmd_coverage(args) -> int:
             _say(f"{keyword} of these are keyword searches rather than "
                  f"employer boards: they return leads with no description "
                  f"and usually no salary, and they include agencies.")
-        untagged = cov["by_country"].get("untagged", 0)
-        if cfg.source_countries and untagged:
-            _say(f"`sources.countries` only removes sources that carry a "
-                 f"country tag. {untagged} here carry none and are always "
-                 f"fetched.")
+        # `multi` counted alongside `untagged`, not left out of the sentence.
+        # A board tagged `multi` is a multinational and is kept whatever
+        # `sources.countries` says, which changed today; the message still
+        # named only the untagged ones and so undercounted by 1,597 across
+        # the bundled list, telling the reader their filter was tighter than
+        # it is.
+        always = sum(cov["by_country"].get(k, 0)
+                     for k in ("untagged", "multi", "unknown"))
+        if cfg.source_countries and always:
+            _say(f"`sources.countries` only removes sources tagged for "
+                 f"somewhere else. {always} here are untagged or "
+                 f"multinational, and are always fetched.")
         _say("Nothing in your field? `job-radar discover <employer> --add` "
              "adds their board. Adding twenty employers does more for you "
              "than any setting in the config.")

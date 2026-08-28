@@ -229,7 +229,7 @@ one live snapshot held **five** engineering-leadership titles across roughly
 
 **Fields you cannot select for, because most of the list is still unlabelled.**
 This used to read as a shortage of employers. It is now a shortage of tags. Of
-17,810 sources, **6,089 carry a sector tag and 11,721 carry none**: the harvest
+17,811 sources, **6,089 carry a sector tag and 11,722 carry none**: the harvest
 that took this list from hundreds to thousands read board addresses out of a
 public crawl index, and an address does not say what industry the employer is
 in. The tagged ones are 1,311 healthcare, 1,304 finance, 512 education, 498
@@ -240,10 +240,20 @@ legal, 42 industry, 34 security, 34 professional services and 16 travel.
 That is less damaging than it sounds, because **a `sectors:` filter keeps every
 untagged source as well as the ones you asked for**. `sectors: [hospitality]`
 does not cut you to seventy-four employers; it drops the sources tagged as
-something else and leaves the 11,721 unlabelled ones in, which is where most
+something else and leaves the 11,722 unlabelled ones in, which is where most
 of any industry actually is. The cost runs the other way: you cannot ask this
 list for "every hospitality employer" and get a true answer, and `job-radar
 coverage` can only report what somebody labelled.
+
+**The country tags work the same way, and `sources.countries` obeys the same
+rule.** 5,214 sources carry no country tag and 1,597 are tagged `multi`, which
+means the board belongs to a multinational rather than to one country. Both
+kinds are fetched whatever you set, because "we could not tell" and "several
+countries" are not evidence that the employer has nothing where you are, and
+a multinational is one of the likelier places to find a vacancy in yours. So
+`sources.countries: [UK]` leaves 7,745 sources rather than the 934 tagged
+`UK`: it skips the boards that can be proved to be somewhere else, and
+`locations.countries` is what actually decides where a role is.
 
 So even in a sector that looks well covered above, the real number is larger
 still, and in one that looks thin the gap is in the tagging, not necessarily

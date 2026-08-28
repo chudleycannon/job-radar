@@ -28,7 +28,7 @@ _MARK = _favicon_mark()
 
 
 _CSS = """
-/* DESIGN PLAN — "Calm"
+/* DESIGN PLAN, "Calm"
    PALETTE  bg #f5f5f7 (Apple system grey) / surface #fff / ink #1d1d1f
             muted #6e6e73 / line #e8e8ed / accent #2563a8 (steel blue)
             pay #1a7a4a (semantic, deliberately NOT the accent hue)
@@ -252,6 +252,20 @@ h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 .status.interviewing{color:var(--pay)}
 .status.interested{color:var(--muted)}
 .empty{padding:var(--s7) var(--s5);text-align:center;color:var(--muted);font-size:.9375rem}
+.empty b{color:var(--ink)}
+.empty p{margin:0 auto;max-width:38rem}
+.empty p+p{margin-top:var(--s4)}
+/* The drop reasons. Left-aligned inside the centred panel, because a column
+   of counts read down the page is the thing being compared and centring it
+   puts every number in a different place. */
+.empty ul{list-style:none;margin:var(--s4) auto;padding:0;max-width:34rem;text-align:left}
+.empty li{display:flex;justify-content:space-between;gap:var(--s4);
+  padding:6px 0;border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+.empty li:last-child{border-bottom:0}
+.empty li b{flex:0 0 auto}
+.empty code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8125em;
+  background:var(--line);color:var(--ink);padding:1px 5px;border-radius:4px}
 footer{margin-top:var(--s5);color:var(--muted);font-size:.8125rem;line-height:1.5;
   padding:0 var(--s2)}
 
@@ -369,6 +383,74 @@ def _row(j: Job, is_new: bool) -> str:
         + '</div>')
 
 
+# What to try when a scan matched nothing, worded the same way the CLI words
+# it, because they are the same advice about the same run and a reader who
+# saw one and then the other should not have to work out whether they agree.
+_NEXT_STEPS = ('Most often this is the titles. Check <code>titles.include</code> '
+               'matches how postings are actually worded, and add employers '
+               'yourself with <code>job-radar discover &lt;company&gt; --add</code>.')
+
+
+def _empty_state(jobs, dropped, sources_ok, sources_total, postings) -> str:
+    """The panel the page shows when the list has nothing in it.
+
+    It said "Nothing matches those filters." in both of the two situations
+    that can produce it, and they want opposite things from the reader.
+
+    On a first run that matched nothing the page loads with every filter on
+    All and the sentence is simply false: no filter on this page is hiding
+    anything, and the reader is sent to look for a switch that is not there.
+    The scan that produced the page knew exactly what happened -- how many
+    postings arrived, how many sources answered out of how many were asked,
+    and the reason each posting was dropped -- and printed all of it to a
+    terminal the reader has probably already closed. None of it reached the
+    one surface they are actually looking at. All of it is in the arguments
+    this function already receives.
+
+    With rows on the page the filters really are the only way to empty it, so
+    the old sentence is right there and only wants the way back out.
+    """
+    if jobs:
+        return ('<div class="empty" id="empty" hidden><p>Nothing matches those '
+                'filters. Choose <b>All</b> above, and clear any sector, '
+                'working pattern, country or city you picked.</p></div>')
+
+    read = (f"<b>{sources_ok:,}</b> of {sources_total:,} sources answered"
+            if sources_total else "no sources were read")
+    # Post-dedupe, which is what the reasons below add up to. `postings` is
+    # pre-dedupe and is the bigger number.
+    accounted = sum(dropped.values())
+    total = postings or accounted
+    if not total:
+        # Nothing arrived at all, which is a broken scan rather than an empty
+        # market, and the two deserve opposite reactions from the reader.
+        return ('<div class="empty" id="empty"><p><b>This scan read nothing.</b> '
+                f'{read}, and not one posting came back, so this page is empty '
+                'because the scan failed and not because nothing matched. '
+                'Check the network, then run <code>job-radar scan</code> '
+                'again.</p></div>')
+
+    items = sorted(dropped.items(), key=lambda x: -x[1])
+    li = "".join(f"<li>{_h.escape(reason)}<b>{n:,}</b></li>"
+                 for reason, n in items[:5])
+    if len(items) > 5:
+        li += (f"<li>in {len(items) - 5} smaller reasons"
+               f"<b>{sum(n for _, n in items[5:]):,}</b></li>")
+    # The same gap the CLI explains: the reasons are counted after duplicates
+    # are merged, and `postings` is counted before, so a heading promising to
+    # account for every posting leaves an unexplained hole unless the merge is
+    # named. It was 891 on a 300-board run and nothing said why.
+    merged = total - accounted
+    if merged > 0:
+        li += (f"<li>the same role posted more than once, merged"
+               f"<b>{merged:,}</b></li>")
+
+    return ('<div class="empty" id="empty"><p><b>Nothing got through.</b> '
+            f'{read}, {total:,} postings came back, and every one of them was '
+            f'dropped. Where they went:</p><ul>{li}</ul>'
+            f'<p>{_NEXT_STEPS}</p></div>')
+
+
 def render(new: list[Job], seen: list[Job], *, dropped, sources_ok, sources_total,
            throttled, postings: int = 0, title: str = "Job radar") -> str:
     jobs = new + seen
@@ -411,7 +493,27 @@ def render(new: list[Job], seen: list[Job], *, dropped, sources_ok, sources_tota
                 f'have before.</b> That usually means rate limiting rather than an empty '
                 f'board, so treat them as unknown: {_h.escape(names)}.</p>')
 
+    # The footer told every reader that a salary floor was hiding roles from
+    # them, whether or not they had one. `floor: null` is what the setup
+    # wizard writes when somebody does not know what to put, so the sentence
+    # was false on the default new-user page: nothing was hidden, and the
+    # first thing the dashboard said about the filtering was wrong.
+    #
+    # `dropped` is the one piece of evidence this function has about what the
+    # floor actually did, and it is exact rather than inferred. `screen.run`
+    # counts one "stated pay below floor" per posting it dropped for that
+    # reason, and counts none at all when `cfg.salary_floor` is falsy, because
+    # `salary.clears_floor` returns `(True, "")` before it looks at anything.
+    # So the count answers "were roles hidden by a floor" without needing the
+    # config: say it when it happened, with the number, and say nothing when
+    # it did not.
+    below = dropped.get("stated pay below floor", 0)
+    floor_line = (f"{below:,} role{'' if below == 1 else 's'} with a stated "
+                  f"salary below your floor {'is' if below == 1 else 'are'} "
+                  f"hidden. " if below else "")
+
     rows = "".join(_row(j, j.uid in new_ids) for j in jobs)
+    empty = _empty_state(jobs, dropped, sources_ok, sources_total, postings)
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -434,8 +536,8 @@ def render(new: list[Job], seen: list[Job], *, dropped, sources_ok, sources_tota
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
 <div class="list" id="list">{rows}</div>
-<p class="empty" id="empty" hidden>Nothing matches those filters.</p>
-<footer>Roles with a stated salary below your floor are hidden. Roles with no stated
+{empty}
+<footer>{floor_line}Roles with no stated
 salary are shown and marked, because most employers still publish nothing.
 Working pattern is only known where the employer said so.</footer>
 </div>
