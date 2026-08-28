@@ -38,7 +38,7 @@ def test_the_message_does_not_promise_more_than_it_delivers():
     """
     held = awake.describe(True)
     assert "lid" in held.lower(), held
-    assert "still stop it" in held or "still" in held
+    assert "lid will still stop it" in held, held
 
 
 def test_the_assertion_is_dropped_on_the_way_out():

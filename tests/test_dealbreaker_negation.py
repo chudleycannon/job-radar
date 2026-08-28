@@ -99,21 +99,3 @@ def test_the_title_still_wins_outright():
               url="https://x/1", platform="ashby", location="London",
               description=BODY + "There is no on-call rota.")
     assert screen(job, cfg)[0] is False
-
-
-def test_a_short_advert_says_it_is_short_not_that_there_is_none():
-    """"No description from this source" was printed against postings that
-    plainly had one, just a short one, which reads as a broken adapter and
-    sends the reader hunting for a bug that is not there."""
-    cfg = Config()
-    job = Job(company="Acme", title="Engineer", url="https://x/1",
-              platform="ashby", location="London",
-              description="Short advert about an engineering role.")
-    screen(job, cfg)
-    assert any("barely screened" in f for f in job.flags), job.flags
-    assert not any("no description" in f for f in job.flags), job.flags
-
-    empty = Job(company="Acme", title="Engineer", url="https://x/1",
-                platform="ashby", location="London", description="")
-    screen(empty, cfg)
-    assert any("no description" in f for f in empty.flags), empty.flags

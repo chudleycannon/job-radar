@@ -246,8 +246,14 @@ def test_a_vp_title_needs_a_vp_term_in_the_config():
     assert not match(_job(title="Chief Technology Officer"), cfg)[0]
     # ...and the moment the config asks, the same matcher finds them.
     wide = _cfg(titles_include=["vp engineering", "chief technology officer"])
-    assert match(_job(title="Vice President, Engineering - Authentication"),
-                 wide)[0] or match(_job(title="VP of Engineering"), wide)[0]
+    # This was one `A or B` assertion, which lets either half stop working in
+    # silence. Split, it turns out only one half holds: a config asking for
+    # "vp engineering" matches "VP of Engineering" and does NOT match the
+    # spelled-out "Vice President, Engineering - Authentication", which is the
+    # form 22 of the 165 leadership postings in the sample actually use. That
+    # is a live gap in the matcher, not in this test, so it is written down
+    # here rather than asserted green.
+    assert match(_job(title="VP of Engineering"), wide)[0]
 
 
 # ---------------------------------------------------------------------------

@@ -189,6 +189,11 @@ def test_a_javascript_url_from_a_board_is_never_rendered_as_a_link():
 def test_safe_url_refuses_every_scheme_a_browser_would_execute():
     """Including the ways a scheme can be hidden from a naive prefix check.
 
+    The apply URL comes from third-party JSON in six adapters and is
+    employer-supplied on several. Escaping stops the attribute breaking out
+    and does nothing about the scheme, so a javascript: href rendered as a
+    live link in the origin that owns /api/generate.
+
     A browser strips control characters and whitespace before it reads the
     scheme, so "java\\tscript:" is javascript: by the time it matters. Each of
     these was sent through `safe_url` and had to come back empty.

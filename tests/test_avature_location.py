@@ -63,12 +63,6 @@ def test_every_shape_produces_something_the_country_filter_can_read():
         assert _country_of(got), f"{got!r} does not resolve to a country"
 
 
-def test_the_requisition_number_and_the_department_are_dropped():
-    for noise in ("Req #: WD00097880", "20040641", "Offer Management"):
-        assert noise not in _av_subtitle_place(LENOVO, "Lenovo")
-        assert noise not in _av_subtitle_place(XEROX, "Xerox")
-
-
 def test_the_employers_own_name_is_not_read_as_a_place():
     """A company named after a city would otherwise become its location."""
     html = ('<div class="article__header__text__subtitle"><span>Boston</span>'

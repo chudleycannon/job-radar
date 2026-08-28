@@ -192,13 +192,26 @@ def test_a_pdf_cv_is_not_passed_off_as_its_own_text():
 
 def test_a_cv_that_is_only_binary_is_refused_rather_than_scored():
     """The length guard measures characters, not whether any of them are the
-    candidate's career."""
+    candidate's career.
+
+    The extension is .txt on purpose. This used to write the same PDF bytes
+    as the test above it, under the same .pdf name, so the format check
+    refused it first and the function returned at `except SystemExit` having
+    run no assertion at all: byte-identical input to a test that already
+    proves the refusal path is taken. A binary file with a text extension is
+    the case only the content guard can catch, and it is the realistic one --
+    somebody renaming a file rather than exporting it.
+    """
     with _Tmp() as tmp:
-        cv = tmp / "resume.pdf"
-        cv.write_bytes(_pdf_bytes())
+        cv = tmp / "resume.txt"
+        cv.write_bytes(bytes(range(1, 256)) * 40)
         try:
             text = rank_mod._cv_text(_Cfg(cv))
-        except SystemExit:
+        except SystemExit as e:
+            msg = str(e)
+            assert "does not read as text" in msg or "text" in msg.lower(), (
+                f"refusing is a fine answer, but the message has to say the "
+                f"file is not readable text; got {msg!r}")
             return
         letters = sum(ch.isalpha() or ch.isspace() for ch in text)
         assert letters / max(1, len(text)) > 0.8, (

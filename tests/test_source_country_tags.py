@@ -29,16 +29,6 @@ def _cfg(countries):
     return c
 
 
-def _srcs(*tags):
-    out = []
-    for i, tag in enumerate(tags):
-        out.append(S.Source.from_dict(
-            {"company": f"Co{i}", "url": f"https://boards-api.greenhouse.io/"
-                                        f"v1/boards/co{i}/jobs",
-             "platform": "greenhouse", "country": tag}))
-    return out
-
-
 def _kept(tags, want):
     cfg = _cfg(want)
     cfg.extra_sources = [

@@ -306,13 +306,36 @@ def test_no_paged_fetcher_still_says_no_pages_returned():
     gone from all three fetchers that used it; `_no_rows` is what they call
     instead, and it decides between the two answers rather than merging
     them."""
-    source = Path(fetch_mod.__file__).read_text(encoding="utf-8")
-    assert 'error="no pages returned"' not in source, (
+    # Read as an AST, not as text. This greped the raw file for
+    # 'error="no pages returned"', and fetch.py already contains the phrase
+    # "no pages returned" in a comment explaining why it went; the test
+    # escaped only because the comment omits the `error=` prefix. Move that
+    # sentence one word and it fails on its own explanation, which is the
+    # thing CLAUDE.md names three previous instances of.
+    #
+    # ast.unparse cannot emit comments and docstrings are dropped explicitly,
+    # so what is searched here is code and nothing else.
+    import ast
+
+    tree = ast.parse(Path(fetch_mod.__file__).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(body, list) and body and isinstance(body[0], ast.Expr) \
+                and isinstance(getattr(body[0], "value", None), ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            node.body = body[1:] or [ast.Pass()]
+    code = ast.unparse(tree)
+
+    assert "no pages returned" not in code, (
         "a board that answered and a board that never did are still being "
         "reported with the same string")
-    assert source.count("_no_rows(src, first_error, answered)") == 3, (
+    callers = [n.name for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef)
+               and any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                       and c.func.id == "_no_rows" for c in ast.walk(n))]
+    assert sorted(callers) == ["fetch_avature", "fetch_nhs", "fetch_rmk"], (
         "fetch_avature, fetch_rmk and fetch_nhs should all go through the "
-        "same decision")
+        f"same decision, and these do: {sorted(callers)}")
 
 
 # --------------------------------------------------------------------------

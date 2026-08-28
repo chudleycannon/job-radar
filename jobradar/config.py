@@ -126,6 +126,20 @@ class Config:
         "m&a": "mergers and acquisitions",
         "ap": "accounts payable",
         "ar": "accounts receivable",
+        # Missing entirely, and it is the one that costs most. A config asking
+        # for "vp engineering" matched "VP of Engineering" and missed "Vice
+        # President, Engineering", which is the form 22 of 165 leadership
+        # postings in one sample use. Both directions come free: somebody who
+        # types the long form now matches the short one too.
+        "vp": "vice president",
+        "svp": "senior vice president",
+        "evp": "executive vice president",
+        "coo": "chief operating officer",
+        "cto": "chief technology officer",
+        "cfo": "chief financial officer",
+        "ceo": "chief executive officer",
+        "cpo": "chief product officer",
+        "ciso": "chief information security officer",
     }
 
     @staticmethod
@@ -142,22 +156,47 @@ class Config:
         for _ in range(2):
             for v in list(out):
                 for short, long in Config.ABBREVIATIONS.items():
-                    if short in v:
-                        out.add(v.replace(short, long))
-                    if long in v:
-                        out.add(v.replace(long, short))
+                    # On word boundaries. A bare `in` matched inside other
+                    # words and then replaced there: "ar" is inside
+                    # "marketing", so "marketing manager" expanded to
+                    # "maccounts receivableketing manager", and "pm" inside
+                    # "shipment" gave "shiproject managerent coordinator".
+                    # Harmless in that nothing matched them, and pure junk in
+                    # a compiled title pattern, which is where the next
+                    # unexplained match will come from.
+                    short_re = rf"\b{re.escape(short)}\b"
+                    long_re = rf"\b{re.escape(long)}\b"
+                    if re.search(short_re, v):
+                        out.add(re.sub(short_re, long, v))
+                    if re.search(long_re, v):
+                        out.add(re.sub(long_re, short, v))
             for v in list(out):
                 for a, b in (("&", " and "), (" and ", " & ")):
                     if a in v:
                         out.add(" ".join(v.replace(a, b).split()))
         return {" ".join(v.split()) for v in out if v.strip()}
 
+    def title_terms_expanded(self) -> list[str]:
+        """Every configured title, plus every spelling of it.
+
+        The loose matcher was handed the RAW configured terms while the regex
+        beside it was handed the expanded ones, so an abbreviation only ever
+        worked in the strict path. "vp engineering" matched "VP of
+        Engineering", because the regex tolerates the "of", and missed "Vice
+        President, Engineering" entirely, which is the form 22 of 165
+        leadership postings in one sample use. The loose matcher is the half
+        that handles a reordered or interrupted title, and it was the half
+        that could not read the abbreviation.
+        """
+        out: set[str] = set()
+        for term in self.titles_include:
+            out |= self._title_variants(term)
+        return sorted(out)
+
     def title_include_re(self):
         if not self.titles_include:
             return None
-        variants: set[str] = set()
-        for term in self.titles_include:
-            variants |= self._title_variants(term)
+        variants: set[str] = set(self.title_terms_expanded())
         return re.compile(
             "|".join(rf"\b{re.escape(v)}\b" for v in sorted(variants, key=len, reverse=True)),
             re.I)

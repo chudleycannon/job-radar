@@ -345,7 +345,10 @@ def test_no_workflow_prints_a_secret_or_a_credentialled_url():
     reintroduce it by echoing a URL it built itself."""
     for p in _files():
         wf = yaml.safe_load(p.read_text(encoding="utf-8"))
-        for run in _runs(wf):
+        for run in map(_code, _runs(wf)):
+            # Through _code(), like every other source grep in this file. A
+            # comment saying "never echo a URL built from secrets.ADZUNA_KEY"
+            # is the note explaining the rule, not a breach of it.
             assert "app_key" not in run and "app_id" not in run, p.name
             assert "secrets." not in run, (
                 f"{p.name}: a secret expanded inside a run block is a secret "
@@ -403,8 +406,12 @@ def test_the_test_workflow_is_read_only():
 def test_ci_runs_the_discovering_runner_so_a_new_test_file_runs():
     """Naming one file is why test_locations.py went unrun from the day it was
     added. This file would be the next one."""
-    runs = " ".join(_runs(_load("test.yml")))
+    runs = " ".join(map(_code, _runs(_load("test.yml"))))
     assert "tests/run_all.py" in runs
+    # Through _code(): test.yml already carries "run_all.py rather than
+    # test_core.py, because naming one file meant the..." in a comment, and
+    # this escaped only because that comment is above the run block rather
+    # than inside it and omits the tests/ prefix.
     assert "tests/test_core.py" not in runs
     assert (ROOT / "tests" / "run_all.py").exists()
 

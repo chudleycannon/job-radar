@@ -2095,6 +2095,34 @@ def cmd_rescreen(args) -> int:
             # dashboard nobody had refreshed.
             enrich_derived(j)
             city, mode = j.city or "", j.work_mode or "unstated"
+
+            # The salary too, for the same reason and it was the one derived
+            # column left out. It is read from the advert by a parser that
+            # changes, and the stored figure is whatever the code understood
+            # on the day the row was written. Two ways that goes wrong and
+            # neither had any command that could reach it:
+            #
+            #   * 15 of 236 roles on one board read "unconfirmed salary" on
+            #     the dashboard while the description in the same database
+            #     plainly stated a range, because the parser has since learnt
+            #     to read it.
+            #   * A seeded row carries a figure computed by whoever BUILT the
+            #     shard set, on their version. `docs/SEED.md` says a seed is a
+            #     saved fetch and not a saved decision, and a parsed salary is
+            #     a decision of the code version. On a set built before this
+            #     morning's lakh fix, "Rs 16,50,000" is stored, confirmed, as
+            #     78,000.
+            #
+            # The new reading wins only when it is confirmed. An unconfirmed
+            # re-read means this parser found nothing in the text, which is
+            # not evidence against a figure that came from a structured field
+            # the description never repeated.
+            from .salary import currency_of_country, parse_text
+            fresh = parse_text(j.description or "",
+                               currency_of_country(r["country"]))
+            if fresh.confirmed and (fresh.min, fresh.max, fresh.currency) != (
+                    j.salary.min, j.salary.max, j.salary.currency):
+                j.salary = fresh
             # The board's own country tag is the fallback a scan uses when the
             # posting names nowhere, and it is not stored per role, so this
             # command cannot recompute it. Where the location names no country
@@ -2109,10 +2137,21 @@ def cmd_rescreen(args) -> int:
             # scan restores it, and until then "unstated" is true where
             # "remote" was a claim nothing stored can still support.
             country = j.country or r["country"] or ""
+            sal, was = j.salary, (r["salary_min"], r["salary_max"],
+                                  r["salary_currency"],
+                                  bool(r["salary_confirmed"]))
+            now = (sal.min, sal.max, sal.currency, sal.confirmed)
             if (city, country, mode) != (r["city"] or "", r["country"] or "",
-                                         r["work_mode"] or "unstated"):
-                con.execute("UPDATE roles SET city=?, country=?, work_mode=? "
-                            "WHERE uid=?", (city, country, mode, r["uid"]))
+                                         r["work_mode"] or "unstated") \
+                    or now != was:
+                con.execute(
+                    "UPDATE roles SET city=?, country=?, work_mode=?, "
+                    "salary_min=?, salary_max=?, salary_currency=?, "
+                    "salary_period=?, salary_confirmed=?, salary_label=? "
+                    "WHERE uid=?",
+                    (city, country, mode, sal.min, sal.max, sal.currency,
+                     sal.period or "year", 1 if sal.confirmed else 0,
+                     sal.label(), r["uid"]))
                 rederived += 1
             ok, _ = match(j, cfg)
             if ok:
@@ -2133,7 +2172,7 @@ def cmd_rescreen(args) -> int:
             # still matches. "All 1,670 roles still match your config" and a
             # silent rewrite of three columns is a report that omits its own
             # only effect.
-            _say(f"Re-derived the city, country or work mode on {rederived} "
+            _say(f"Re-derived the city, country, work mode or pay on {rederived} "
                  f"of {len(rows)} roles from the current rules.")
         if not stale and not kept_by_status:
             _say(f"All {len(rows)} roles still match your config.")

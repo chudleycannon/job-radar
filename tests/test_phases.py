@@ -71,8 +71,26 @@ def test_every_phase_runs_on_every_scan():
     start = body.index("phases = src_mod.in_phases")
     loop = body[start:start + 2500]
     assert "for n, label, group, mins in est" in loop
-    # No filtering of the pass list between building it and reading it.
-    assert "est[" not in loop and "est[:1]" not in loop
+
+    # And nothing narrows the list between building it and reading it. This
+    # was two `not in` greps over the same source window, which is the thing
+    # CLAUDE.md forbids -- the comment explaining why a slice is absent
+    # contains the slice -- and the second grep ("est[:1]") could not fail
+    # without the first ("est[") failing, so it was a dead conjunct.
+    #
+    # Parsed instead: the for-loop that walks the passes has to iterate the
+    # bare name, not a slice, a filter or a subscript of it.
+    import ast, textwrap
+    fn = ast.parse(textwrap.dedent(inspect.getsource(cli.cmd_scan))).body[0]
+    walks = [n for n in ast.walk(fn)
+             if isinstance(n, ast.For) and isinstance(n.target, ast.Tuple)
+             and [e.id for e in n.target.elts
+                  if isinstance(e, ast.Name)] == ["n", "label", "group", "mins"]]
+    assert walks, "the pass loop moved; this guard no longer sees it"
+    for w in walks:
+        assert isinstance(w.iter, ast.Name) and w.iter.id == "est", (
+            "the pass list is sliced or filtered on the way into the loop, so "
+            "a phase can be skipped: " + ast.unparse(w.iter))
 
 
 def test_the_estimate_is_derived_from_the_rate_not_written_down():

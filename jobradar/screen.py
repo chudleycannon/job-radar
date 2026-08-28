@@ -1446,7 +1446,7 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
     if exc and exc.search(title):
         return False, "title excluded"
     if inc and not inc.search(title):
-        if not title_matches_loosely(title, cfg.titles_include):
+        if not title_matches_loosely(title, cfg.title_terms_expanded()):
             return False, "title does not match"
 
     loc = (job.location or "").strip()

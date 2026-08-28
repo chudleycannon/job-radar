@@ -78,6 +78,10 @@ def test_something_that_is_not_a_currency_is_still_refused():
 
 
 def test_the_spelled_out_names_still_work():
+    """`currency: euro` uppercased to EURO, never equalled EUR, and silently
+    switched the floor off on every euro role."""
     for text, want in (("euro", "EUR"), ("pounds", "GBP"), ("dollars", "USD"),
                        ("gbp", "GBP")):
         assert config._currency(text, "salary.currency") == want
+    # And the unset case, which is not "no floor currency" but the default.
+    assert config._currency(None, "salary.currency") == "GBP"

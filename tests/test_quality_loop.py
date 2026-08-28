@@ -159,7 +159,6 @@ def test_the_loop_is_capped():
     """Every revision is another call. A loop with no ceiling can spend real
     money taking a slop score from 6 to 4."""
     assert runner.MAX_REVISIONS == 2
-    assert isinstance(runner.MAX_REVISIONS, int)
 
 
 def test_cv_signals_leaves_no_working_file_behind():

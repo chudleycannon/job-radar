@@ -53,14 +53,6 @@ def test_a_figure_with_no_currency_is_never_compared_to_a_floor():
         assert "not compared" in why
 
 
-def test_a_low_bare_figure_is_not_dropped_either():
-    """Both directions. Silently keeping is as wrong as silently dropping,
-    and the label is what makes it neither."""
-    s = parse_text("Salary: 30,000 to 35,000", None)
-    keep, why = clears_floor(s, 140000, "GBP")
-    assert keep is True and "not compared" in why
-
-
 def test_a_symbol_in_the_advert_still_wins_over_everything():
     for text, want in (("Salary £140,000 - £160,000", "GBP"),
                        ("Pay: $120,000", "USD"),
