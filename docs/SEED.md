@@ -52,11 +52,31 @@ side, looks exactly like the job not existing.
 
 ## Using one
 
+    job-radar seed load https://github.com/maccydee/job-radar/releases/download/seed-latest
+
+It reads the index, works out which shards your `locations.countries` needs,
+downloads only those, screens them against your config and stores what
+survives. A UK reader fetches three files and about 27MB, not fifty files and
+181MB.
+
+The download is kept (in `seed/` beside your config, or wherever `--keep`
+says) so a second config or a second machine does not fetch it again, and a
+re-run after a dropped connection resumes rather than starting over. A local
+directory works too:
+
     job-radar seed load ./shards
 
-It reads the shards for `locations.countries` in your config, screens them
-against that config, and stores what survives. `--dry-run` tells you what it
-would store without writing.
+`--dry-run` tells you what it would store without writing.
+
+A shard whose downloaded size disagrees with the index is refused rather than
+stored. A truncated shard decompresses and parses perfectly well as a shard
+with fewer roles in it, and the roles that fell off the end look exactly like
+jobs that do not exist. The index is written last, so a directory holding one
+is a directory whose shards all arrived.
+
+The request carries a user agent and nothing else: no config, no titles, no
+identifier. A seed download says nothing about who is asking or what they are
+looking for.
 
 It does **not** replace a scan, and it does not make one faster. None of these
 board APIs has a "changed since" parameter, so a scan still reads every board.
@@ -70,8 +90,21 @@ best, so run a scan anyway; its answer wins on every field.
 
 A maintainer's command. It reads the slow-phase boards, writes one gzipped
 shard per country plus an `index.json`, and touches nothing else: no
-database, no screening, no config but its own source list. `--limit N` reads
-only the first N boards, which is how to try it without an hour.
+database, no screening, no config at all. `--limit N` reads only the first N
+boards, which is how to try it without an hour.
+
+**The bundled list only, deliberately.** Reading sources through a config
+would add `sources.extra` and apply `sectors` and `sources.countries`, so a
+published file would carry the boards the person building it had added by
+hand. That is not a list of employers, it is a list of the companies they
+have been applying to. A narrowing setting would be worse in a quieter way: a
+seed cut down to one person's search, still describing itself as the slow
+half of the scan.
+
+Rows are written to disk as each board answers rather than collected and
+compressed at the end. A quarter of a million adverts is about 1.7GB of text,
+and a build that runs out of memory at minute seventy of a seventy-seven
+minute fetch has thrown away an hour of other people's bandwidth.
 
 Shards are written whole and renamed, and gzipped with `mtime=0`, so
 rebuilding an unchanged shard produces an identical file rather than one that
@@ -98,10 +131,14 @@ than reading what it can. A half-understood role still looks like a role.
 
 ## Publishing
 
-Nothing here publishes. If a shard set is ever published it should go to a
-GitHub **release asset**, not into the repository: 27MB a day committed is
-about 8.4GB of history a year and every clone pays it forever, while release
-assets never enter history and can be replaced in place.
+Shards go to a GitHub **release asset**, never into the repository: 181MB a
+day committed is history every clone pays for forever, while release assets
+never enter history and can be replaced in place. `seed load <url>` expects
+the assets to sit under one base URL with `index.json` beside them, which is
+what a release download URL gives you.
+
+`seed build` itself publishes nothing. Uploading is a separate, deliberate
+step.
 
 It should also be built from a machine on a normal connection. GitHub Actions
 runners are Azure addresses, and the hosts here refuse those far harder than
