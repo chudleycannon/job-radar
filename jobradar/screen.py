@@ -1649,7 +1649,17 @@ def work_rights(job: Job) -> str:
     # truth.
     if _EXPORT_CONTROL.search(d):
         return "export control or clearance"
-    if _WILL_SPONSOR.search(d):
+    # The same guard the refusal branch gets, and for a worse reason.
+    #
+    # `_WILL_SPONSOR` matches "will not sponsor" as readily as "will sponsor",
+    # which is why `_NO_SPONSOR` has a negated branch and is checked first.
+    # But once a refusal is ruled INCIDENTAL, the text falls through to here
+    # and the same "that employer will not sponsor" is read as an offer. So an
+    # advert quoting another team's refusal told a reader who needs a visa
+    # that this employer would sponsor them: the opposite of the truth on the
+    # one fact the whole gate exists for, and more dangerous than the miss it
+    # was introduced fixing.
+    if _WILL_SPONSOR.search(d) and not _all_mentions_incidental(_WILL_SPONSOR, d):
         return "sponsorship offered"
     return ""
 
@@ -1716,7 +1726,24 @@ _INCIDENTAL = re.compile(
     r"|\b(?:pulling in|hand(?:ing)? off to|escalat\w+ to|supported by)\b[^.]{0,60}$"
     r"|\b(?:certified|certification|certifications|certificate|accreditation)\b"
     r"[^.]{0,60}$"
-    r"|\((?:e\.?g\.?|for example|such as|including|i\.?e\.?)[^).]{0,120}$",
+    r"|\((?:e\.?g\.?|for example|such as|including|i\.?e\.?)[^).]{0,120}$"
+    # A sentence that has already said it is about something else.
+    #
+    # "our US graduate scheme is a separate programme and that employer will
+    # not sponsor applicants for those positions" was read as this posting's
+    # own policy, so a reader who needs a visa never saw a role that would
+    # have taken them. The guard knew "works with X" and "e.g." and nothing
+    # about a clause naming a different thing.
+    #
+    # Deliberately narrow. The words have to say separate or another AND name
+    # a thing a policy can belong to, because the failure in the other
+    # direction is worse: a real refusal read as incidental shows somebody a
+    # role that will reject them, and the whole point of the gate is that it
+    # does not. "other roles" and "those positions" are not here for that
+    # reason; they appear in adverts that mean the opposite.
+    r"|\b(?:separate|different|another|other)\s+"
+    r"(?:programme|program|scheme|entity|employer|company|organisation|"
+    r"organization|subsidiary)\b[^.]{0,90}$",
     re.I)
 _INCIDENTAL_LEAD = 140
 
