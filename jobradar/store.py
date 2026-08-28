@@ -806,6 +806,96 @@ def _now() -> str:
 
 # -------------------------------------------------------------- migration
 
+def rekey_uids(con) -> int:
+    """Recompute every role's id after the id rule changed. Returns how many.
+
+    `Job.uid` used to throw the whole query string away before hashing, so an
+    employer running Greenhouse behind their own careers page had every one of
+    their postings collapse into a single role: `?gh_jid=111` and `?gh_jid=999`
+    were the same id, and only whichever arrived first was ever stored.
+
+    Without this, fixing that rule would make every affected role look new on
+    the next scan, and would strand its status, its notes and any CV written
+    against it under an id nothing refers to any more. On the database this
+    was written against that is 384 of 3,692 roles, all of them carrying a
+    status.
+
+    Idempotent: a role whose id already matches the current rule is left
+    alone, so running it twice costs one pass and changes nothing.
+    """
+    from .models import Job
+    _ensure_columns(con)
+    rows = con.execute("SELECT uid, url, company, title, location "
+                       "FROM roles").fetchall()
+    moves = []
+    for r in rows:
+        # Only rows whose id came from a URL, because only that rule changed.
+        #
+        # A row with no URL is one `migrate` imported from the old
+        # `state/seen.json`, and its id is whatever key that file used. It was
+        # never derived from anything, so "recomputing" it invents a new one,
+        # and then the legacy import no longer finds the id it wrote and
+        # imports the same role again on the next scan. That turned a
+        # migration meant to preserve history into one that duplicated a row
+        # every time anybody scanned. Caught by
+        # `test_migration_is_idempotent`, which is exactly what it is for.
+        if not (r["url"] or "").strip():
+            continue
+        fresh = Job(company=r["company"] or "", title=r["title"] or "",
+                    url=r["url"] or "", platform="",
+                    location=r["location"] or "").uid
+        if fresh != r["uid"]:
+            moves.append((r["uid"], fresh))
+    if not moves:
+        return 0
+
+    # `role_state`, `artifacts` and `jobs` all reference `roles(uid)`, and
+    # SQLite has no ON UPDATE CASCADE, so whichever side moves first points at
+    # a row that does not exist yet. Deferring the check to the commit lets
+    # both sides move inside one transaction and still be checked at the end,
+    # which is stricter than switching foreign keys off and forgetting to
+    # switch them back.
+    #
+    # It has to be an EXPLICIT transaction: the pragma is per-transaction and
+    # resets at every commit, so set through the driver's implicit handling it
+    # was not in force when the first UPDATE ran, and the migration died on a
+    # foreign key it had just asked SQLite to defer.
+    previous = con.isolation_level
+    con.isolation_level = None
+    con.execute("BEGIN")
+    con.execute("PRAGMA defer_foreign_keys=ON")
+    taken = {r["uid"] for r in rows}
+    done = 0
+    for old, new in moves:
+        if new in taken and new != old:
+            # Two ids now resolving to one is the collision the old rule made
+            # everywhere, arriving from the other direction: the rows are the
+            # same posting reached by two URLs that differed only in a
+            # tracking parameter. Keep the one already under the new id and
+            # drop the duplicate, rather than failing the whole migration on a
+            # primary key clash.
+            con.execute("DELETE FROM roles WHERE uid=?", (old,))
+            continue
+        for table in ("role_state", "artifacts", "jobs"):
+            try:
+                con.execute(f"UPDATE {table} SET uid=? WHERE uid=?", (new, old))
+            except Exception:
+                # A table an older schema does not have. The roles row still
+                # has to move, so this is not a reason to stop.
+                pass
+        con.execute("UPDATE roles SET uid=? WHERE uid=?", (new, old))
+        taken.add(new)
+        done += 1
+    try:
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.isolation_level = previous
+    return done
+
+
 def migrate(con, state_path="state/seen.json", apps_path=None) -> dict:
     """Import the old stores. Idempotent: safe to run on every start.
 
@@ -827,6 +917,12 @@ def migrate(con, state_path="state/seen.json", apps_path=None) -> dict:
 
     done = get_meta(con, "migrated")
     out = {"roles": 0, "statuses": 0, "already": bool(done)}
+
+    # Before anything else, and on every start rather than once, because the
+    # rule it repairs is in `Job.uid` and a database can be older than any
+    # marker we could set. It is a no-op the moment every row already agrees
+    # with the current rule, so the cost of running it always is one pass.
+    out["rekeyed"] = rekey_uids(con)
 
     sp = Path(state_path) if state_path else None
     if sp is not None and sp.exists():

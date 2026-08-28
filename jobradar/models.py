@@ -87,6 +87,36 @@ class Salary:
         return self.raw or "salary stated"
 
 
+# Query parameters that identify the visitor rather than the job.
+#
+# The whole query string used to be thrown away before hashing, which is
+# right for these and catastrophic for everything else: an employer running
+# Greenhouse behind their own careers page puts the posting id in the query,
+# so `stripe.com/jobs/search?gh_jid=111` and `?gh_jid=999` hashed to the same
+# id and the second one was never stored. Measured on the published UK shard:
+# 2,383 of 41,038 rows disappeared into another role. Stripe published 89 and
+# one survived; Bayada published 165 and one survived.
+#
+# It is invisible from the outside, which is what makes it the worst kind.
+# There is no duplicate row to notice and no error: there is one Stripe job,
+# and one Stripe job is exactly what a company with one vacancy looks like.
+# `uid` is also the seen-set key, so "what is new" was broken for those
+# employers on every ordinary scan too.
+#
+# A deny-list rather than an allow-list, deliberately. An unknown parameter is
+# kept, so the worst an unrecognised tracking token can do is re-alert a role
+# once, which is noisy and visible. An allow-list would drop an unrecognised
+# IDENTIFYING parameter and merge two jobs into one, which is silent and is
+# the bug being fixed. Noisy beats invisible.
+#
+# What survives is sorted, so a board that reorders its parameters does not
+# re-alert everything it publishes.
+_TRACKING = re.compile(
+    r"^(?:utm_[a-z_]*|gh_src|ref|referer|referrer|source|src|fbclid|gclid"
+    r"|msclkid|mc_cid|mc_eid|trk|trackingid|_ga|campaign|medium|lang|locale)$",
+    re.I)
+
+
 @dataclass
 class Job:
     company: str
@@ -120,7 +150,13 @@ class Job:
         URLs does not re-alert everything.
         """
         basis = self.url or f"{self.company}|{self.title}|{self.location}"
-        basis = re.sub(r"[?#].*$", "", basis.strip().lower())
+        basis = re.sub(r"#.*$", "", basis.strip().lower())
+        head, sep, query = basis.partition("?")
+        if sep:
+            keep = sorted(
+                p for p in re.split(r"[&;]", query)
+                if p and not _TRACKING.match(p.split("=", 1)[0]))
+            basis = head + ("?" + "&".join(keep) if keep else "")
         return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:16]
 
     def to_dict(self) -> dict[str, Any]:
