@@ -248,6 +248,11 @@ DEFAULTS = {
     "titles_exclude": [],
     "countries": ["UK"],
     "remote_ok": True,
+    # Empty, not absent. `--defaults` builds its answers from this dict, and a
+    # key that is missing here is a key the generated config does not carry,
+    # which is how `need_sponsorship` and `source_countries` were silently
+    # absent from every scripted setup until they were added.
+    "work_modes": [],
     "relocate_to": [],
     "need_sponsorship": [],
     "exclude_locations": [],

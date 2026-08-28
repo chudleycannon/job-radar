@@ -255,9 +255,34 @@ _PER_HOUR = re.compile(r"\b(per|an|/)\s?h(ou)?r\b|\bhourly\b", re.I)
 # as 4,500 A YEAR and then dropped by a floor of any size at all. Teaching the
 # number format without the period word would have turned an unconfirmed
 # salary into a deleted role, which is the worse of the two.
+# Every way an advert says "a month", because the ones it does not know are
+# the ones that hurt.
+#
+# `_scan` deliberately refuses a figure it can see is monthly, so a spelling
+# in this list is safe. A spelling MISSING from it is read as an annual
+# figure and confirmed, and then the floor deletes the role: "€8.000 im
+# Monat" is a 96,000 a year job stored as 8,000 and hidden with the reason
+# "stated pay below floor", which states the opposite of the advert.
+#
+# That could not happen while European decimals were unreadable. It started
+# the moment they became readable this afternoon, which is why the list has
+# to cover the languages that write them.
 _PER_MONTH = re.compile(
     r"\bper month\b|\ba month\b|\bmonthly\b|\bpcm\b|\bper calendar month\b|"
-    r"/\s?month\b|\bper maand\b|\bp/m\b|\bpro monat\b|\bmonatlich\b",
+    r"/\s?month\b|\bper maand\b|\bp/m\b|\bpro monat\b|\bmonatlich\b"
+    # Dutch, German
+    r"|/\s?maand\b|\bmaandelijks\b|\bper mnd\b|/\s?mnd\b"
+    r"|/\s?monat\b|\bim monat\b|\bmonatlich(?:es|er|e)?\b"
+    # French, Spanish, Italian, Portuguese
+    r"|\bpar mois\b|/\s?mois\b|\bmensuel(?:le)?\b"
+    r"|\bal mes\b|\bpor mes\b|\bmensual(?:es)?\b"
+    r"|\bal mese\b|\bmensile\b|\bao m[eê]s\b|\bmensal\b"
+    # Greek, Polish, Romanian, Nordic
+    r"|\u03bc\u03b7\u03bd\u03b9\u03b1\u03af\u03c9\u03c2\b|\u03c4\u03bf\u03bd \u03bc\u03ae\u03bd\u03b1\b"
+    r"|\bmiesi\u0119cznie\b|\bpe lun\u0103\b|\blunar\b"
+    r"|\bper m\u00e5ned\b|\bper m\u00e5nad\b|\bkuukaudessa\b"
+    # The short forms, which are the commonest of all
+    r"|/\s?mo\b|\bp\.m\.|\bper 4 weken\b",
     re.I)
 _PER_YEAR = re.compile(
     r"\bper annum\b|\bannually\b|\bannualized\b|\bannualised\b|\bper year\b|"

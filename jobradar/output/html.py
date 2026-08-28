@@ -354,14 +354,33 @@ def _cap_location(loc: str) -> str:
     return loc or "Location not stated"
 
 
+# Flags that say nothing a reader can act on, and are therefore the only ones
+# hidden. Everything else is shown.
+_QUIET = (
+    # Already rendered as the salary itself.
+    "unconfirmed salary",
+)
+
+
 def _row(j: Job, is_new: bool) -> str:
     paid = j.salary.confirmed
     unscreened = any("not screened" in f for f in j.flags)
     # The flags that change what you should do about a role. "Salary in GBP,
     # floor in EUR, not compared" reached roles.json and nowhere a person
     # looks, so an unconverted figure below the floor read as one that passed.
-    caveats = [f for f in j.flags
-               if "not compared" in f or "sponsor" in f or "soft flag" in f]
+    # An allow-list of three substrings meant every flag written since was
+    # computed, stored, and shown to nobody. Counted on one board: 237 roles
+    # carried "posted N days ago; check it is still open" and 0 of them
+    # displayed it, including a posting from 2022 rendered exactly like a
+    # fresh one. Also invisible: "N days a week in the office" on 103 roles,
+    # "posted in N locations" on 51, "export control or clearance" on 43, and
+    # "barely screened" on 5. `export control` missed only because the string
+    # does not contain the word "sponsor".
+    #
+    # Inverted, so a new flag is visible by default and the list names what to
+    # HIDE. A flag exists because somebody decided the reader needs it; the
+    # burden belongs on the thing that suppresses one.
+    caveats = [f for f in j.flags if not any(q in f for q in _QUIET)]
     meta = " \u00b7 ".join(x for x in [j.company, _cap_location(j.location)] if x)
     return (
         f'<div class="row" data-new="{1 if is_new else 0}" data-pay="{1 if paid else 0}" '

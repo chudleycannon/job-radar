@@ -475,6 +475,85 @@ def set_status(con, uid: str, status: str, note: str | None = None) -> None:
         (uid, status, note, date.today().isoformat(), note))
 
 
+def _as_list(raw) -> list:
+    """A JSON list out of a column, or an empty one. Never raises."""
+    try:
+        out = json.loads(raw or "[]")
+    except (ValueError, TypeError):
+        return []
+    return out if isinstance(out, list) else []
+
+
+def live_jobs(con) -> list:
+    """Every role still on the board, as `Job` objects.
+
+    The static dashboard rendered whatever THIS scan matched, and `serve`
+    reads the database, so the two disagreed exactly where it mattered most.
+    After a `seed load` of 267 roles followed by `scan --limit 400`, the page
+    written to `out/index.html` was titled "15 roles worth a look" while
+    `job-radar serve` showed 270. Both were internally consistent and one of
+    them was answering a question nobody asked: a reader wants their board,
+    not the slice of it one command happened to touch.
+
+    Settled roles are left out. `serve` returns them and greys them out
+    client-side, which it can do because it has a page to grey them on; a
+    written file has no such thing, and a rejected role reappearing on the
+    next scan's page is worse than its absence.
+    """
+    from .models import Job, Salary
+    _ensure_columns(con)
+    gone = settled_uids(con)
+    out = []
+    # The same three clauses `cmd_list` uses, and for the same reasons.
+    #
+    # This was `LIVE_SQL` alone, which disagreed with both other views of the
+    # board in three separate directions. A role you had APPLIED to dropped
+    # off the written page as soon as its posting aged past the live window,
+    # while `serve` and `list` both kept it. So did a role carrying a CV that
+    # `generate` had been paid to write. And a url-less row imported from the
+    # old `state/seen.json` appeared ON the page, rendered with `href=""`,
+    # which is the exact bug `ACTIONABLE_SQL` was written to stop and which
+    # this file already describes: "103 of them on this database,
+    # indistinguishable from a live vacancy until you clicked one".
+    q = (f"SELECT r.* FROM roles r "
+         f"LEFT JOIN role_state s ON s.uid = r.uid "
+         f"WHERE ({LIVE_SQL} OR COALESCE(s.status,'new') <> 'new'"
+         f" OR r.uid IN (SELECT DISTINCT uid FROM artifacts)) "
+         f"AND ({ACTIONABLE_SQL})")
+    for r in con.execute(q):
+        if r["uid"] in gone:
+            continue
+        j = Job(
+            company=r["company"] or "", title=r["title"] or "",
+            url=r["url"] or "", platform=r["platform"] or "",
+            location=r["location"] or "", city=r["city"] or "",
+            country=r["country"] or None,
+            work_mode=r["work_mode"] or "unstated",
+            sector=r["sector"] or None, department=r["department"] or None,
+            posted_at=r["posted_at"], description=r["description"] or "",
+            salary=Salary(min=r["salary_min"], max=r["salary_max"],
+                          currency=r["salary_currency"],
+                          period=r["salary_period"] or "year",
+                          confirmed=bool(r["salary_confirmed"]),
+                          raw=r["salary_label"]))
+        # The id it is stored under, not one re-derived from the url. See
+        # `Job.stored_uid`.
+        j.stored_uid = r["uid"]
+        j.score = r["score"] or 0
+        # Shape as well as parse. `output/interactive._flags`, written for
+        # this same column this morning, ends `return out if isinstance(out,
+        # list) else []`, and the comment here claimed store.py already
+        # guarded it. It did not: `flags='5'` parsed fine and handed back an
+        # int, and `flags='null'` handed back None, and the renderer then
+        # raised `'int' object is not iterable` on the way out. Nothing
+        # in-tree writes either, so this is a hardening gap rather than a live
+        # fault, but what it takes down is the whole of a scan's output.
+        j.reasons = _as_list(r["reasons"])
+        j.flags = _as_list(r["flags"])
+        out.append(j)
+    return out
+
+
 def settled_uids(con) -> set[str]:
     q = ",".join("?" * len(SETTLED))
     return {r["uid"] for r in con.execute(
@@ -819,6 +898,60 @@ def _now() -> str:
 
 # -------------------------------------------------------------- migration
 
+def _further_along(con, uid: str) -> tuple:
+    """How much of somebody's work is attached to this row.
+
+    Used to pick the survivor when two ids resolve to one. Status first,
+    because that is the thing a person set by hand; then anything generated
+    against it, which cost money; then a fit score, which cost money too.
+    """
+    st = con.execute("SELECT status FROM role_state WHERE uid=?",
+                     (uid,)).fetchone()
+    arts = con.execute("SELECT COUNT(*) c FROM artifacts WHERE uid=?",
+                       (uid,)).fetchone()["c"]
+    row = con.execute("SELECT fit FROM roles WHERE uid=?", (uid,)).fetchone()
+    fit = (row["fit"] if row is not None else None) or -1
+    return (PROGRESS.get(st["status"] if st else "new", 0), arts, max(fit, -1))
+
+
+def _absorb_into(con, *, keep: str, lose: str) -> None:
+    """Move everything worth keeping from one row onto another, then drop it.
+
+    The same carry-over `merge_duplicates` does, in the one other place two
+    rows become one. Status by progress, so interviewing is never overwritten
+    by new; a note into a gap; artifacts and queued jobs re-pointed, because
+    they were paid for and generated against this posting; and the fit score
+    only into a gap, because -1 means "not judged" and losing a 91 makes
+    `rank` charge for it again.
+    """
+    st = con.execute("SELECT status, note FROM role_state WHERE uid=?",
+                     (lose,)).fetchone()
+    if st:
+        cur = con.execute("SELECT status, note FROM role_state WHERE uid=?",
+                          (keep,)).fetchone()
+        cur_s = cur["status"] if cur else "new"
+        if PROGRESS.get(st["status"], 0) > PROGRESS.get(cur_s, 0):
+            set_status(con, keep, st["status"], st["note"] or None)
+        elif st["note"] and not (cur and cur["note"]):
+            set_status(con, keep, cur_s, st["note"])
+    for table in ("artifacts", "jobs"):
+        try:
+            con.execute(f"UPDATE {table} SET uid=? WHERE uid=?", (keep, lose))
+        except Exception:
+            pass
+    lose_fit = con.execute("SELECT fit, fit_why FROM roles WHERE uid=?",
+                           (lose,)).fetchone()
+    if lose_fit is not None and (lose_fit["fit"] or -1) >= 0:
+        kept = con.execute("SELECT fit FROM roles WHERE uid=?",
+                           (keep,)).fetchone()
+        kf = kept["fit"] if kept is not None else None
+        if kf is None or kf < 0:
+            con.execute("UPDATE roles SET fit=?, fit_why=? WHERE uid=?",
+                        (lose_fit["fit"], lose_fit["fit_why"], keep))
+    con.execute("DELETE FROM role_state WHERE uid=?", (lose,))
+    con.execute("DELETE FROM roles WHERE uid=?", (lose,))
+
+
 def rekey_uids(con) -> int:
     """Recompute every role's id after the id rule changed. Returns how many.
 
@@ -838,6 +971,27 @@ def rekey_uids(con) -> int:
     """
     from .models import Job
     _ensure_columns(con)
+    # The work list is read INSIDE the transaction. It used to be read before
+    # `BEGIN`, so a writer inserting in that window made the rename hit the
+    # primary key it had just checked was free: `IntegrityError: UNIQUE
+    # constraint failed: roles.uid`, with the try/except wrapping only the
+    # COMMIT, so nothing rolled back and the connection came back inside an
+    # open write transaction holding a half-finished rename.
+    previous = con.isolation_level
+    con.isolation_level = None
+    con.execute("BEGIN IMMEDIATE")
+    con.execute("PRAGMA defer_foreign_keys=ON")
+    try:
+        return _rekey_inside(con, Job)
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.isolation_level = previous
+
+
+def _rekey_inside(con, Job) -> int:
+    """The body of `rekey_uids`, with its transaction already open."""
     rows = con.execute("SELECT uid, url, company, title, location "
                        "FROM roles").fetchall()
     moves = []
@@ -860,34 +1014,46 @@ def rekey_uids(con) -> int:
         if fresh != r["uid"]:
             moves.append((r["uid"], fresh))
     if not moves:
+        con.execute("COMMIT")
         return 0
 
     # `role_state`, `artifacts` and `jobs` all reference `roles(uid)`, and
     # SQLite has no ON UPDATE CASCADE, so whichever side moves first points at
-    # a row that does not exist yet. Deferring the check to the commit lets
-    # both sides move inside one transaction and still be checked at the end,
-    # which is stricter than switching foreign keys off and forgetting to
-    # switch them back.
-    #
-    # It has to be an EXPLICIT transaction: the pragma is per-transaction and
-    # resets at every commit, so set through the driver's implicit handling it
-    # was not in force when the first UPDATE ran, and the migration died on a
-    # foreign key it had just asked SQLite to defer.
-    previous = con.isolation_level
-    con.isolation_level = None
-    con.execute("BEGIN")
-    con.execute("PRAGMA defer_foreign_keys=ON")
+    # a row that does not exist yet. The caller defers the check to the commit
+    # so both sides move inside one transaction and are still checked at the
+    # end, which is stricter than switching foreign keys off and forgetting to
+    # switch them back. The pragma is per-transaction and resets at every
+    # commit, which is why it is set beside an explicit BEGIN rather than left
+    # to the driver.
     taken = {r["uid"] for r in rows}
     done = 0
     for old, new in moves:
         if new in taken and new != old:
-            # Two ids now resolving to one is the collision the old rule made
-            # everywhere, arriving from the other direction: the rows are the
-            # same posting reached by two URLs that differed only in a
-            # tracking parameter. Keep the one already under the new id and
-            # drop the duplicate, rather than failing the whole migration on a
-            # primary key clash.
-            con.execute("DELETE FROM roles WHERE uid=?", (old,))
+            # The row with the history survives, not whichever the SELECT
+            # happened to return first. `taken` is seeded with every original
+            # id, so "keep the one already under the new id" was decided by
+            # rowid order, and the copy carrying an `applied` status was as
+            # likely to be the one deleted as kept.
+            if _further_along(con, old) > _further_along(con, new):
+                old, new = new, old
+            # Two ids resolving to one: the same posting reached by two URLs
+            # differing only in a tracking parameter.
+            #
+            # This used to be a bare `DELETE FROM roles`, and `roles(uid)` is
+            # referenced ON DELETE CASCADE by role_state, artifacts and jobs
+            # with foreign keys ON. So one line took the status, the note,
+            # every generated CV and every queued job with it, and `done` was
+            # not incremented either, so `migrate` reported `rekeyed: 0` on a
+            # run that had just destroyed a role somebody was interviewing
+            # for. `merge_duplicates` solves the identical problem correctly
+            # 240 lines above and this ignored it.
+            #
+            # Reachable two ways, both seen: `repair_smartrecruiters_urls`
+            # rewrites a stored url at the end of every scan without
+            # rekeying, so the next scan finds the pair; and a writer racing
+            # the migration can leave one.
+            _absorb_into(con, keep=new, lose=old)
+            done += 1
             continue
         for table in ("role_state", "artifacts", "jobs"):
             try:
@@ -899,13 +1065,7 @@ def rekey_uids(con) -> int:
         con.execute("UPDATE roles SET uid=? WHERE uid=?", (new, old))
         taken.add(new)
         done += 1
-    try:
-        con.execute("COMMIT")
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
-    finally:
-        con.isolation_level = previous
+    con.execute("COMMIT")
     return done
 
 

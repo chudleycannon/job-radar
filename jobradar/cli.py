@@ -725,8 +725,33 @@ def cmd_scan(args) -> int:
     first_run = this_run == 1
     if not args.dry_run:
         store.bump_runs(con)
-    new = [j for j in kept if j.uid in new_ids]
-    seen = [j for j in kept if j.uid not in new_ids]
+    # Rendered from the BOARD, not from this run's finds.
+    #
+    # The static page took whatever the scan matched while `serve` reads the
+    # database, so the two disagreed exactly where it mattered. After a seed
+    # load of 267 roles and a `scan --limit 400`, `out/index.html` was headed
+    # "15 roles worth a look" and `job-radar serve` showed 270, with nothing
+    # on either explaining the gap. A reader wants their board, not the slice
+    # of it one command happened to touch.
+    #
+    # A dry run has written nothing, so it still shows what it found: there
+    # is no board to read that would reflect this run.
+    # Read AFTER this run's own cleanup, not before it.
+    #
+    # It was read here, and `repair_smartrecruiters_urls`, `merge_duplicates`
+    # and the enrichment pass all run fifty lines below, so the page was
+    # written from a snapshot taken before the scan had finished tidying. It
+    # showed roles that same run had closed, showed a merged duplicate twice
+    # with identical company and title, and carried a uid that no longer
+    # existed in the database. The counts disagreed on the same minute:
+    # index.html 1066, list 1063.
+    #
+    # Deferred to `_board_now`, called once the cleanup is done.
+    board = None
+    # What THIS SCAN found that is new, which is what the lines below report.
+    # Distinct from the board-scale `new` built after the cleanup, which is
+    # what the page and roles.json describe.
+    new_now = [j for j in kept if j.uid in new_ids]
     if args.dry_run and kept:
         _say(f"  {len(kept)} match your config. Dry run, so nothing was "
              f"recorded and none can be marked new.")
@@ -744,7 +769,7 @@ def cmd_scan(args) -> int:
              f"of them are new and the dashboard shows them that way; from the "
              f"next scan this line reports only what changed.")
     else:
-        _say(f"  {len(kept)} match your config, {len(new)} new")
+        _say(f"  {len(kept)} match your config, {len(new_now)} new")
     if truncated and not args.dry_run:
         # Boards 26..307 were never asked. Their roles enter the database on
         # the next full scan and are stamped new then, which is not what new
@@ -848,14 +873,6 @@ def cmd_scan(args) -> int:
         _say("  and add employers yourself with `job-radar discover <company>"
              " --add`.")
 
-    meta = {
-        "sources_ok": ok, "sources_total": len(srcs),
-        # The raw count, matching what the CLI printed. The HTML used to sum
-        # the drop reasons instead, which is post-dedupe, so the two numbers
-        # disagreed by however many duplicate postings there were.
-        "postings": len(all_jobs), "matching": len(kept),
-        "new": len(new), "throttled": throttled, "dropped": dropped,
-    }
     outdir = Path(args.out or cfg.out_dir)
     written = []
     unwritable = ""
@@ -870,6 +887,29 @@ def cmd_scan(args) -> int:
     # drops, someone changes a mode. What must not happen is what used to --
     # a bare traceback out of `atomic_write_text` as the last act of a
     # 77-minute run, reading exactly like the scan itself was lost.
+    # The board as it stands now: after the repair, the merge and the
+    # enrichment, which is the state a reader opening the page will find in
+    # the database behind it.
+    board = kept if args.dry_run else store.live_jobs(con)
+    new = [j for j in board if j.uid in new_ids]
+    seen = [j for j in board if j.uid not in new_ids]
+
+    # `meta` describes the same thing the payload beside it does.
+    #
+    # It carried the SCAN's counts while the page and roles.json carried the
+    # BOARD's, so `roles.json` shipped `meta.matching = 24` above 1,064
+    # entries. `postings` and `sources_ok` stay scan-scale and are labelled as
+    # such by the page, which says "N postings across M boards": that is a
+    # statement about the run, and it is the one number here a reader would
+    # expect to be about the run.
+    meta = {
+        "sources_ok": ok, "sources_total": len(srcs),
+        "postings": len(all_jobs), "matching": len(board),
+        "new": len(new), "scanned_matching": len(kept),
+        "scanned_new": len(new_now),
+        "throttled": throttled, "dropped": dropped,
+    }
+
     try:
         if args.dry_run:
             _say("  (dry run, so out/ was left alone)")
@@ -1530,11 +1570,67 @@ def cmd_seed_load(args) -> int:
     # read off disk until something consumes it, and a `list()` on the line
     # above only looks like the place the file is touched.
     try:
-        jobs = list(seed_mod.load(src, countries))
+        # Filtered on the title as each row is read, rather than building the
+        # whole shard set in memory and screening afterwards. A 22,701-role
+        # import held 325MB; a US reader's 151,044 would be about 2.1GB, and
+        # the title gate throws away more than 99% of them.
+        #
+        # `screen_run` still sees every survivor and still dedupes across the
+        # lot, so the answer is identical. It re-checks the title, which is
+        # cheap and keeps this a pure optimisation rather than a second copy
+        # of the rule.
+        from .screen import title_gate
+        gate = title_gate(cfg)
+        read = 0
+        jobs = []
+        for j in seed_mod.load(src, countries):
+            read += 1
+            if gate(j.title):
+                jobs.append(j)
         if not jobs:
             _say("Nothing in this index for your countries. Config `locations."
                  "countries`, or run a scan.")
             return 0
+        # The pay is re-read from the advert before it is judged.
+        #
+        # A shard carries the figure whoever BUILT it parsed, on their version
+        # of the code, and `docs/SEED.md` says a seed is a saved fetch and not
+        # a saved decision. A parsed salary is a decision. `rescreen` was
+        # taught this; `seed load` is the command the README puts first and
+        # was not.
+        #
+        # Measured on one import: 23 of 131 roles carried pay after a load and
+        # 55 after a rescreen with no new data, so 32 read "unconfirmed
+        # salary" on the dashboard while the description beside them stated a
+        # figure. Worse in the other direction: seven roles whose stated pay
+        # is BELOW the floor were stored as having passed it.
+        #
+        # Only when the re-read is confirmed, same rule as `rescreen`: an
+        # unconfirmed re-read means this parser found nothing in the text,
+        # which is not evidence against a figure that came from a structured
+        # field the advert never repeated.
+        from .salary import currency_of_country, parse_text
+        for j in jobs:
+            # Only into a GAP. A re-read that finds a figure where the shard
+            # carried none is a clear gain; one that REPLACES a confirmed
+            # figure is a guess beating a fact.
+            #
+            # Found by a test whose fixture pads its adverts with
+            # `hex(randomblob(200))`: 6 of 300 of those parse as a confirmed
+            # salary, so the re-read overwrote a stored 20,000 with a number
+            # out of random hex and the role then cleared a floor it fails.
+            # It failed on CI and passed here, which is what a 2% chance
+            # looks like.
+            #
+            # The cost is that a seeded figure parsed wrongly by an older
+            # builder stays wrong until the weekly rebuild. That is a week of
+            # one bad number against a chance of inventing one, and the
+            # invented one is worse.
+            if not j.salary.confirmed:
+                fresh = parse_text(j.description or "",
+                                   currency_of_country(j.country))
+                if fresh.confirmed:
+                    j.salary = fresh
         kept, _ = screen_run(jobs, cfg)
     except EOFError as exc:
         # A shard truncated ON DISK, which the index's byte check cannot see
@@ -1557,7 +1653,7 @@ def cmd_seed_load(args) -> int:
         # command restate what the message underneath it had just said.
         _say(f"Could not read the seed at {src}: {exc}")
         return 1
-    _say(f"{len(jobs):,} roles read, {len(kept):,} match your config.")
+    _say(f"{read:,} roles read, {len(kept):,} match your config.")
     if args.dry_run:
         _say(f"Dry run: nothing was written to the database"
              + (f". The shards are in {keep}." if str(args.path).startswith(
@@ -2138,12 +2234,16 @@ def cmd_rescreen(args) -> int:
             # re-read means this parser found nothing in the text, which is
             # not evidence against a figure that came from a structured field
             # the description never repeated.
+            # Only into a gap, for the reason `cmd_seed_load` gives at
+            # length: a re-read that replaces a confirmed figure is a guess
+            # beating a fact, and text that is not pay parses as pay often
+            # enough to matter.
             from .salary import currency_of_country, parse_text
-            fresh = parse_text(j.description or "",
-                               currency_of_country(r["country"]))
-            if fresh.confirmed and (fresh.min, fresh.max, fresh.currency) != (
-                    j.salary.min, j.salary.max, j.salary.currency):
-                j.salary = fresh
+            if not j.salary.confirmed:
+                fresh = parse_text(j.description or "",
+                                   currency_of_country(r["country"]))
+                if fresh.confirmed:
+                    j.salary = fresh
             # The board's own country tag is the fallback a scan uses when the
             # posting names nowhere, and it is not stored per role, so this
             # command cannot recompute it. Where the location names no country

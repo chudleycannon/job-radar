@@ -85,26 +85,32 @@ def test_a_genuine_offer_is_still_an_offer():
 
 
 def test_a_refusal_quoted_about_another_role_is_not_this_advert():
-    """The existing incidental-mention guard still applies.
+    """A careers page describing another team's policy must not hide this
+    team's role, and must not be read as an offer either.
 
-    Adding a negation branch must not bypass it, or a careers page that
-    describes another team's policy starts hiding this team's role.
+    This used to assert only `!= "sponsorship offered"`, which "no
+    sponsorship" satisfies, so the failure it was named after passed here
+    unseen. `work_rights` did return "no sponsorship" on the text below: the
+    incidental guard knew "works with X" and "e.g." and nothing about a
+    clause naming a separate programme.
 
-    Read what this asserts, because it is narrower than the paragraph above
-    it. The damage the docstring names is `work_rights` returning
-    "no sponsorship" for a refusal that belongs to another posting. The
-    assertion is `!= "sponsorship offered"`, and "no sponsorship" satisfies
-    it, so that failure passes here unseen.
-
-    It is not tightened to `== ""` because on the text below `work_rights`
-    returns "no sponsorship" today: `_all_mentions_incidental` does not
-    recognise "our US graduate scheme is a separate programme" as the cue
-    that the refusal is quoted, the way it recognises Omnea's "EXAMPLE"
-    paragraph. That is a live gap in `screen.py`, not in this file, and
-    writing `== ""` here would only turn it into a red suite. Left as the
-    negation guard it actually is, with the gap written down.
+    Fixing that exposed a worse one. Once the refusal is ruled incidental the
+    text falls through to `_WILL_SPONSOR`, which matches "will not sponsor" as
+    readily as "will sponsor", so the same advert then reported that this
+    employer WOULD sponsor: the opposite of the truth, on the one fact the
+    gate exists for. Both branches carry the guard now, and this asserts the
+    exact answer rather than the absence of one wrong one.
     """
     text = ("We are hiring a Platform Engineer in London. Note: our US "
             "graduate scheme is a separate programme and that employer will "
             "not sponsor applicants for those positions.")
-    assert _rights(text) != "sponsorship offered"
+    assert _rights(text) == "", _rights(text)
+
+
+def test_a_refusal_that_really_is_this_advert_is_still_a_refusal():
+    """The half that keeps the guard honest. A pattern loose enough to excuse
+    a real refusal shows somebody a role that will reject them."""
+    assert _rights("We cannot sponsor visas for other roles but can for this "
+                   "one.") == "no sponsorship"
+    for t in REFUSALS:
+        assert _rights(t) == "no sponsorship", t

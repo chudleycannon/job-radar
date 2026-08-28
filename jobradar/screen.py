@@ -1228,6 +1228,20 @@ def city_of(location: str) -> str:
     part = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", part)
     part = re.sub(r"^\s*(?:hq|head office|main office|office)\s*[-–—:]\s*",
                   "", part, flags=re.I)
+    # And the same words on the END, which is where American boards put them.
+    # The prefix strip above handled "HQ - NYC" and left "San Francisco
+    # Office", "New York Office", "NYC Office" and "SF Office" standing as
+    # four separate towns in the dashboard's city filter, alongside the plain
+    # "San Francisco" and "New York" they are the same place as. On the
+    # published US shard that was 252, 207, 100 and 55 roles filed away from
+    # the city they are in.
+    part = re.sub(r"\s+(?:office|hq|headquarters|head\s+office|campus|site)$",
+                  "", part, flags=re.I)
+    # "USA - Corona", "USA - New York": a country pinned to the front of its
+    # own city. The country is already read from the full location string, so
+    # this only ever split one town into two entries.
+    part = re.sub(r"^\s*(?:usa|us|uk|gb|can(?:ada)?|aus(?:tralia)?)\s*"
+                  r"[-–—:]\s*", "", part, flags=re.I)
     part = re.sub(r"^\s*anywhere\s+(?:in|within)\s+(?:the\s+)?", "", part, flags=re.I)
     part = re.sub(r"\b(?:fully|100%|entirely|primarily|mostly)\s+"
                   r"(?:remote|on[- ]?site|in[- ]?office)\b", "", part, flags=re.I)
@@ -1323,7 +1337,13 @@ def stated_work_mode(job: Job) -> tuple[str, int | None]:
 
 def enrich(job: Job) -> Job:
     """Fill the derived fields the dashboard filters on."""
-    found = _countries_in(job.location)
+    # And here, so the dashboard's country facet can place them. Without it
+    # every region-located role was filed under "unknown", and a
+    # country-filtered board read "unknown (120), GR (8), multiple (4)".
+    #
+    # A region resolves to many countries, so it lands in "multiple" rather
+    # than picking one, which is what "open across Europe" actually means.
+    found = _countries_in(job.location) or regions_in(job.location)
     job.country = job.country or (sorted(found)[0] if len(found) == 1 else
                                   ("multiple" if found else None))
     job.city = city_of(job.location)
@@ -1436,6 +1456,38 @@ def title_matches_loosely(title: str, terms) -> str | None:
                 continue
             return term
     return None
+
+
+def title_gate(cfg: Config):
+    """A callable answering just the title half of `match`.
+
+    Exists so a caller reading a quarter of a million rows off disk can throw
+    away the 99% that fail on the title without building a `Job` list first.
+    `seed load` materialised every row before screening: 325MB of resident
+    memory for a 22,701-role import, so about 2.1GB for a US reader's 151,044.
+
+    Deliberately only the title. `screen.run` opens with `dedupe` across the
+    whole set, so filtering on anything that varies between duplicates of the
+    same posting would change which one survives. A duplicate of a
+    title-matching role matches the same title, so every one of them still
+    reaches `dedupe` and the answer is unchanged.
+
+    The gate is read once here rather than per row: `title_include_re`
+    recompiles and `title_terms_expanded` re-expands on every call, and this
+    is called once per posting.
+    """
+    inc, exc = cfg.title_include_re(), cfg.title_exclude_re()
+    terms = cfg.title_terms_expanded()
+
+    def keep(title: str) -> bool:
+        title = title or ""
+        if exc and exc.search(title):
+            return False
+        if inc and not inc.search(title):
+            return bool(title_matches_loosely(title, terms))
+        return True
+
+    return keep
 
 
 def match(job: Job, cfg: Config) -> tuple[bool, str]:
@@ -1591,8 +1643,17 @@ _NO_SPONSOR = re.compile(
     # on its own appears in equal-opportunity boilerplate on adverts that
     # sponsor perfectly happily, and matching that would hide the roles this
     # reader most needs.
-    r"|(?:must|need\s+to|required\s+to|should)\s+(?:be\s+)?"
-    r"(?:a\s+|an\s+)?(?:\w+\s+){0,3}?"
+    # The filler is one word, not three, and it has to be a nationality or a
+    # place. `(?:\w+\s+){0,3}?` let any three words sit between the verb and
+    # the noun, so "You must be a good corporate citizen and a team player"
+    # was read as a bar on working here and the role was hidden from the
+    # reader it was aimed at. A citizenship requirement names a country: "must
+    # be a US citizen", "must be Singapore Citizens or Permanent Residents".
+    # "a good corporate citizen" names none.
+    r"|(?:must|need\s+to|required\s+to)\s+(?:be\s+)?"
+    r"(?:a\s+|an\s+)?(?:[A-Z]\w+|\w+ese|\w+ish|\w+ian|\w+can|eu|uk|us|"
+    r"british|american|irish|dutch|german|french|spanish|indian|chinese|"
+    r"singaporean|emirati|swiss|canadian|australian)?\s*"
     r"(?:citizens?|permanent\s+residents?|nationals?)\b"
     r"|(?:must|need\s+to|required\s+to|should)\s+(?:already\s+)?"
     r"(?:hold|have|possess)\s+(?:a\s+|an\s+|the\s+)?(?:\w+\s+){0,3}?"
@@ -1649,7 +1710,17 @@ def work_rights(job: Job) -> str:
     # truth.
     if _EXPORT_CONTROL.search(d):
         return "export control or clearance"
-    if _WILL_SPONSOR.search(d):
+    # The same guard the refusal branch gets, and for a worse reason.
+    #
+    # `_WILL_SPONSOR` matches "will not sponsor" as readily as "will sponsor",
+    # which is why `_NO_SPONSOR` has a negated branch and is checked first.
+    # But once a refusal is ruled INCIDENTAL, the text falls through to here
+    # and the same "that employer will not sponsor" is read as an offer. So an
+    # advert quoting another team's refusal told a reader who needs a visa
+    # that this employer would sponsor them: the opposite of the truth on the
+    # one fact the whole gate exists for, and more dangerous than the miss it
+    # was introduced fixing.
+    if _WILL_SPONSOR.search(d) and not _all_mentions_incidental(_WILL_SPONSOR, d):
         return "sponsorship offered"
     return ""
 
@@ -1716,7 +1787,24 @@ _INCIDENTAL = re.compile(
     r"|\b(?:pulling in|hand(?:ing)? off to|escalat\w+ to|supported by)\b[^.]{0,60}$"
     r"|\b(?:certified|certification|certifications|certificate|accreditation)\b"
     r"[^.]{0,60}$"
-    r"|\((?:e\.?g\.?|for example|such as|including|i\.?e\.?)[^).]{0,120}$",
+    r"|\((?:e\.?g\.?|for example|such as|including|i\.?e\.?)[^).]{0,120}$"
+    # A sentence that has already said it is about something else.
+    #
+    # "our US graduate scheme is a separate programme and that employer will
+    # not sponsor applicants for those positions" was read as this posting's
+    # own policy, so a reader who needs a visa never saw a role that would
+    # have taken them. The guard knew "works with X" and "e.g." and nothing
+    # about a clause naming a different thing.
+    #
+    # Deliberately narrow. The words have to say separate or another AND name
+    # a thing a policy can belong to, because the failure in the other
+    # direction is worse: a real refusal read as incidental shows somebody a
+    # role that will reject them, and the whole point of the gate is that it
+    # does not. "other roles" and "those positions" are not here for that
+    # reason; they appear in adverts that mean the opposite.
+    r"|\b(?:separate|different|another|other)\s+"
+    r"(?:programme|program|scheme|entity|employer|company|organisation|"
+    r"organization|subsidiary)\b[^.]{0,90}$",
     re.I)
 _INCIDENTAL_LEAD = 140
 
@@ -1906,7 +1994,13 @@ def score(job: Job, cfg: Config) -> float:
         s += 35
         why.append("title matches your targets")
 
-    found = _countries_in(job.location)
+    # Regions here too. `regions_in` was wired into `match` and nowhere else,
+    # so a role in "Remote - Europe" passed the filter and then scored 20
+    # lower than a bare "Remote", which is scored as naming nowhere. The
+    # qualifier that makes a role MORE relevant to a European reader cost it
+    # the points, and every one of the eight roles actually in Greece sat
+    # below fifteen US-only postings the reader cannot take.
+    found = _countries_in(job.location) or regions_in(job.location)
     home = found & set(cfg.countries)
     if home:
         s += 20
@@ -1951,7 +2045,18 @@ def score(job: Job, cfg: Config) -> float:
         # The f-string printed the missing value straight through, so a new
         # user's first `list --json` said "pay stated (None)" on 10 of their
         # 19 priced roles while the row beside it read "$165k - $185k".
-        shown = job.salary.raw or job.salary.label()
+        # And only when it carries a figure. `raw` is the snippet the parser
+        # matched in, and on Greenhouse that is routinely the HEADING sitting
+        # in the same field as the numbers: "Annual base salary range
+        # (excluding equity and bonus):" and "Local Pay Range". So the top row
+        # of a dashboard read "pay stated (Annual base salary range (excluding
+        # equity and bonus):)" beside a perfectly good label of INR 6.6M.
+        #
+        # `Salary.label` exists for exactly this and says so three lines above
+        # its own definition. The None case was fixed and the heading case was
+        # not, which is the same fault with something in the variable.
+        raw = (job.salary.raw or "").strip()
+        shown = raw if any(c.isdigit() for c in raw) else job.salary.label()
         why.append(f"pay stated ({shown})" if comparable_cur
                    else f"pay stated ({shown}), not comparable to your floor")
         top = job.salary.annualised()
@@ -1992,6 +2097,30 @@ def score(job: Job, cfg: Config) -> float:
             elif age <= 21:
                 s += 8
                 why.append(f"posted {age} days ago")
+            elif age >= 180:
+                # Age only ever ADDED points, so an old posting was scored as
+                # though its date were unknown and sat wherever the rest of
+                # the scoring put it. Measured on one board: 89 of 442 roles
+                # were over 180 days old and 26 over a year, the oldest posted
+                # 2022-02-23, and a 2023 posting scored 85 and outranked
+                # fresher roles with nothing anywhere saying it was two years
+                # old.
+                #
+                # Flagged rather than dropped. Some of those URLs still answer
+                # 200, so the role may genuinely be open, and an employer who
+                # never takes a posting down is not the same as a role that
+                # has gone. What was wrong was silence, not the presence of
+                # the role.
+                #
+                # The penalty is deliberately smaller than the freshness
+                # bonus: this says "check the date", not "this is dead".
+                s -= 10
+                years = age // 365
+                why.append(f"posted over {years} year{'s' if years > 1 else ''} "
+                           f"ago" if years else f"posted {age} days ago")
+                job.flags.append(
+                    f"posted {age} days ago; boards do not always take old "
+                    f"listings down, so check it is still open")
         except ValueError:
             pass
 

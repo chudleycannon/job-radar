@@ -399,8 +399,39 @@ COUNTRY_ALIASES = {
 # Codes the pipeline uses, taken from the filter itself so the two cannot
 # drift. Imported lazily to keep config.py free of a screen.py dependency.
 def _known_country_codes() -> set[str]:
-    from .screen import _COUNTRY_MARKERS
-    return set(_COUNTRY_MARKERS)
+    """Every country the tool can actually decide a role is in.
+
+    This read `_COUNTRY_MARKERS` alone, which is 40 codes: the countries whose
+    NAME the location logic recognises in text. But a role is also placed by
+    its city, and the city tables know 92 and 86 more, so `enrich` routinely
+    returns a country the config would refuse.
+
+    The published seed makes the gap countable: 162 country shards, of which
+    122 no config could ask for, holding 20,752 roles. Greece has 3,396 and
+    `countries: [GR]` was an error message. Saudi Arabia has 2,225, Colombia
+    1,821.
+
+    So the answer comes from the union of what the placer can produce.
+    `_CANONICAL_NAME` is the widest of them and is what `_country_of` maps
+    into, which makes it the honest source rather than the largest one.
+    """
+    from .screen import (_CANONICAL_NAME, _CITY_HINTS, _COUNTRY_MARKERS,
+                         _MORE_CITIES)
+    codes: set[str] = set()
+    for table in (_COUNTRY_MARKERS, _CITY_HINTS, _MORE_CITIES,
+                  _CANONICAL_NAME):
+        codes |= {k for k in table
+                  if isinstance(k, str) and len(k) == 2 and k.isupper()}
+    # UK is this tool's spelling and is what every message and config uses.
+    codes.add("UK")
+    return codes
+
+
+def _name_to_code(text: str) -> str | None:
+    """A country's own name turned into its code, or None."""
+    from .screen import _COUNTRY_NAME, _fold
+    t = " ".join(str(text or "").split()).lower()
+    return _COUNTRY_NAME.get(t) or _COUNTRY_NAME.get(_fold(t))
 
 
 def _countries(values, where: str) -> list[str]:
@@ -434,7 +465,18 @@ def _countries(values, where: str) -> list[str]:
         t = str(v).strip()
         if not t:
             continue
-        code = COUNTRY_ALIASES.get(t.lower(), t.upper())
+        # The hand-written alias table FIRST, because it carries the
+        # spellings this tool decided on ("gb" means UK here), then the
+        # placer's own name map, which knows all 170.
+        #
+        # The codes were widened to 170 and this was left at 57, so 129
+        # countries were accepted by code and refused by name.
+        # `--countries Greece` wrote a config that `list` then rejected with
+        # "'GREECE' is not a country this tool recognises. Did you mean GA,
+        # GE, GH, GM?", none of which is Greece. The map that knows
+        # "greece" is GR was already imported by the function three lines
+        # above.
+        code = COUNTRY_ALIASES.get(t.lower()) or _name_to_code(t) or t.upper()
         if code not in known:
             near = [c for c in sorted(known) if c.startswith(t[:1].upper())]
             hint = f" Did you mean {', '.join(near[:4])}?" if near else ""

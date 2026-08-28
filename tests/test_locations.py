@@ -601,9 +601,20 @@ def test_setup_refuses_a_non_terminal_instead_of_asking_forever():
     """
     from jobradar import setup_wizard
 
+    # stdin is forced closed rather than assumed to be. `run_all.py` typed
+    # into a terminal has a tty on stdin, so the guard under test did not
+    # fire, the wizard reached `input()`, and the whole suite stopped dead
+    # waiting for an answer nobody was there to give. A test that hangs is
+    # worse than one that fails: it takes the run with it and reports
+    # nothing.
+    #
+    # The path is a temporary one for the same reason. If the guard ever
+    # stops firing, this must not write a config into the repository.
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        rc = setup_wizard.run(Path("config.yaml"))
+    target = Path(tempfile.mkdtemp()) / "config.yaml"
+    with contextlib.redirect_stdout(out), \
+            mock.patch.object(sys.stdin, "isatty", lambda: False):
+        rc = setup_wizard.run(target)
     assert rc == 1
     assert len(out.getvalue()) < 2000, "should be a sentence, not a torrent"
     assert "needs a terminal" in out.getvalue()

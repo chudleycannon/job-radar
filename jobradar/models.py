@@ -136,6 +136,16 @@ class Job:
     app_status: str = ""          # set from applications.local.yaml, if tracked
     source_id: str = ""
 
+    # The id this role is STORED under, when it came out of the database.
+    #
+    # `uid` is derived from the URL, and the rule that derives it changes: a
+    # row written before a change keeps the id it was written with, and
+    # `rekey_uids` deliberately leaves url-less legacy rows alone. So a `Job`
+    # rebuilt from a row and asked for its uid answered with a value matching
+    # no row in the table, and that id then shipped in `out/roles.json` and
+    # was matched against stored ids to decide what was new.
+    stored_uid: str | None = None
+
     # populated downstream
     score: float = 0.0
     reasons: list[str] = field(default_factory=list)
@@ -149,6 +159,8 @@ class Job:
         id. Falls back to company+title+location so a board that rewrites its
         URLs does not re-alert everything.
         """
+        if self.stored_uid:
+            return self.stored_uid
         basis = self.url or f"{self.company}|{self.title}|{self.location}"
         basis = re.sub(r"#.*$", "", basis.strip().lower())
         head, sep, query = basis.partition("?")
