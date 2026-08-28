@@ -1228,6 +1228,20 @@ def city_of(location: str) -> str:
     part = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", part)
     part = re.sub(r"^\s*(?:hq|head office|main office|office)\s*[-–—:]\s*",
                   "", part, flags=re.I)
+    # And the same words on the END, which is where American boards put them.
+    # The prefix strip above handled "HQ - NYC" and left "San Francisco
+    # Office", "New York Office", "NYC Office" and "SF Office" standing as
+    # four separate towns in the dashboard's city filter, alongside the plain
+    # "San Francisco" and "New York" they are the same place as. On the
+    # published US shard that was 252, 207, 100 and 55 roles filed away from
+    # the city they are in.
+    part = re.sub(r"\s+(?:office|hq|headquarters|head\s+office|campus|site)$",
+                  "", part, flags=re.I)
+    # "USA - Corona", "USA - New York": a country pinned to the front of its
+    # own city. The country is already read from the full location string, so
+    # this only ever split one town into two entries.
+    part = re.sub(r"^\s*(?:usa|us|uk|gb|can(?:ada)?|aus(?:tralia)?)\s*"
+                  r"[-–—:]\s*", "", part, flags=re.I)
     part = re.sub(r"^\s*anywhere\s+(?:in|within)\s+(?:the\s+)?", "", part, flags=re.I)
     part = re.sub(r"\b(?:fully|100%|entirely|primarily|mostly)\s+"
                   r"(?:remote|on[- ]?site|in[- ]?office)\b", "", part, flags=re.I)
