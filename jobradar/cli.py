@@ -684,8 +684,20 @@ def cmd_scan(args) -> int:
     first_run = this_run == 1
     if not args.dry_run:
         store.bump_runs(con)
-    new = [j for j in kept if j.uid in new_ids]
-    seen = [j for j in kept if j.uid not in new_ids]
+    # Rendered from the BOARD, not from this run's finds.
+    #
+    # The static page took whatever the scan matched while `serve` reads the
+    # database, so the two disagreed exactly where it mattered. After a seed
+    # load of 267 roles and a `scan --limit 400`, `out/index.html` was headed
+    # "15 roles worth a look" and `job-radar serve` showed 270, with nothing
+    # on either explaining the gap. A reader wants their board, not the slice
+    # of it one command happened to touch.
+    #
+    # A dry run has written nothing, so it still shows what it found: there
+    # is no board to read that would reflect this run.
+    board = kept if args.dry_run else store.live_jobs(con)
+    new = [j for j in board if j.uid in new_ids]
+    seen = [j for j in board if j.uid not in new_ids]
     if args.dry_run and kept:
         _say(f"  {len(kept)} match your config. Dry run, so nothing was "
              f"recorded and none can be marked new.")

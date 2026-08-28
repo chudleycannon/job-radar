@@ -475,6 +475,50 @@ def set_status(con, uid: str, status: str, note: str | None = None) -> None:
         (uid, status, note, date.today().isoformat(), note))
 
 
+def live_jobs(con) -> list:
+    """Every role still on the board, as `Job` objects.
+
+    The static dashboard rendered whatever THIS scan matched, and `serve`
+    reads the database, so the two disagreed exactly where it mattered most.
+    After a `seed load` of 267 roles followed by `scan --limit 400`, the page
+    written to `out/index.html` was titled "15 roles worth a look" while
+    `job-radar serve` showed 270. Both were internally consistent and one of
+    them was answering a question nobody asked: a reader wants their board,
+    not the slice of it one command happened to touch.
+
+    Settled roles are left out, the same ones `serve` hides, so a role you
+    rejected does not come back on the next scan's page.
+    """
+    from .models import Job, Salary
+    _ensure_columns(con)
+    gone = settled_uids(con)
+    out = []
+    for r in con.execute(f"SELECT r.* FROM roles r WHERE {LIVE_SQL}"):
+        if r["uid"] in gone:
+            continue
+        j = Job(
+            company=r["company"] or "", title=r["title"] or "",
+            url=r["url"] or "", platform=r["platform"] or "",
+            location=r["location"] or "", city=r["city"] or "",
+            country=r["country"] or None,
+            work_mode=r["work_mode"] or "unstated",
+            sector=r["sector"] or None, department=r["department"] or None,
+            posted_at=r["posted_at"], description=r["description"] or "",
+            salary=Salary(min=r["salary_min"], max=r["salary_max"],
+                          currency=r["salary_currency"],
+                          period=r["salary_period"] or "year",
+                          confirmed=bool(r["salary_confirmed"]),
+                          raw=r["salary_label"]))
+        j.score = r["score"] or 0
+        try:
+            j.reasons = json.loads(r["reasons"] or "[]")
+            j.flags = json.loads(r["flags"] or "[]")
+        except (ValueError, TypeError):
+            j.reasons, j.flags = [], []
+        out.append(j)
+    return out
+
+
 def settled_uids(con) -> set[str]:
     q = ",".join("?" * len(SETTLED))
     return {r["uid"] for r in con.execute(
