@@ -65,3 +65,9 @@ data/
 # and docs/PLATFORMS.md, which is where a reader will look. The log is the
 # working, not the finding.
 tools/rate_probe_log.jsonl
+
+# A downloaded or locally built shard set. Tens of megabytes of somebody
+# else and regenerable from `job-radar seed build`, so it has no business in
+# anybody history.
+seed/
+seed-build/

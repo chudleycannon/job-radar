@@ -1283,12 +1283,18 @@ def cmd_seed_build(args) -> int:
         srcs = srcs[:args.limit]
     _say(f"Reading {len(srcs):,} slow-phase boards. This is the part a new "
          f"user should not have to wait for.")
-    jobs, done = [], {"n": 0}
+    # Written as each board answers rather than collected and written at the
+    # end. 267,000 adverts is about 1.7GB of text, and a build that runs out
+    # of memory at minute seventy of a seventy-seven minute fetch has thrown
+    # away the whole fetch.
+    writer = seed_mod.Writer(args.out)
+    done = {"n": 0, "roles": 0}
 
     def tick(res):
         done["n"] += 1
         if done["n"] % 250 == 0:
-            _say(f"  {done['n']:,}/{len(srcs):,}")
+            _say(f"  {done['n']:,}/{len(srcs):,} boards, "
+                 f"{done['roles']:,} roles")
         if res.ok:
             for j in adapters.parse(res.payload, res.source):
                 # The board's own sector tag, the same line `cmd_scan.absorb`
@@ -1297,22 +1303,31 @@ def cmd_seed_build(args) -> int:
                 # lot, and `seed load` then wrote that emptiness over the
                 # sectors a real scan had already stored.
                 j.sector = j.sector or res.source.sector
-                jobs.append(j)
+                # Country and work mode are read here, not by the reader:
+                # they are facts about the advert rather than answers to
+                # anybody's config, and doing it once beats a quarter of a
+                # million readers each doing it again.
+                enrich_one(j)
+                writer.add(j)
+                done["roles"] += 1
 
-    fetch_all(srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
-              retries=cfg.retries, user_agent=cfg.user_agent,
-              search_terms=cfg.titles_include,
-              api_keys={"reed": cfg.reed_api_key,
-                        "adzuna_app_id": cfg.adzuna_app_id,
-                        "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick)
-    # Country and work mode are read here, not by the reader, because they are
-    # facts about the advert rather than answers to anybody's config, and
-    # doing it once beats a quarter of a million readers doing it each.
-    for j in jobs:
-        enrich_one(j)
-    idx = seed_mod.build(jobs, args.out, boards=len(srcs))
+    try:
+        fetch_all(srcs, concurrency=cfg.concurrency, timeout=cfg.timeout,
+                  retries=cfg.retries, user_agent=cfg.user_agent,
+                  search_terms=cfg.titles_include,
+                  blocks_path=Path(args.out) / "host-blocks.json",
+                  api_keys={"reed": cfg.reed_api_key,
+                            "adzuna_app_id": cfg.adzuna_app_id,
+                            "adzuna_app_key": cfg.adzuna_app_key},
+                  on_result=tick)
+    except BaseException:
+        # An hour of somebody else's bandwidth is not worth losing to a
+        # Ctrl-C leaving fifty open file handles behind.
+        writer.close()
+        raise
+    idx = writer.finish(boards=len(srcs))
     total = sum(v["bytes"] for v in idx["shards"].values())
-    _say(f"\n{len(jobs):,} roles in {len(idx['shards'])} shards, "
+    _say(f"\n{done['roles']:,} roles in {len(idx['shards'])} shards, "
          f"{total / 1e6:.0f}MB total, in {args.out}")
     for name, v in sorted(idx["shards"].items(),
                           key=lambda kv: -kv[1]["roles"])[:8]:
@@ -1324,17 +1339,30 @@ def cmd_seed_load(args) -> int:
     """Screen a shard set against THIS config and store what survives."""
     from . import seed as seed_mod, store
     cfg = load_cfg(args.config)
+    src = args.path
+    if str(src).startswith(("http://", "https://")):
+        # Kept, not thrown away. It is tens of megabytes and a second machine,
+        # a second config or a re-import should not fetch it again.
+        keep = Path(args.keep) if args.keep else \
+            Path(args.config or ".").resolve().parent / "seed"
+        try:
+            seed_mod.fetch(src, cfg.countries or [], keep, say=_say)
+        except (OSError, ValueError) as exc:
+            _say(f"Could not download the seed from {src}: {exc}")
+            return 1
+        _say(f"Kept in {keep}")
+        src = keep
     try:
-        idx = seed_mod.read_index(args.path)
+        idx = seed_mod.read_index(src)
     except FileNotFoundError:
         # "[Errno 2] No such file or directory: 'shards/index.json'" is true
         # and tells somebody who has never seen a shard set nothing at all.
-        _say(f"No seed index at {args.path}. A shard set is a directory "
+        _say(f"No seed index at {src}. A shard set is a directory "
              f"holding index.json and one .jsonl.gz per country; "
-             f"`job-radar seed build --out {args.path}` writes one.")
+             f"`job-radar seed build --out {src}` writes one.")
         return 1
     except (OSError, ValueError) as exc:
-        _say(f"Could not read the seed at {args.path}: {exc}")
+        _say(f"Could not read the seed at {src}: {exc}")
         return 1
     # The relocation countries too, and for the reason `sources.load`
     # already gives: `screen.match` allows `countries | relocate_to`, so a
@@ -1359,7 +1387,7 @@ def cmd_seed_load(args) -> int:
     # read off disk until something consumes it, and a `list()` on the line
     # above only looks like the place the file is touched.
     try:
-        jobs = list(seed_mod.load(args.path, countries))
+        jobs = list(seed_mod.load(src, countries))
         if not jobs:
             _say("Nothing in this index for your countries. Config `locations."
                  "countries`, or run a scan.")
@@ -1370,7 +1398,7 @@ def cmd_seed_load(args) -> int:
         # which is an OSError, and `seed.load` already names the shard and
         # says whether to rebuild or re-fetch. Splitting them only let this
         # command restate what the message underneath it had just said.
-        _say(f"Could not read the seed at {args.path}: {exc}")
+        _say(f"Could not read the seed at {src}: {exc}")
         return 1
     _say(f"{len(jobs):,} roles read, {len(kept):,} match your config.")
     if args.dry_run:
@@ -2220,7 +2248,13 @@ def build_parser() -> argparse.ArgumentParser:
     sb.add_argument("--limit", type=_limit, default=0, help="read only N boards")
     sb.set_defaults(func=cmd_seed_build)
     sl = sdsub.add_parser("load", help="import a shard set for your countries")
-    sl.add_argument("path", help="directory holding index.json")
+    sl.add_argument("path",
+                    help="a directory holding index.json, or an https:// URL "
+                         "the shard set was published under. A URL downloads "
+                         "only the shards your countries need.")
+    sl.add_argument("--keep", default=None,
+                    help="where to keep a downloaded shard set (default: "
+                         "seed/ beside your config). Only used with a URL.")
     sl.add_argument("--db", default=None,
                     help="database path (default data/job-radar.db)")
     sl.add_argument("--dry-run", action="store_true",

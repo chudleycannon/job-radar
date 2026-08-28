@@ -138,6 +138,87 @@ def shards_for(countries: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(want + list(EVERYWHERE)))
 
 
+class Writer:
+    """Builds a shard set one role at a time.
+
+    Separate from `build` because the fetch that feeds it is blocking: a scan
+    hands results to a callback as they arrive, and there is no point
+    streaming inside `build` if the caller has already accumulated a quarter
+    of a million adverts to pass it. A quarter of a million is around 1.7GB of
+    text before any Python object overhead, and a build that dies at minute
+    seventy of a seventy-seven minute fetch has cost more than it saved.
+
+    Rows go into a plain per-shard file as they arrive and each is compressed
+    once at the end, so what is held is one row. Plain rather than gzipped on
+    the way in because gzip members do not concatenate into one stream
+    cheaply, and re-reading to compress is a sequential pass over a file we
+    already have.
+    """
+
+    def __init__(self, out_dir: str | Path):
+        self.out = Path(out_dir)
+        self.out.mkdir(parents=True, exist_ok=True)
+        self._parts: dict = {}
+        self.counts: dict[str, int] = {}
+
+    def add(self, job: Job) -> None:
+        name = shard_of(job)
+        fh = self._parts.get(name)
+        if fh is None:
+            fh = self._parts[name] = open(self.out / f"{name}.part", "w",
+                                          encoding="utf-8")
+            self.counts[name] = 0
+        fh.write(json.dumps(_pack(job), separators=(",", ":"),
+                            ensure_ascii=False) + "\n")
+        self.counts[name] += 1
+
+    def close(self) -> None:
+        for fh in self._parts.values():
+            fh.close()
+        self._parts.clear()
+
+    def finish(self, *, generated: str | None = None, boards: int = 0,
+               note: str = "") -> dict:
+        self.close()
+        index = {
+            "schema": SCHEMA,
+            "generated": generated or date.today().isoformat(),
+            "boards": boards,
+            "note": note or ("slow-phase employer boards only: Ashby, "
+                             "Greenhouse and apply.workable.com. Run a scan "
+                             "for the rest."),
+            "shards": {},
+        }
+        for name in sorted(self.counts):
+            part = self.out / f"{name}.part"
+            path = self.out / f"{name}.jsonl.gz"
+            # Written whole then renamed, like everything else here that is
+            # not cheaply regenerable, so a reader can never open a
+            # half-written file and take it for a short one. mtime=0 so
+            # rebuilding an unchanged shard produces an identical file rather
+            # than one that merely looks changed.
+            tmp = self.out / f"{name}.tmp"
+            header = json.dumps({"schema": SCHEMA, "shard": name,
+                                 "roles": self.counts[name]},
+                                separators=(",", ":"))
+            with gzip.GzipFile(tmp, "wb", compresslevel=9, mtime=0) as gz:
+                gz.write((header + "\n").encode("utf-8"))
+                with open(part, "rb") as src:
+                    while True:
+                        chunk = src.read(1 << 20)
+                        if not chunk:
+                            break
+                        gz.write(chunk)
+            tmp.replace(path)
+            part.unlink()
+            index["shards"][name] = {"roles": self.counts[name],
+                                     "bytes": path.stat().st_size}
+        tmp = self.out / "index.tmp"
+        tmp.write_text(json.dumps(index, indent=1) + "\n", encoding="utf-8")
+        tmp.replace(self.out / "index.json")
+        return index
+
+
 def build(jobs: Iterable[Job], out_dir: str | Path, *,
           generated: str | None = None, boards: int = 0,
           note: str = "") -> dict:
@@ -145,47 +226,91 @@ def build(jobs: Iterable[Job], out_dir: str | Path, *,
 
     Returns the index. Writes nothing anywhere but `out_dir`.
     """
-    out = Path(out_dir)
+    w = Writer(out_dir)
+    try:
+        for j in jobs:
+            w.add(j)
+    finally:
+        w.close()
+    return w.finish(generated=generated, boards=boards, note=note)
+
+
+# Fetching a published shard set.
+#
+# Publishing without this would be half a feature: the file would exist and
+# every reader would have to find fifty release assets and work out which
+# three of them they need. The point of sharding is that a UK reader takes
+# 27MB rather than 181MB, and only the tool knows which shards that is.
+#
+# Deliberately plain HTTPS with no authentication and no client identifier
+# beyond a user agent. A seed download says nothing about who is asking or
+# what they are looking for, and it should stay that way.
+def _http_get(url: str, timeout: int = 60) -> bytes:
+    import urllib.request
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "job-radar seed fetch "
+                                    "(+https://github.com/maccydee/job-radar)"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def fetch(base_url: str, countries: Iterable[str], dest: str | Path,
+          say=None) -> dict:
+    """Download the index and only the shards these countries need.
+
+    `base_url` is the directory the shard set was published under, so the
+    index sits at `<base_url>/index.json` and each shard beside it.
+
+    Returns the index. Downloads nothing it already has: a shard whose size
+    on disk matches the index is left alone, so re-running after a dropped
+    connection resumes rather than starting again. That is a size check and
+    not a checksum, which would be better; the index does not carry one yet
+    and inventing one here would be a format change made in the wrong place.
+    """
+    out = Path(dest)
     out.mkdir(parents=True, exist_ok=True)
-    buckets: dict[str, list[dict]] = {}
-    for j in jobs:
-        buckets.setdefault(shard_of(j), []).append(_pack(j))
+    base = base_url.rstrip("/")
+    say = say or (lambda _m: None)
 
-    index = {
-        "schema": SCHEMA,
-        "generated": generated or date.today().isoformat(),
-        "boards": boards,
-        "note": note or ("slow-phase employer boards only: Ashby, Greenhouse "
-                         "and apply.workable.com. Run a scan for the rest."),
-        "shards": {},
-    }
-    for name, rows in sorted(buckets.items()):
-        # One JSON object per line, header first, rather than one array. A
-        # single array has to be parsed whole before the first role is
-        # available, and a 35,000-role shard cost 360MB of resident memory
-        # that way, on top of the parsed string it was built from. Per line,
-        # the reader holds one role at a time and the caller decides what to
-        # keep. The US shard is eight times that size.
-        blob = "\n".join(
-            [json.dumps({"schema": SCHEMA, "shard": name, "roles": len(rows)},
-                        separators=(",", ":"))]
-            + [json.dumps(r, separators=(",", ":"), ensure_ascii=False)
-               for r in rows]) + "\n"
+    raw = _http_get(f"{base}/index.json")
+    idx = json.loads(raw.decode("utf-8"))
+    _check(idx.get("schema"), f"{base}/index.json")
+
+    want = [n for n in shards_for(countries) if n in (idx.get("shards") or {})]
+    if not want:
+        say(f"Nothing published for {', '.join(shards_for(countries))}.")
+        return idx
+    total = sum(idx["shards"][n]["bytes"] for n in want)
+    say(f"{sum(idx['shards'][n]['roles'] for n in want):,} roles in "
+        f"{len(want)} shard(s), {total / 1e6:.0f}MB, built "
+        f"{idx.get('generated', 'at some point')}.")
+
+    for name in want:
         path = out / f"{name}.jsonl.gz"
-        # Written whole then renamed, like everything else here that is not
-        # cheaply regenerable, so a reader can never open a half-written file
-        # and take it for a short one. mtime=0 so rebuilding an unchanged
-        # shard produces an identical file and does not look like a change.
-        tmp = path.with_suffix(".tmp")
-        with gzip.GzipFile(tmp, "wb", compresslevel=9, mtime=0) as fh:
-            fh.write(blob.encode("utf-8"))
+        expect = idx["shards"][name]["bytes"]
+        if path.exists() and path.stat().st_size == expect:
+            say(f"  {name}: already here")
+            continue
+        say(f"  {name}: {expect / 1e6:.1f}MB")
+        body = _http_get(f"{base}/{name}.jsonl.gz")
+        if len(body) != expect:
+            # A short read is the failure this whole project keeps finding:
+            # a truncated shard parses as a shard with fewer roles in it, and
+            # the roles that fell off look exactly like jobs that do not
+            # exist.
+            raise ValueError(
+                f"{name}.jsonl.gz came back {len(body):,} bytes and the index "
+                f"says {expect:,}. Refusing a partial shard: the roles missing "
+                f"from it would look exactly like roles that do not exist.")
+        tmp = out / f"{name}.part"
+        tmp.write_bytes(body)
         tmp.replace(path)
-        index["shards"][name] = {"roles": len(rows), "bytes": path.stat().st_size}
 
-    tmp = out / "index.tmp"
-    tmp.write_text(json.dumps(index, indent=1) + "\n", encoding="utf-8")
-    tmp.replace(out / "index.json")
-    return index
+    # Written last, so a directory holding an index is a directory whose
+    # shards all arrived. A reader that finds an index and a missing shard
+    # raises, which is the right answer to an interrupted download.
+    (out / "index.json").write_bytes(raw)
+    return idx
 
 
 def read_index(src: str | Path) -> dict:
