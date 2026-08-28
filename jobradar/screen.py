@@ -1438,6 +1438,38 @@ def title_matches_loosely(title: str, terms) -> str | None:
     return None
 
 
+def title_gate(cfg: Config):
+    """A callable answering just the title half of `match`.
+
+    Exists so a caller reading a quarter of a million rows off disk can throw
+    away the 99% that fail on the title without building a `Job` list first.
+    `seed load` materialised every row before screening: 325MB of resident
+    memory for a 22,701-role import, so about 2.1GB for a US reader's 151,044.
+
+    Deliberately only the title. `screen.run` opens with `dedupe` across the
+    whole set, so filtering on anything that varies between duplicates of the
+    same posting would change which one survives. A duplicate of a
+    title-matching role matches the same title, so every one of them still
+    reaches `dedupe` and the answer is unchanged.
+
+    The gate is read once here rather than per row: `title_include_re`
+    recompiles and `title_terms_expanded` re-expands on every call, and this
+    is called once per posting.
+    """
+    inc, exc = cfg.title_include_re(), cfg.title_exclude_re()
+    terms = cfg.title_terms_expanded()
+
+    def keep(title: str) -> bool:
+        title = title or ""
+        if exc and exc.search(title):
+            return False
+        if inc and not inc.search(title):
+            return bool(title_matches_loosely(title, terms))
+        return True
+
+    return keep
+
+
 def match(job: Job, cfg: Config) -> tuple[bool, str]:
     """Title and location gate. Returns (keep, reason_if_dropped)."""
     inc, exc = cfg.title_include_re(), cfg.title_exclude_re()

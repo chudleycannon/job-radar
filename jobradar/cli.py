@@ -1501,7 +1501,23 @@ def cmd_seed_load(args) -> int:
     # read off disk until something consumes it, and a `list()` on the line
     # above only looks like the place the file is touched.
     try:
-        jobs = list(seed_mod.load(src, countries))
+        # Filtered on the title as each row is read, rather than building the
+        # whole shard set in memory and screening afterwards. A 22,701-role
+        # import held 325MB; a US reader's 151,044 would be about 2.1GB, and
+        # the title gate throws away more than 99% of them.
+        #
+        # `screen_run` still sees every survivor and still dedupes across the
+        # lot, so the answer is identical. It re-checks the title, which is
+        # cheap and keeps this a pure optimisation rather than a second copy
+        # of the rule.
+        from .screen import title_gate
+        gate = title_gate(cfg)
+        read = 0
+        jobs = []
+        for j in seed_mod.load(src, countries):
+            read += 1
+            if gate(j.title):
+                jobs.append(j)
         if not jobs:
             _say("Nothing in this index for your countries. Config `locations."
                  "countries`, or run a scan.")
@@ -1528,7 +1544,7 @@ def cmd_seed_load(args) -> int:
         # command restate what the message underneath it had just said.
         _say(f"Could not read the seed at {src}: {exc}")
         return 1
-    _say(f"{len(jobs):,} roles read, {len(kept):,} match your config.")
+    _say(f"{read:,} roles read, {len(kept):,} match your config.")
     if args.dry_run:
         _say(f"Dry run: nothing was written to the database"
              + (f". The shards are in {keep}." if str(args.path).startswith(
