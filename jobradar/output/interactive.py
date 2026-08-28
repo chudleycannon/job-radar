@@ -59,8 +59,10 @@ _EXTRA_CSS = """
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
   background:var(--ink);color:var(--surface);padding:10px 18px;border-radius:var(--r-pill);
   font-size:.875rem;box-shadow:var(--shadow-up);opacity:0;pointer-events:none;
+  user-select:text;-webkit-user-select:text;cursor:text;
   transition:opacity var(--dur) var(--ease);z-index:50;max-width:90vw;text-align:center}
-.toast.show{opacity:1}
+.toast.show{opacity:1;pointer-events:auto}
+.toast.copied::after{content:"Copied";font-size:.75rem;margin-left:10px;color:var(--muted)}
 .empty button{margin-top:var(--s4);font:inherit;font-size:.9375rem;font-weight:650;
   border:1px solid var(--accent);background:var(--accent);color:white;
   border-radius:8px;padding:10px 16px;cursor:pointer}
@@ -84,7 +86,22 @@ const $=s=>document.querySelector(s), toast=$('#toast');
 let f='open', secs=new Set(), modes=new Set(), country='', city='';
 
 function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
+  toast.title='Select this text, or click to copy it.';
+  toast.classList.remove('copied');
   clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove('show'),ms);}
+
+if(toast) toast.onclick=async ()=>{
+  const text=toast.textContent||'';
+  if(!text) return;
+  try{
+    await navigator.clipboard.writeText(text);
+    toast.classList.add('copied');
+  }catch(e){
+    const r=document.createRange();
+    r.selectNodeContents(toast);
+    const s=window.getSelection();
+    if(s){s.removeAllRanges();s.addRange(r);}
+  }};
 
 const SETTLED=new Set(['rejected','withdrawn','skipped','closed']);
 // Applications with something still owed on them, either way.
@@ -344,6 +361,7 @@ if(pullBtn) pullBtn.onclick=async ()=>{
 
 const scanBtn=$('#scan');
 const scanInfo=$('#scaninfo'), scanFill=$('#scanfill'), scanBar=$('#scanbar');
+const scanStopBtn=$('#scanstop');
 const settingsBtn=$('#settings');
 if(settingsBtn) settingsBtn.onclick=()=>{ location.href='/settings'; };
 async function scanState(){
@@ -360,11 +378,12 @@ function paintScanInfo(d){
     if(d.phase_label) bits.push(d.phase_label);
     if(d.responded) bits.push(`${(+d.responded).toLocaleString()} responded`);
     if(d.postings) bits.push(`${(+d.postings).toLocaleString()} postings`);
+    if(d.stopping) bits.push('stopping');
     scanInfo.textContent=bits.join(' · ') || 'scan starting';
     scanInfo.hidden=false;
     if(scanBar) scanBar.hidden=false;
   }else if(d.finished&&total){
-    scanInfo.textContent=`last scan ${Math.min(100,pct)}% · ${done.toLocaleString()}/${total.toLocaleString()} sources`;
+    scanInfo.textContent=`${d.stopped?'stopped scan':'last scan'} ${Math.min(100,pct)}% · ${done.toLocaleString()}/${total.toLocaleString()} sources`;
     scanInfo.hidden=false;
     if(scanBar) scanBar.hidden=false;
   }else{
@@ -378,8 +397,10 @@ async function paintScan(){
   paintScanInfo(d);
   if(d.state==='running'){
     scanBtn.disabled=true; scanBtn.textContent='Scan running...';
+    if(scanStopBtn){scanStopBtn.hidden=false; scanStopBtn.disabled=!!d.stopping;}
   }else{
     scanBtn.disabled=false; scanBtn.textContent='Start scan';
+    if(scanStopBtn){scanStopBtn.hidden=true; scanStopBtn.disabled=false;}
     if(d.error) say('Last scan failed: '+d.error,9000);
   }}
 if(scanBtn){
@@ -387,6 +408,12 @@ if(scanBtn){
     scanBtn.disabled=true; scanBtn.textContent='Starting...';
     const {ok,data}=await post('/api/scan',{});
     say(ok ? (data.message||'Scan started') : (data.error||'could not start'), ok?5000:9000);
+    paintScan();
+  };
+  if(scanStopBtn) scanStopBtn.onclick=async ()=>{
+    scanStopBtn.disabled=true;
+    const {ok,data}=await post('/api/scan/stop',{});
+    say(ok ? (data.message||'stopping') : (data.error||'could not stop'),6000);
     paintScan();
   };
   paintScan();
@@ -780,6 +807,7 @@ def render(con, home_currency: str = "") -> str:
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
   <button id="scan" type="button">Scan now</button>
   <button id="settings" type="button">Settings</button>
+  <button id="scanstop" type="button" hidden>Stop scan</button>
   <button id="rankstop" type="button" hidden>Stop</button>
   <span id="rankinfo"></span>
   <span id="scaninfo" class="scanstat" hidden></span>

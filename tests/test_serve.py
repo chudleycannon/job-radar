@@ -16,6 +16,8 @@ it got.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import sqlite3
@@ -300,6 +302,69 @@ def test_the_browser_scan_status_includes_completion_rate():
             assert body["postings"] == 17, body
             assert body["phase"] == 3, body
             assert body["phase_label"] == "Greenhouse", body
+            assert body["stopping"] is False, body
+
+
+def test_the_browser_can_ask_a_running_scan_to_stop():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.set_meta(con, "scan_state", "running")
+            store.set_meta(con, "scan_cancel", "")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/api/scan/stop", {})
+            assert code == 200 and body["ok"] is True, (code, body)
+            assert "stopping" in body["message"], body
+            code, body = _req(base, "/api/scan")
+            assert code == 200, (code, body)
+            assert body["stopping"] is True, body
+
+
+def test_serve_start_clears_a_scan_left_running_by_an_old_container():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.set_meta(con, "scan_state", "running")
+            store.set_meta(con, "scan_cancel", "1")
+            store.set_meta(con, "scan_error", "old error")
+            store.set_meta(con, "scan_done", "12")
+            store.set_meta(con, "scan_total", "99")
+        finally:
+            con.close()
+        con = store.connect(db)
+        try:
+            serve._prepare_start(con)
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/api/scan")
+            assert code == 200, (code, body)
+            assert body["state"] == "idle", body
+            assert body["stopping"] is False, body
+            assert body["error"] == "", body
+            assert body["stopped"] is True, body
+
+
+def test_serve_start_does_not_replay_a_stale_rank_error():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.set_meta(con, "rank_state", "idle")
+            store.set_meta(con, "rank_error", "ranking failed: old max_tokens error")
+        finally:
+            con.close()
+        con = store.connect(db)
+        try:
+            serve._prepare_start(con)
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/api/rank")
+            assert code == 200, (code, body)
+            assert body["state"] == "idle", body
+            assert body["error"] == "", body
 
 
 def test_settings_page_saves_ai_credentials_without_echoing_them():
@@ -582,9 +647,12 @@ def test_generate_without_the_cli_fails_the_job_and_frees_the_lock():
             JOB_RADAR_CLAUDE=str(root / "no-such-claude"),
             JOB_RADAR_CV=str(root / "cv.md")), _server(db, docs=root / "docs") as base:
         (root / "cv.md").write_text("Rowan Ashby\n", encoding="utf-8")
-        code, body = _req(base, "/api/generate",
-                          {"uid": "uid-one", "kind": "screen"})
-        assert code == 200 and body["ok"] is True, (code, body)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code, body = _req(base, "/api/generate",
+                              {"uid": "uid-one", "kind": "screen"})
+            assert code == 200 and body["ok"] is True, (code, body)
+            _settle(lambda: "generation job" in out.getvalue())
         con = store.connect(db)
         try:
             _settle(lambda: con.execute(
@@ -604,6 +672,8 @@ def test_generate_without_the_cli_fails_the_job_and_frees_the_lock():
                 "nothing should be written for a job that cannot run"
         finally:
             con.close()
+        assert "failed" in out.getvalue()
+        assert "claude" in out.getvalue()
 
 
 def test_generate_can_use_the_anthropic_api_without_the_claude_cli():

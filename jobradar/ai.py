@@ -76,7 +76,37 @@ def anthropic_complete(prompt: str, *, api_key: str, model: str,
     """
     if not api_key:
         raise AIError("ANTHROPIC_API_KEY is empty")
+    data: dict[str, Any] = {}
+    for attempt in range(2):
+        data = _anthropic_message(
+            prompt, api_key=api_key, model=model, base_url=base_url,
+            max_tokens=max_tokens, timeout=timeout)
+        text = _content_text(data).strip()
+        if text:
+            return text
+        # DeepSeek documents occasional empty content in JSON-shaped replies.
+        # Retrying once is cheap beside dropping a whole ranking batch, and it
+        # is still bounded: a persistent blank answer becomes a real error.
+        if attempt == 0:
+            continue
+    raise AIError(_blank_text_error(data))
+
+
+def _anthropic_message(prompt: str, *, api_key: str, model: str,
+                       base_url: str = "", max_tokens: int = 4096,
+                       timeout: int | None = None) -> dict[str, Any]:
     try:
+        body: dict[str, Any] = {
+            "model": model,
+            "max_tokens": int(max_tokens),
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if _is_deepseek(base_url):
+            # DeepSeek's Anthropic-compatible endpoint defaults to thinking
+            # mode. Ranking asks for a short JSON array, so hidden reasoning
+            # can spend the response budget before any visible text is
+            # emitted. Disable it for these one-shot structured calls.
+            body["reasoning"] = {"effort": "none"}
         r = requests.post(
             _anthropic_url(base_url),
             headers={
@@ -84,11 +114,7 @@ def anthropic_complete(prompt: str, *, api_key: str, model: str,
                 "anthropic-version": ANTHROPIC_VERSION,
                 "x-api-key": api_key,
             },
-            json={
-                "model": model,
-                "max_tokens": int(max_tokens),
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            json=body,
             timeout=timeout or 120,
         )
     except requests.RequestException as exc:
@@ -98,17 +124,40 @@ def anthropic_complete(prompt: str, *, api_key: str, model: str,
     if r.status_code >= 400:
         raise AIError(_error_text(r))
     try:
-        data: dict[str, Any] = r.json()
+        data = r.json()
     except json.JSONDecodeError as exc:
         raise AIError("AI response was not JSON") from exc
-    text = "".join(
-        str(part.get("text") or "")
-        for part in data.get("content", [])
-        if isinstance(part, dict) and part.get("type") == "text"
-    ).strip()
-    if not text:
-        raise AIError("AI response contained no text")
-    return text
+    if not isinstance(data, dict):
+        raise AIError("AI response JSON was not an object")
+    return data
+
+
+def _content_text(data: dict[str, Any]) -> str:
+    content = data.get("content", [])
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    out = []
+    for part in content:
+        if isinstance(part, str):
+            out.append(part)
+        elif isinstance(part, dict) and part.get("type") in (None, "text"):
+            out.append(str(part.get("text") or ""))
+    return "".join(out)
+
+
+def _blank_text_error(data: dict[str, Any]) -> str:
+    stop = data.get("stop_reason") or data.get("stop_sequence") or ""
+    content = data.get("content", [])
+    if isinstance(content, list):
+        kinds = [str(p.get("type") or "object") if isinstance(p, dict)
+                 else type(p).__name__ for p in content]
+        shape = ", ".join(kinds) if kinds else "empty content array"
+    else:
+        shape = type(content).__name__
+    detail = f"; stop_reason={stop}" if stop else ""
+    return f"AI response contained no text ({shape}{detail})"
 
 
 def _anthropic_url(base_url: str = "") -> str:
@@ -116,6 +165,10 @@ def _anthropic_url(base_url: str = "") -> str:
     if base.endswith("/v1/messages"):
         return base
     return base + "/v1/messages"
+
+
+def _is_deepseek(base_url: str = "") -> bool:
+    return "api.deepseek.com" in (base_url or "").lower()
 
 
 def _error_text(r: requests.Response) -> str:

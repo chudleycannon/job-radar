@@ -33,6 +33,10 @@ from .output import setup as setup_page
 MAX_BODY = 1 << 20
 
 
+def _log_error(msg: str) -> None:
+    print(f"  ! {msg}", flush=True)
+
+
 class Handler(BaseHTTPRequestHandler):
     db_path = None
     docs_base = None
@@ -135,6 +139,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 msg = f"{type(e).__name__}: {e}"[:300]
                 code = 500
+            _log_error(msg)
             self.close_connection = True
             try:
                 self._json({"ok": False, "error": msg}, code)
@@ -178,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
                     "started": store.get_meta(con, "scan_started", ""),
                     "finished": store.get_meta(con, "scan_finished", ""),
                     "error": store.get_meta(con, "scan_error", ""),
+                    "stopping": store.get_meta(con, "scan_cancel", "") == "1",
+                    "stopped": store.get_meta(con, "scan_stopped", "") == "1",
                     "done": done,
                     "total": total,
                     "percent": int(done * 100 / total) if total else 0,
@@ -433,6 +440,17 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 return self._json({"ok": False, "error": result}, 409)
             return self._json({"ok": True, "message": result})
+
+        if path == "/api/scan/stop":
+            con = store.connect(self.db_path)
+            try:
+                if store.get_meta(con, "scan_state", "idle") != "running":
+                    return self._json({"ok": False, "error": "not running"}, 409)
+                store.set_meta(con, "scan_cancel", "1")
+            finally:
+                con.close()
+            return self._json({"ok": True,
+                               "message": "stopping after the current requests"})
 
         if path == "/api/rank/stop":
             con = store.connect(self.db_path)
@@ -825,6 +843,8 @@ def _start_scan(db_path, config_path: Path) -> tuple[bool, str]:
         store.set_meta(con, "scan_started", datetime.now().isoformat(timespec="seconds"))
         store.set_meta(con, "scan_finished", "")
         store.set_meta(con, "scan_error", "")
+        store.set_meta(con, "scan_cancel", "")
+        store.set_meta(con, "scan_stopped", "")
         store.set_meta(con, "scan_done", "0")
         store.set_meta(con, "scan_total", "0")
         store.set_meta(con, "scan_responded", "0")
@@ -875,13 +895,30 @@ def _start_scan(db_path, config_path: Path) -> tuple[bool, str]:
         except Exception:
             pass
 
+    def should_stop() -> bool:
+        c = store.connect(db)
+        try:
+            return store.get_meta(c, "scan_cancel", "") == "1"
+        finally:
+            c.close()
+
     args.progress = progress
+    args.should_stop = should_stop
 
     def work():
         err = ""
         rc = 1
+        stopped = False
         try:
             rc = cli.cmd_scan(args)
+            try:
+                c = store.connect(db)
+                try:
+                    stopped = store.get_meta(c, "scan_cancel", "") == "1"
+                finally:
+                    c.close()
+            except Exception:
+                stopped = False
             if rc:
                 err = f"scan exited with status {rc}"
         except BaseException as exc:
@@ -895,9 +932,13 @@ def _start_scan(db_path, config_path: Path) -> tuple[bool, str]:
                 store.set_meta(c, "scan_finished",
                                datetime.now().isoformat(timespec="seconds"))
                 store.set_meta(c, "scan_error", err[:300])
+                store.set_meta(c, "scan_stopped", "1" if stopped and not err else "")
+                store.set_meta(c, "scan_cancel", "")
                 store.release(c, "scan")
             finally:
                 c.close()
+            if err:
+                _log_error(f"scan failed: {err[:300]}")
 
     threading.Thread(target=work, daemon=True).start()
     return True, "Scan started. Reload the dashboard as roles arrive."
@@ -973,6 +1014,7 @@ def _spawn_rank(db_path, config_path, refresh: bool = False) -> None:
                         "Nothing was scored; the roles are unchanged.")
                 msg = f"ranking failed: {e}. {what}"
             store.set_meta(con, "rank_error", msg[:300])
+            _log_error(msg[:300])
             # Cleared first, then honoured. A KeyboardInterrupt or a
             # SystemExit still means what it says; `finally` below releases the
             # lock and closes the connection on the way out, and this runs on a
@@ -1050,44 +1092,7 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
     # wrong rather than only applying to future runs.
     con = store.connect(db_path)
     try:
-        # Documents made before there was a column for their text.
-        store.backfill_bodies(con)
-        # A generation cannot outlive the process that spawned it, so anything
-        # still "running" here is from a server that is gone.
-        orphans = store.reap_orphans(con, runner.TIMEOUT)
-        if orphans:
-            print(f"  cleared {orphans} interrupted generation(s)")
-        # A rank runs on a thread inside this process, so one marked running
-        # here belongs to a server that is gone. Left alone it wedges the
-        # button for ever, because starting a rank refuses while one is
-        # "running". Everything already scored is kept.
-        if store.get_meta(con, "rank_state", "idle") == "running":
-            store.set_meta(con, "rank_state", "idle")
-            store.set_meta(con, "rank_cancel", "")
-            print("  cleared an interrupted ranking run")
-        # A lock outlives the process that took it, so a crash mid-run would
-        # otherwise refuse every generation and every rank for ever.
-        if store.clear_locks(con):
-            print("  released locks held by a previous run")
-        # Housekeeping, and housekeeping must never be the reason the
-        # dashboard will not start. `regate` rewrites the quality gates on
-        # every stored document, so it writes, and a write loses to anything
-        # else holding the database: a scan, a rank, a second window. That
-        # raised straight out of `serve` and the server never reached its
-        # bind, so a scan running in another terminal meant the dashboard
-        # simply would not open, with a SQLite traceback as the explanation.
-        #
-        # Observed doing exactly that. The gates it refreshes are already
-        # correct on disk from when each document was written; re-checking
-        # them is an upgrade path for documents written before the gate was
-        # fixed, and that can wait for the next start.
-        try:
-            n = runner.regate(con)
-            if n:
-                print(f"  rechecked {n} document(s)", flush=True)
-        except sqlite3.OperationalError as e:
-            print(f"  skipped re-checking documents: {e}. "
-                  f"Something else is using the database.", flush=True)
+        _prepare_start(con)
     finally:
         con.close()
 
@@ -1142,3 +1147,57 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
     finally:
         httpd.server_close()
     return 0
+
+
+def _prepare_start(con) -> None:
+    # Documents made before there was a column for their text.
+    store.backfill_bodies(con)
+    # A generation cannot outlive the process that spawned it, so anything
+    # still "running" here is from a server that is gone.
+    orphans = store.reap_orphans(con, runner.TIMEOUT)
+    if orphans:
+        print(f"  cleared {orphans} interrupted generation(s)")
+    # A rank runs on a thread inside this process, so one marked running here
+    # belongs to a server that is gone. Left alone it wedges the button for
+    # ever, because starting a rank refuses while one is "running". Everything
+    # already scored is kept.
+    if store.get_meta(con, "rank_state", "idle") == "running":
+        store.set_meta(con, "rank_state", "idle")
+        store.set_meta(con, "rank_cancel", "")
+        print("  cleared an interrupted ranking run")
+    if store.get_meta(con, "rank_error", ""):
+        store.set_meta(con, "rank_error", "")
+        print("  cleared a stale ranking error")
+    # Same story for browser-started scans: they run on a background thread in
+    # this process. A rebuild or Ctrl-C kills the thread but leaves durable
+    # meta rows behind, and the next container should show the last completed
+    # scan, not a ghost run from an older image.
+    if store.get_meta(con, "scan_state", "idle") == "running":
+        store.set_meta(con, "scan_state", "idle")
+        store.set_meta(con, "scan_cancel", "")
+        store.set_meta(con, "scan_error", "")
+        store.set_meta(con, "scan_stopped", "1")
+        print("  cleared an interrupted scan")
+    # A lock outlives the process that took it, so a crash mid-run would
+    # otherwise refuse every generation and every rank for ever.
+    if store.clear_locks(con):
+        print("  released locks held by a previous run")
+    # Housekeeping, and housekeeping must never be the reason the dashboard
+    # will not start. `regate` rewrites the quality gates on every stored
+    # document, so it writes, and a write loses to anything else holding the
+    # database: a scan, a rank, a second window. That raised straight out of
+    # `serve` and the server never reached its bind, so a scan running in
+    # another terminal meant the dashboard simply would not open, with a
+    # SQLite traceback as the explanation.
+    #
+    # Observed doing exactly that. The gates it refreshes are already correct
+    # on disk from when each document was written; re-checking them is an
+    # upgrade path for documents written before the gate was fixed, and that
+    # can wait for the next start.
+    try:
+        n = runner.regate(con)
+        if n:
+            print(f"  rechecked {n} document(s)", flush=True)
+    except sqlite3.OperationalError as e:
+        print(f"  skipped re-checking documents: {e}. "
+              f"Something else is using the database.", flush=True)

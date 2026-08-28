@@ -291,6 +291,16 @@ def cmd_scan(args) -> int:
     absorbed: set = set()
     ok = 0
     current_phase = {"n": 0, "label": ""}
+    stopped = {"yes": False}
+
+    def should_stop() -> bool:
+        cb = getattr(args, "should_stop", None)
+        if not cb:
+            return False
+        try:
+            return bool(cb())
+        except Exception:
+            return True
 
     def progress(phase: int = 0, label: str = "") -> None:
         cb = getattr(args, "progress", None)
@@ -306,6 +316,7 @@ def cmd_scan(args) -> int:
             "postings": len(all_jobs),
             "phase": current_phase["n"],
             "phase_label": current_phase["label"],
+            "stopping": stopped["yes"] or should_stop(),
         })
 
     def absorb(res):
@@ -506,6 +517,10 @@ def cmd_scan(args) -> int:
         _say(describe(awake.held) + "\n")
         for n, label, group, mins in est:
             progress(n, label)
+            if should_stop():
+                stopped["yes"] = True
+                _say("Scan stopped before the next pass.")
+                break
             _say(f"Pass {n} of {len(est)}, {label}: {len(group):,} sources, "
                  f"{_mins(mins)}.")
             results += fetch_all(
@@ -521,7 +536,10 @@ def cmd_scan(args) -> int:
                 api_keys={"reed": cfg.reed_api_key,
                           "adzuna_app_id": cfg.adzuna_app_id,
                           "adzuna_app_key": cfg.adzuna_app_key}, on_result=tick,
+                should_stop=should_stop,
             )
+            if should_stop():
+                stopped["yes"] = True
             # Written and rendered at the end of every pass, not only the
             # last, because a dashboard that is usable at five minutes is the
             # whole point of reading in passes at all.
@@ -587,6 +605,9 @@ def cmd_scan(args) -> int:
                 _say(f"  dashboard updated; passes {n + 1} to {len(est)} "
                      f"still to come.")
             progress(n, label)
+            if stopped["yes"]:
+                _say("  scan stopped; keeping everything found so far.")
+                break
 
     # `tick` has already parsed everything `fetch_all` handed it, so on the
     # real path this loop finds nothing to do and costs one set lookup per

@@ -439,6 +439,20 @@ def test_serve_hands_the_dashboard_the_currency_the_floor_is_written_in():
         "home_currency is set from something other than the config")
 
 
+def test_toast_errors_can_be_selected_or_clicked_to_copy():
+    assert "user-select:text" in SRC
+    assert "pointer-events:auto" in SRC
+    assert "navigator.clipboard.writeText" in SRC
+    assert "Select this text, or click to copy it." in SRC
+
+
+def test_a_running_scan_can_be_stopped_from_the_dashboard():
+    assert 'id="scanstop"' in SRC
+    assert "/api/scan/stop" in SRC
+    assert "Stop scan" in SRC
+    assert "d.stopping" in SRC
+
+
 def test_the_first_scan_announces_the_number_of_sources_it_will_read():
     """The wizard's last line said "It reads 17,807 job boards".
 

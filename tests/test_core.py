@@ -5334,6 +5334,32 @@ def test_the_concurrency_config_key_still_caps_the_worker_count():
     assert seen == [3], f"asked for 3 workers, pool was built with {seen}"
 
 
+def test_fetch_all_stop_starts_no_more_sources():
+    from jobradar import fetch as fetch_mod
+
+    srcs = [Source(company=f"c{i}", url=f"https://h{i}.example/jobs",
+                   platform="greenhouse") for i in range(8)]
+    calls = []
+    stopped = {"yes": False}
+
+    def fake_dispatch(src, *a, **kw):
+        calls.append(src.company)
+        return fetch_mod.Result(src, payload=[])
+
+    def on_result(_res):
+        stopped["yes"] = True
+
+    def should_stop():
+        return stopped["yes"]
+
+    with mock.patch.object(fetch_mod, "_fetch_dispatch", fake_dispatch):
+        out = fetch_mod.fetch_all(srcs, concurrency=2, per_host_rps=0,
+                                  on_result=on_result, should_stop=should_stop)
+
+    assert len(calls) <= 2, f"stop kept starting sources: {calls}"
+    assert 1 <= len(out) <= 2
+
+
 def test_the_default_worker_count_is_well_above_the_old_four():
     """Four workers against 17,809 sources was most of an hour of waiting on
     other people's latency, and it bought no politeness that per-host pacing

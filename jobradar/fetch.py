@@ -25,7 +25,7 @@ import threading
 from pathlib import Path
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 from urllib.parse import (parse_qsl, quote_plus, urlencode, urlparse,
@@ -1879,6 +1879,7 @@ def fetch_all(
     # two configs in one process without them sharing a key.
     api_keys: dict[str, str] | None = None,
     on_result: Callable[[Result], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
     # Where to remember a host that has shut the door for hours. Optional
     # because a test, a benchmark or a one-off probe has no business writing
     # to anybody's state directory; the scan passes it, nothing else does.
@@ -1897,36 +1898,67 @@ def fetch_all(
     # 0.15 seconds once and nothing at all for the other 17,805 sources. The
     # burst it was meant to prevent is now prevented per host, for the whole
     # run, rather than for the first 200 milliseconds of it.
-    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
-        futs = {ex.submit(_fetch_dispatch, src, limiter, timeout, retries,
-                          user_agent, search_terms or [],
-                          api_keys or {}): src for src in queue}
-        for f in as_completed(futs):
-            # One board must never be able to end the run.
-            #
-            # `fetch_one` catches `requests.RequestException`, which is the
-            # failure a board is expected to produce. It is not the only one a
-            # board can cause: a response body of 60,000 open brackets makes
-            # the JSON decoder recurse until Python gives up, and the
-            # `RecursionError` comes back out of `f.result()` where nothing
-            # was catching anything. Demonstrated against a loopback server;
-            # every other board's results in that run were lost, because this
-            # loop never reaches `return out`. On the Actions path that is a
-            # red run and no roles after up to 300 minutes of fetching, and
-            # any one of the 17,807 third parties here can trigger it with a
-            # small response body.
-            #
-            # A raise here is therefore recorded as this source's failure, in
-            # the same shape as every other failure, and the run continues.
-            # `BaseException` is deliberately not caught: KeyboardInterrupt
-            # and SystemExit are the user asking to stop.
+    workers = max(1, concurrency)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {}
+        nxt = 0
+
+        def stopped() -> bool:
+            if not should_stop:
+                return False
             try:
-                res = f.result()
-            except Exception as e:
-                res = Result(futs[f], error=f"{type(e).__name__}: {e}"[:300])
-            out.append(res)
-            if on_result:
-                on_result(res)
+                return bool(should_stop())
+            except Exception:
+                return True
+
+        def fill() -> None:
+            nonlocal nxt
+            while nxt < len(queue) and len(futs) < workers and not stopped():
+                src = queue[nxt]
+                nxt += 1
+                futs[ex.submit(_fetch_dispatch, src, limiter, timeout, retries,
+                               user_agent, search_terms or [],
+                               api_keys or {})] = src
+
+        fill()
+        while futs:
+            finished, _ = wait(list(futs), return_when=FIRST_COMPLETED)
+            stop_now = False
+            for f in finished:
+                src = futs.pop(f)
+                # One board must never be able to end the run.
+                #
+                # `fetch_one` catches `requests.RequestException`, which is the
+                # failure a board is expected to produce. It is not the only one a
+                # board can cause: a response body of 60,000 open brackets makes
+                # the JSON decoder recurse until Python gives up, and the
+                # `RecursionError` comes back out of `f.result()` where nothing
+                # was catching anything. Demonstrated against a loopback server;
+                # every other board's results in that run were lost, because this
+                # loop never reaches `return out`. On the Actions path that is a
+                # red run and no roles after up to 300 minutes of fetching, and
+                # any one of the 17,807 third parties here can trigger it with a
+                # small response body.
+                #
+                # A raise here is therefore recorded as this source's failure, in
+                # the same shape as every other failure, and the run continues.
+                # `BaseException` is deliberately not caught: KeyboardInterrupt
+                # and SystemExit are the user asking to stop.
+                try:
+                    res = f.result()
+                except Exception as e:
+                    res = Result(src, error=f"{type(e).__name__}: {e}"[:300])
+                out.append(res)
+                if on_result:
+                    on_result(res)
+                if stopped():
+                    stop_now = True
+            if stop_now:
+                for pending in futs:
+                    pending.cancel()
+                futs.clear()
+                break
+            fill()
 
     # Say which hosts slowed us down.
     #

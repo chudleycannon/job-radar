@@ -661,9 +661,16 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         job = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         if not job or job["state"] not in ("pending", "running"):
             return
+
+        def fail(error: str, log: str = "") -> None:
+            msg = str(error)
+            store.mark_job(con, job_id, "failed", error=msg, log=log)
+            print(f"  ! generation job {job_id} ({job['kind']}) failed: "
+                  f"{msg[:400]}", flush=True)
+
         row = con.execute("SELECT * FROM roles WHERE uid=?", (job["uid"],)).fetchone()
         if row is None:
-            store.mark_job(con, job_id, "failed", error="role not found")
+            fail("role not found")
             return
 
         store.mark_job(con, job_id, "running")
@@ -684,7 +691,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         # `claude` executable inside Docker.
         claude = "" if use_api else claude_bin()
         if not use_api and not claude:
-            store.mark_job(con, job_id, "failed", error=_no_claude_msg())
+            fail(_no_claude_msg())
             return
 
         d = role_dir(row, base)
@@ -717,7 +724,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                    if not chosen else
                    f"the CV at {src} is not a readable file. Check `cv.path` "
                    f"in your config.")
-            store.mark_job(con, job_id, "failed", error=why)
+            fail(why)
             return
 
         # Every kind needs it. Screening was previously asked to separate hard
@@ -727,8 +734,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         if src.suffix.lower() == ".docx":
             text = docx_to_text(src)
             if not text:
-                store.mark_job(con, job_id, "failed",
-                               error=f"could not read any text out of {src.name}")
+                fail(f"could not read any text out of {src.name}")
                 return
             (d / "source-cv.txt").write_text(text, encoding="utf-8")
         elif src.suffix.lower() in (".txt", ".md"):
@@ -737,8 +743,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             from .rank import _pdf_to_text
             text = _pdf_to_text(src)
             if not text:
-                store.mark_job(con, job_id, "failed",
-                               error=f"could not read any text out of {src.name}")
+                fail(f"could not read any text out of {src.name}")
                 return
             (d / "source-cv.txt").write_text(text, encoding="utf-8")
 
@@ -748,15 +753,12 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             try:
                 out = _run_api_prompt(job["kind"], cfg_obj, d, prompt)
             except ai.AILimitReached as exc:
-                store.mark_job(
-                    con, job_id, "failed",
-                    error=(f"out of credit or rate limited: {exc}. Nothing was "
-                           f"written and nothing partial was charged; the "
-                           f"button works again once the limit resets."))
+                fail(f"out of credit or rate limited: {exc}. Nothing was "
+                     f"written and nothing partial was charged; the "
+                     f"button works again once the limit resets.")
                 return
             except Exception as exc:
-                store.mark_job(con, job_id, "failed",
-                               error=f"{type(exc).__name__}: {exc}"[:400])
+                fail(f"{type(exc).__name__}: {exc}"[:400])
                 return
         else:
             try:
@@ -793,27 +795,20 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                 out = note + (proc.stdout or "")[-4000:]
                 if proc.returncode != 0:
                     hit = looks_like_limit(proc.stderr, proc.stdout)
-                    store.mark_job(
-                        con, job_id, "failed",
-                        error=(f"out of credit or rate limited: {hit}. Nothing was "
-                               f"written and nothing partial was charged; the "
-                               f"button works again once the limit resets."
-                               if hit else
-                               (proc.stderr or "claude exited non-zero")[:400]),
-                        log=out)
+                    fail((f"out of credit or rate limited: {hit}. Nothing was "
+                          f"written and nothing partial was charged; the "
+                          f"button works again once the limit resets."
+                          if hit else
+                          (proc.stderr or "claude exited non-zero")[:400]), out)
                     return
             except subprocess.TimeoutExpired:
-                store.mark_job(con, job_id, "failed",
-                               error=f"timed out after {TIMEOUT}s")
+                fail(f"timed out after {TIMEOUT}s")
                 return
 
         expected = {"cv": "CV.md", "cover_letter": "cover-letter.md",
                     "screen": "screening.md"}[job["kind"]]
         if not (d / expected).exists():
-            store.mark_job(
-                con, job_id, "failed",
-                error=f"finished without writing {expected}. See the log.",
-                log=out)
+            fail(f"finished without writing {expected}. See the log.", out)
             return
 
         # Check it, and send it back if it is not good enough.
@@ -882,7 +877,9 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
         _record(con, job, d, out)
         store.mark_job(con, job_id, "done", log=out)
     except Exception as e:                      # never leave a job stuck running
-        store.mark_job(con, job_id, "failed", error=f"{type(e).__name__}: {e}"[:400])
+        msg = f"{type(e).__name__}: {e}"[:400]
+        store.mark_job(con, job_id, "failed", error=msg)
+        print(f"  ! generation job {job_id} failed: {msg}", flush=True)
     finally:
         con.close()
 

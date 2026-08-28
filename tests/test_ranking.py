@@ -157,6 +157,87 @@ def test_anthropic_compatible_base_url_can_point_at_deepseek():
 
     assert calls[0][0] == "https://api.deepseek.com/anthropic/v1/messages"
     assert calls[0][1]["json"]["model"] == "deepseek-v4-pro"
+    assert calls[0][1]["json"]["reasoning"] == {"effort": "none"}
+
+
+def test_plain_anthropic_calls_do_not_get_deepseek_reasoning_options():
+    from jobradar import ai
+
+    calls = []
+
+    class Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}]}
+
+    def fake_post(url, **kw):
+        calls.append((url, kw))
+        return Resp()
+
+    with mock.patch("requests.post", fake_post):
+        assert ai.anthropic_complete(
+            "hello",
+            api_key="sk-test",
+            model="claude-sonnet-5",
+        ) == "ok"
+
+    assert calls[0][0] == "https://api.anthropic.com/v1/messages"
+    assert "reasoning" not in calls[0][1]["json"]
+
+
+def test_a_blank_deepseek_response_is_retried_once():
+    from jobradar import ai
+
+    replies = [
+        {"content": []},
+        {"content": [{"type": "text", "text": "ok after retry"}]},
+    ]
+
+    class Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return replies.pop(0)
+
+    with mock.patch("requests.post", lambda *a, **k: Resp()):
+        assert ai.anthropic_complete(
+            "return json",
+            api_key="sk-test",
+            model="deepseek-v4-pro",
+            base_url="https://api.deepseek.com/anthropic",
+        ) == "ok after retry"
+    assert replies == []
+
+
+def test_a_persistent_blank_ai_response_names_the_shape():
+    from jobradar import ai
+
+    class Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"content": [{"type": "thinking", "text": "private"}],
+                    "stop_reason": "end_turn"}
+
+    with mock.patch("requests.post", lambda *a, **k: Resp()):
+        try:
+            ai.anthropic_complete(
+                "return json",
+                api_key="sk-test",
+                model="deepseek-v4-pro",
+                base_url="https://api.deepseek.com/anthropic",
+            )
+        except ai.AIError as exc:
+            msg = str(exc)
+        else:
+            raise AssertionError("blank response should fail")
+
+    assert "thinking" in msg
+    assert "end_turn" in msg
 
 
 def test_a_fit_outside_the_scale_is_refused_rather_than_clamped():
