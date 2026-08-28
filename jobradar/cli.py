@@ -1522,6 +1522,30 @@ def cmd_seed_load(args) -> int:
             _say("Nothing in this index for your countries. Config `locations."
                  "countries`, or run a scan.")
             return 0
+        # The pay is re-read from the advert before it is judged.
+        #
+        # A shard carries the figure whoever BUILT it parsed, on their version
+        # of the code, and `docs/SEED.md` says a seed is a saved fetch and not
+        # a saved decision. A parsed salary is a decision. `rescreen` was
+        # taught this; `seed load` is the command the README puts first and
+        # was not.
+        #
+        # Measured on one import: 23 of 131 roles carried pay after a load and
+        # 55 after a rescreen with no new data, so 32 read "unconfirmed
+        # salary" on the dashboard while the description beside them stated a
+        # figure. Worse in the other direction: seven roles whose stated pay
+        # is BELOW the floor were stored as having passed it.
+        #
+        # Only when the re-read is confirmed, same rule as `rescreen`: an
+        # unconfirmed re-read means this parser found nothing in the text,
+        # which is not evidence against a figure that came from a structured
+        # field the advert never repeated.
+        from .salary import currency_of_country, parse_text
+        for j in jobs:
+            fresh = parse_text(j.description or "",
+                               currency_of_country(j.country))
+            if fresh.confirmed:
+                j.salary = fresh
         kept, _ = screen_run(jobs, cfg)
     except EOFError as exc:
         # A shard truncated ON DISK, which the index's byte check cannot see

@@ -1337,7 +1337,13 @@ def stated_work_mode(job: Job) -> tuple[str, int | None]:
 
 def enrich(job: Job) -> Job:
     """Fill the derived fields the dashboard filters on."""
-    found = _countries_in(job.location)
+    # And here, so the dashboard's country facet can place them. Without it
+    # every region-located role was filed under "unknown", and a
+    # country-filtered board read "unknown (120), GR (8), multiple (4)".
+    #
+    # A region resolves to many countries, so it lands in "multiple" rather
+    # than picking one, which is what "open across Europe" actually means.
+    found = _countries_in(job.location) or regions_in(job.location)
     job.country = job.country or (sorted(found)[0] if len(found) == 1 else
                                   ("multiple" if found else None))
     job.city = city_of(job.location)
@@ -1637,8 +1643,17 @@ _NO_SPONSOR = re.compile(
     # on its own appears in equal-opportunity boilerplate on adverts that
     # sponsor perfectly happily, and matching that would hide the roles this
     # reader most needs.
-    r"|(?:must|need\s+to|required\s+to|should)\s+(?:be\s+)?"
-    r"(?:a\s+|an\s+)?(?:\w+\s+){0,3}?"
+    # The filler is one word, not three, and it has to be a nationality or a
+    # place. `(?:\w+\s+){0,3}?` let any three words sit between the verb and
+    # the noun, so "You must be a good corporate citizen and a team player"
+    # was read as a bar on working here and the role was hidden from the
+    # reader it was aimed at. A citizenship requirement names a country: "must
+    # be a US citizen", "must be Singapore Citizens or Permanent Residents".
+    # "a good corporate citizen" names none.
+    r"|(?:must|need\s+to|required\s+to)\s+(?:be\s+)?"
+    r"(?:a\s+|an\s+)?(?:[A-Z]\w+|\w+ese|\w+ish|\w+ian|\w+can|eu|uk|us|"
+    r"british|american|irish|dutch|german|french|spanish|indian|chinese|"
+    r"singaporean|emirati|swiss|canadian|australian)?\s*"
     r"(?:citizens?|permanent\s+residents?|nationals?)\b"
     r"|(?:must|need\s+to|required\s+to|should)\s+(?:already\s+)?"
     r"(?:hold|have|possess)\s+(?:a\s+|an\s+|the\s+)?(?:\w+\s+){0,3}?"
@@ -1979,7 +1994,13 @@ def score(job: Job, cfg: Config) -> float:
         s += 35
         why.append("title matches your targets")
 
-    found = _countries_in(job.location)
+    # Regions here too. `regions_in` was wired into `match` and nowhere else,
+    # so a role in "Remote - Europe" passed the filter and then scored 20
+    # lower than a bare "Remote", which is scored as naming nowhere. The
+    # qualifier that makes a role MORE relevant to a European reader cost it
+    # the points, and every one of the eight roles actually in Greece sat
+    # below fifteen US-only postings the reader cannot take.
+    found = _countries_in(job.location) or regions_in(job.location)
     home = found & set(cfg.countries)
     if home:
         s += 20

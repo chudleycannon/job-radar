@@ -420,6 +420,13 @@ def _known_country_codes() -> set[str]:
     return codes
 
 
+def _name_to_code(text: str) -> str | None:
+    """A country's own name turned into its code, or None."""
+    from .screen import _COUNTRY_NAME, _fold
+    t = " ".join(str(text or "").split()).lower()
+    return _COUNTRY_NAME.get(t) or _COUNTRY_NAME.get(_fold(t))
+
+
 def _countries(values, where: str) -> list[str]:
     """Normalise a country list, and refuse anything the filter cannot use.
 
@@ -451,7 +458,18 @@ def _countries(values, where: str) -> list[str]:
         t = str(v).strip()
         if not t:
             continue
-        code = COUNTRY_ALIASES.get(t.lower(), t.upper())
+        # The hand-written alias table FIRST, because it carries the
+        # spellings this tool decided on ("gb" means UK here), then the
+        # placer's own name map, which knows all 170.
+        #
+        # The codes were widened to 170 and this was left at 57, so 129
+        # countries were accepted by code and refused by name.
+        # `--countries Greece` wrote a config that `list` then rejected with
+        # "'GREECE' is not a country this tool recognises. Did you mean GA,
+        # GE, GH, GM?", none of which is Greece. The map that knows
+        # "greece" is GR was already imported by the function three lines
+        # above.
+        code = COUNTRY_ALIASES.get(t.lower()) or _name_to_code(t) or t.upper()
         if code not in known:
             near = [c for c in sorted(known) if c.startswith(t[:1].upper())]
             hint = f" Did you mean {', '.join(near[:4])}?" if near else ""
