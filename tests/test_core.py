@@ -10,6 +10,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Read against the repository, not the working directory.
+#
+# Four tests here opened `sources/sources.json` and `config.example.yaml` by
+# a bare relative path, so they passed from the repo root and failed with
+# FileNotFoundError from anywhere else. A suite that only runs from one
+# directory is a suite somebody will eventually run from another.
+REPO = Path(__file__).resolve().parent.parent
+
 from jobradar.config import Config, Dealbreaker
 from jobradar.models import Job, Salary, Source
 from jobradar.salary import clears_floor, from_ashby, from_greenhouse, parse_text
@@ -486,16 +494,19 @@ def test_docx_text_extraction():
     converter, so a .docx has to be turned into text before it is handed over
     or the CV job has nothing to work from."""
     from jobradar.runner import docx_to_text
-    cv = Path.home() / "Downloads" / "Callum_McDonald_CV.docx"
-    try:
-        # exists() is true for a file this process is not allowed to open, so
-        # the readability check has to be an actual read.
-        cv.open("rb").close()
-    except OSError:
-        return                       # not this machine, or not readable here
+    # A fixture in the repository, not a file in one person's Downloads.
+    #
+    # This read `~/Downloads/Callum_McDonald_CV.docx` and returned quietly
+    # when it was not there, so on every machine except the author's it was a
+    # green tick reporting that nothing had been checked. CI has run it
+    # hundreds of times and never once extracted a word.
+    cv = REPO / "tests" / "fixtures" / "sample_cv.docx"
+    assert cv.exists(), "the sample CV fixture has gone missing"
     text = docx_to_text(cv)
-    assert len(text) > 500
+    assert len(text) > 400, len(text)
     assert "\n" in text
+    assert "Head of Platform" in text, "paragraphs are not coming through"
+    assert "<w:" not in text, "raw document XML leaked into the text"
 
 
 def test_a_config_pointing_at_a_missing_cv_is_refused():
@@ -966,7 +977,7 @@ def test_adding_a_source_keeps_the_file_as_written():
     from jobradar.models import Source
 
     d = Path(tempfile.mkdtemp()) / "config.yaml"
-    shutil.copy("config.example.yaml", d)
+    shutil.copy(str(REPO / 'config.example.yaml'), d)
     before = d.read_text(encoding="utf-8")
     _append_sources(d, [Source(company="Beam", url="https://x/board", platform="ashby")])
     after = d.read_text(encoding="utf-8")
@@ -987,7 +998,7 @@ def test_the_wizard_only_offers_sectors_that_exist():
     from jobradar.setup_wizard import SECTORS
     real = {s for s in Counter(
         x.get("sector") for x in _j.loads(
-            Path("sources/sources.json").read_text(encoding="utf-8"))["sources"]) if s}
+            (REPO / 'sources' / 'sources.json').read_text(encoding="utf-8"))["sources"]) if s}
     assert not (set(SECTORS) - real), f"offered but nonexistent: {set(SECTORS) - real}"
     assert not (real - set(SECTORS)), f"exists but not offered: {real - set(SECTORS)}"
 
@@ -6144,7 +6155,7 @@ def test_the_vendor_rule_does_not_swallow_a_real_employer():
         assert _VENDOR_INFRA.fullmatch(junk), junk
 
     bundled = _j.loads(
-        Path("sources/sources.json").read_text(encoding="utf-8"))["sources"]
+        (REPO / 'sources' / 'sources.json').read_text(encoding="utf-8"))["sources"]
     rejected = [s["url"] for s in bundled
                 if _VENDOR_INFRA.fullmatch(
                     urlparse(s["url"]).netloc.split(".")[0])]
@@ -6452,7 +6463,7 @@ def test_every_bundled_board_is_still_findable_by_a_scan():
     from jobradar.discover import _scan
 
     bundled = _j.loads(
-        Path("sources/sources.json").read_text(encoding="utf-8"))["sources"]
+        (REPO / 'sources' / 'sources.json').read_text(encoding="utf-8"))["sources"]
     for s in bundled:
         if s["platform"] != "greenhouse":
             continue

@@ -48,6 +48,7 @@ What each one pins:
 from __future__ import annotations
 
 import json
+from unittest import mock
 import sys
 from pathlib import Path
 
@@ -536,11 +537,18 @@ def test_a_workday_posting_gets_a_date_out_of_the_age_workday_states():
                                "nvidia/NVIDIAExternalCareerSite/jobs"))
     assert len(jobs) == 4, [j.title for j in jobs]
     assert all(j.posted_at for j in jobs), [(j.title, j.posted_at) for j in jobs]
-    ages = sorted((date.today() - date.fromisoformat(j.posted_at)).days
-                  for j in jobs)
-    assert ages[0] == 0 and ages[1] == 1, ages
-    assert ages[2] == 19 and ages[3] == 30, ages
-    assert timedelta(days=ages[3]).days == 30
+    # Compared with each other, not with the clock.
+    #
+    # The parser turns "Posted Today" into a date by reading `date.today()`,
+    # and this read it again to compute the age, so a run that crossed
+    # midnight between the two saw every age one day out and failed for a
+    # reason nobody could reproduce in the morning. The spacing between the
+    # four postings is the thing under test and it does not depend on which
+    # day it is.
+    days = sorted(date.fromisoformat(j.posted_at) for j in jobs)
+    gaps = [(days[-1] - d).days for d in days]
+    assert gaps == [30, 19, 1, 0], gaps
+    assert (days[-1] - days[0]).days == 30
 
 
 if __name__ == "__main__":
