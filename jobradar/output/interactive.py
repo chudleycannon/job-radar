@@ -518,7 +518,7 @@ def _floor_is_set(rows) -> bool:
     """
     for r in rows:
         try:
-            flags = json.loads(r["flags"] or "[]")
+            flags = _flags(r)
         except (TypeError, ValueError):
             continue
         if not isinstance(flags, list):
@@ -720,6 +720,24 @@ unless you click for it.</footer>
 <script>{prelude}{_JS}</script></body></html>"""
 
 
+def _flags(row) -> list:
+    """The role's flags, or none of them.
+
+    `store.py` already guards this field and this did not, so a row with a
+    malformed `flags` value would raise out of the page handler and 500 the
+    whole dashboard rather than losing one role's labels. Nothing has ever
+    written a bad value, which is exactly why it is worth a guard: the cost of
+    being wrong is the entire board, and the cost of being careful is four
+    lines.
+    """
+    import json as _json
+    try:
+        out = _json.loads(row["flags"] or "[]")
+    except (ValueError, TypeError):
+        return []
+    return out if isinstance(out, list) else []
+
+
 def _row(r, arts, job, run=0) -> str:
     settled = r["status"] in store.SETTLED
     paid = bool(r["salary_confirmed"])
@@ -790,7 +808,7 @@ def _row(r, arts, job, run=0) -> str:
     # in one run and reached no view a person ever opens, so a EUR floor
     # looked like it had passed a set of sterling figures below it. Same for
     # a posting that rules out sponsorship.
-    notes = [f for f in json.loads(r["flags"] or "[]")
+    notes = [f for f in _flags(r)
              if ("not screened" in f or "listing only" in f
                  or "not compared" in f or "sponsor" in f)]
     busy = job["kind"] if job else ""

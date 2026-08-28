@@ -67,6 +67,14 @@ class Salary:
         per = {"day": "/day", "hour": "/hr"}.get(self.period, "")
 
         def fmt(v: float) -> str:
+            # Millions get an M. Thousands-of-thousands was fine while the
+            # only floors allowed were pounds, dollars and euros, where a
+            # salary rarely passes 1,000k. Now that a floor can be in rupees,
+            # yen or won, a perfectly ordinary salary renders as "INR 4,000k",
+            # which the reader has to stop and multiply out, and which reads
+            # at a glance like four thousand.
+            if self.period == "year" and v >= 1_000_000:
+                return f"{sym}{cur}{v / 1_000_000:,.1f}M".replace(".0M", "M")
             if self.period == "year" and v >= 10_000:
                 return f"{sym}{cur}{v / 1000:,.0f}k"
             return f"{sym}{cur}{v:,.0f}"
