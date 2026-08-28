@@ -1,8 +1,8 @@
 """A prebuilt index of the slow half of the scan, so a new user is not idle.
 
-A full scan reads 17,888 sources in four passes. The first pass is nine
-thousand fast sources and finishes in about five minutes. The other three are
-Ashby, Greenhouse and Workable's own boards -- 8,780 employer boards, one
+A full scan reads its sources in four passes. The first pass is nine thousand
+fast ones and finishes in about five minutes. The other three are Ashby,
+Greenhouse and Workable's own boards -- 8,779 employer boards, one
 request each, and `apply.workable.com` is paced at 0.7 requests a second
 because it answered a burst with a sixteen hour refusal. That floor is fifty
 minutes and no amount of concurrency moves it.
@@ -15,10 +15,11 @@ minutes, fresher than any file we could publish.
 200 characters), no dealbreaker can be checked against it, and no CV can be
 written from it. An index of titles and links would be a list, not a tool.
 
-**Sharded by country**, because the whole world with adverts attached is 181MB
+**Sharded by country**, because the whole world with adverts attached is 242MB
 and nobody wants it. A UK reader takes the UK shard plus two that everybody
 takes: roles whose country could not be read, and roles open in several
-countries at once. That is about 27MB together. Neither of those is evidence
+countries at once. That is 38MB together, measured on the build of
+2026-08-28. Neither of those is evidence
 that a role is somewhere else, and dropping them would silently hide real
 vacancies -- a role open in London and New York is a UK role.
 
@@ -240,7 +241,7 @@ def build(jobs: Iterable[Job], out_dir: str | Path, *,
 # Publishing without this would be half a feature: the file would exist and
 # every reader would have to find fifty release assets and work out which
 # three of them they need. The point of sharding is that a UK reader takes
-# 27MB rather than 181MB, and only the tool knows which shards that is.
+# 38MB rather than 242MB, and only the tool knows which shards that is.
 #
 # Deliberately plain HTTPS with no authentication and no client identifier
 # beyond a user agent. A seed download says nothing about who is asking or

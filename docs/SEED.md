@@ -4,9 +4,9 @@ A scan reads its sources in four passes.
 
 | Pass | What | Sources | Time |
 |---|---|---|---|
-| 1 | the fast ones | 9,108 | about 5 minutes |
+| 1 | the fast ones | 9,032 | about 5 minutes |
 | 2 | Ashby | 2,607 | |
-| 3 | Greenhouse | 4,079 | |
+| 3 | Greenhouse | 4,078 | |
 | 4 | `apply.workable.com` | 2,094 | 50 minutes on its own |
 
 Pass 4 is the floor of the whole thing. Workable's own boards are read one
@@ -32,15 +32,20 @@ your config exactly as a scan does. Nobody else's filters can reach you.
 
 ## Shards
 
-The whole world with adverts attached is about 181MB gzipped, measured over
-180 real slow-phase boards and projected across all 8,780. So it is split by
-country and you take only what you need.
+The whole world with adverts attached is 242MB gzipped: 289,640 roles from
+8,779 boards, measured on the build of 2026-08-28. So it is split by country
+and you take only what you need.
 
-    UK   14.1 MB  +  13.3 MB  =  27.4 MB
-    DE    4.4 MB  +  13.3 MB  =  17.7 MB
-    US  111.7 MB  +  13.3 MB  = 125.0 MB
+    UK   16.6 MB  +  21.7 MB  =  38.3 MB
+    DE    6.0 MB  +  21.7 MB  =  27.7 MB
+    IN    7.5 MB  +  21.7 MB  =  29.2 MB
+    US  112.1 MB  +  21.7 MB  = 133.8 MB
 
-Two shards go to **every** reader, which is the 13.3MB above:
+(A 180-board sample had projected 267,000 roles and 181MB. The real thing is
+8% more roles and 25% more bytes, which is worth knowing about any figure on
+this page that came from a sample rather than a build.)
+
+Two shards go to **every** reader, which is the 21.7MB above:
 
 - `unplaced`, roles whose country could not be read
 - `multiple`, roles open in more than one country
@@ -56,8 +61,7 @@ side, looks exactly like the job not existing.
 
 It reads the index, works out which shards your `locations.countries` needs,
 downloads only those, screens them against your config and stores what
-survives. A UK reader fetches three files and about 27MB, not fifty files and
-181MB.
+survives. A UK reader fetches three files and 38MB, not 164 files and 242MB.
 
 The download is kept (in `seed/` beside your config, or wherever `--keep`
 says) so a second config or a second machine does not fetch it again, and a
@@ -131,7 +135,7 @@ than reading what it can. A half-understood role still looks like a role.
 
 ## Publishing
 
-Shards go to a GitHub **release asset**, never into the repository: 181MB a
+Shards go to a GitHub **release asset**, never into the repository: 242MB a
 day committed is history every clone pays for forever, while release assets
 never enter history and can be replaced in place. `seed load <url>` expects
 the assets to sit under one base URL with `index.json` beside them, which is
