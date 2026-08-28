@@ -1298,9 +1298,31 @@ def office_days(text: str) -> int | None:
     return None
 
 
+def stated_work_mode(job: Job) -> tuple[str, int | None]:
+    """`work_mode`, with a stated number of office days overriding it.
+
+    Returns the mode and the day count that decided it, or None when the
+    advert never gave one.
+
+    This exists because `enrich` applied the override and `match` did not, and
+    the two of them are the answer to the same question. `match`'s
+    `work_modes` gate called bare `work_mode()`, got "unstated" for a posting
+    whose location is just a city, kept it and flagged it "arrangement not
+    stated"; `enrich` then read "4 days a week in the office" out of the same
+    advert one line later and stored the role as hybrid. 38 of one remote-only
+    reader's 472 seeded roles came out that way, 33 of them carrying both
+    "arrangement not stated; you asked for remote" and "4 days a week in the
+    office" on the same row, which is the tool contradicting itself in two
+    adjacent lines of its own output.
+    """
+    days = office_days(job.description or "")
+    if days:
+        return ("office" if days >= 5 else "hybrid"), days
+    return work_mode(job), None
+
+
 def enrich(job: Job) -> Job:
     """Fill the derived fields the dashboard filters on."""
-    job.work_mode = work_mode(job)
     found = _countries_in(job.location)
     job.country = job.country or (sorted(found)[0] if len(found) == 1 else
                                   ("multiple" if found else None))
@@ -1309,10 +1331,8 @@ def enrich(job: Job) -> Job:
     # It is the posting saying so in words, against a heuristic over a location
     # string, and 40 postings that say "3 days per week in the office" were
     # being shown as remote.
-    days = office_days(job.description or "")
+    job.work_mode, days = stated_work_mode(job)
     if days:
-        job.work_mode = "remote" if days == 0 else (
-            "office" if days >= 5 else "hybrid")
         flag = f"{days} day{'s' if days > 1 else ''} a week in the office"
         if flag not in job.flags:
             job.flags.append(flag)
@@ -1471,32 +1491,42 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
             if not cfg.remote_ok:
                 return False, ("remote role and remote is off" if loc
                                else "no location given and remote is off")
-            return True, ""
-        if not cfg.remote_ok and work_mode(job) == "remote" and not city_of(loc):
-            # Was `job.remote is True`, which only ever caught a platform flag
-            # and a bare "Remote". With `countries: [US]` and
-            # `remote_ok: false`, "Remote - US", "US Remote", "Remote (US)"
-            # and "Fully Remote - United States" were all kept, and US
-            # employers write it that way almost every time, so the setting
-            # was close to inert exactly where an American reader needs it.
-            #
-            # `city_of` is what keeps this honest. A posting listing "New
-            # York, Denver, Remote, San Francisco" is a role with offices, and
-            # somebody who said no to remote work still wants it: they are
-            # asking not to work from home, not asking to be hidden from
-            # employers who let other people. Only a location that names no
-            # office at all is a remote-only role.
-            return False, "remote role and remote is off"
+            # This used to `return True` here, which walked straight past the
+            # `work_modes` gate at the bottom of this function. A location of
+            # bare "Remote" was therefore the one way to make `work_modes:
+            # [remote]` inert, and it is the commonest location string there
+            # is. Jump App's "Sr. UX Designer (US)" was stored for a
+            # remote-only reader with `work_mode: hybrid` on the row and
+            # "remote, body says US" in its reasons, because the advert says
+            # "Remote or hybrid" and nothing ever asked. Fall through instead.
+        else:
+            if not cfg.remote_ok and work_mode(job) == "remote" \
+                    and not city_of(loc):
+                # Was `job.remote is True`, which only ever caught a platform
+                # flag and a bare "Remote". With `countries: [US]` and
+                # `remote_ok: false`, "Remote - US", "US Remote", "Remote
+                # (US)" and "Fully Remote - United States" were all kept, and
+                # US employers write it that way almost every time, so the
+                # setting was close to inert exactly where an American reader
+                # needs it.
+                #
+                # `city_of` is what keeps this honest. A posting listing "New
+                # York, Denver, Remote, San Francisco" is a role with offices,
+                # and somebody who said no to remote work still wants it: they
+                # are asking not to work from home, not asking to be hidden
+                # from employers who let other people. Only a location that
+                # names no office at all is a remote-only role.
+                return False, "remote role and remote is off"
 
-        found = _countries_in(loc)
-        if not found:
-            # A region is a set of countries, not an unrecognised place.
-            found = regions_in(loc)
-        if not found:
-            return False, (f"location not recognised ({loc})" if loc.strip()
-                           else "no location given")
-        if not (found & allowed):
-            return False, f"{loc} outside target countries"
+            found = _countries_in(loc)
+            if not found:
+                # A region is a set of countries, not an unrecognised place.
+                found = regions_in(loc)
+            if not found:
+                return False, (f"location not recognised ({loc})"
+                               if loc.strip() else "no location given")
+            if not (found & allowed):
+                return False, f"{loc} outside target countries"
 
     if cfg.work_modes:
         # An arrangement the reader did not ask for is dropped. One the
@@ -1504,7 +1534,10 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
         # postings do not say, and reading "we cannot tell" as "not remote"
         # would hide more real remote roles than it removed office ones. The
         # reader can see at a glance which is which.
-        mode = work_mode(job)
+        # `stated_work_mode`, not `work_mode`: a posting that says "4 days a
+        # week in the office" in its advert has stated its arrangement, and
+        # reading only the location string called that "unstated" and kept it.
+        mode, _days = stated_work_mode(job)
         if mode == "unstated":
             job.flags.append(
                 f"arrangement not stated; you asked for "
@@ -1928,7 +1961,24 @@ def score(job: Job, cfg: Config) -> float:
         # and the next said "comfortably above your floor" about the same pay.
         if top and cfg.salary_floor and comparable_cur and top >= cfg.salary_floor * 1.15:
             s += 10
-            why.append("comfortably above your floor")
+            # Both the filter and these points read the TOP of the band, which
+            # is deliberate and documented on `Salary.top`: 100k-150k against a
+            # 120k floor is still a role worth talking to them about. The
+            # sentence was not so careful. Accenture Federal's "$90k - $184k"
+            # was printed to a reader with a $150k floor as "comfortably above
+            # your floor", and so were 31 other bands whose advertised bottom
+            # is below the number they said was their minimum. The points are
+            # unchanged; only the claim is, because a band that straddles the
+            # floor and a band that clears it are not the same news.
+            bottom = job.salary.min if job.salary.min is not None else top
+            if job.salary.period == "day":
+                bottom *= 220
+            elif job.salary.period == "hour":
+                bottom *= 220 * 8
+            why.append("comfortably above your floor"
+                       if bottom >= cfg.salary_floor else
+                       "top of that band is above your floor, the bottom "
+                       "is not")
     else:
         why.append("unconfirmed salary")
 
