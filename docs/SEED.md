@@ -1,5 +1,10 @@
 # The seed: prebuilt roles for the slow half of a scan
 
+In one sentence: the slow three quarters of a scan, fetched once a week by
+somebody else and published as a file, so your first dashboard takes a minute
+instead of an hour. It is not a replacement for a scan, and the rest of this
+page is why.
+
 A scan reads its sources in four passes.
 
 | Pass | What | Sources | Time |
@@ -32,8 +37,9 @@ your config exactly as a scan does. Nobody else's filters can reach you.
 
 ## Shards
 
-The whole world with adverts attached is 242MB gzipped: 289,640 roles from
-8,779 boards, measured on the build of 2026-08-28. So it is split by country
+The whole world with adverts attached is 242MB gzipped: 289,640 role rows
+from 8,779 boards, measured on the build of 2026-08-28. Rows rather than
+roles, because a posting open in several towns is written once per town. So it is split by country
 and you take only what you need.
 
     UK   16.6 MB  +  21.7 MB  =  38.3 MB
@@ -63,14 +69,24 @@ It reads the index, works out which shards your `locations.countries` needs,
 downloads only those, screens them against your config and stores what
 survives. A UK reader fetches three files and 38MB, not 164 files and 242MB.
 
-The download is kept (in `seed/` beside your config, or wherever `--keep`
-says) so a second config or a second machine does not fetch it again, and a
-re-run after a dropped connection resumes rather than starting over. A local
-directory works too:
+The download is kept so a second config or a second machine does not fetch it
+again, and a re-run after a dropped connection resumes rather than starting
+over. **Say where it goes with `--keep DIR`.** Without that flag the directory
+is worked out from `--config`, which means it lands somewhere you did not
+name and, with no `--config` at all, not in your working directory either.
+That is tens of megabytes to lose track of. A local directory works as a
+source too:
 
     job-radar seed load ./shards
 
-`--dry-run` tells you what it would store without writing.
+`--dry-run` reports what would be stored and writes nothing to the database.
+It still downloads the shards, because screening them means reading them, so
+it is not a way to preview the cost of the download.
+
+Two counts, and they are not the same number. A role open in six towns is one
+row per town, and the database keys on the posting, so the roles stored are
+fewer than the roles `seed load` reports as matching. On the build of
+2026-08-28 a UK reader's 41,038 rows were 40,199 distinct postings.
 
 A shard whose downloaded size disagrees with the index is refused rather than
 stored. A truncated shard decompresses and parses perfectly well as a shard

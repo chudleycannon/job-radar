@@ -82,7 +82,7 @@ Then:
 ```bash
 job-radar serve       # the dashboard, at http://127.0.0.1:8765
 job-radar list        # the same thing as text
-job-radar list --new  # only what arrived since the last scan
+job-radar list --new  # only what was first seen on the most recent day
 job-radar scan        # read the boards again
 ```
 
@@ -108,35 +108,59 @@ be found rather than failing quietly.
 
 ## Skip the slow hour, if you want to
 
-A scan reads its sources in four passes. The first is about five minutes and
-gives you roughly half the roles. The other three are 8,779 employer boards
-one request at a time, and `apply.workable.com` is paced at 0.7 requests a
-second because it once answered a burst with a sixteen hour refusal, so that
-part is fifty minutes whatever your machine is doing.
+The first scan takes about an hour, and nearly all of that hour is three slow
+platforms. If you would rather have a full dashboard today, there is a file
+you can download instead: somebody has already read those boards, and the
+result is published for anyone to take.
 
-Those three passes are published, rebuilt from the same code you are running:
+**What it is.** A snapshot of every role on Ashby, Greenhouse and Workable's
+own boards, 8,779 employer boards in all, taken by the same code you are
+running and rebuilt every Sunday. The advert text comes with it, so a role
+that arrives this way can be screened, ranked and drafted against exactly like
+one you fetched yourself.
+
+**Whether to use it.** Use it if you want roles in front of you in a minute
+rather than in an hour. Skip it if you are happy to wait, because a scan finds
+the same roles and fresher ones.
+
+**What you give up**, and none of it is subtle:
+
+- **It is not a scan and it does not replace one.** Everything that is not
+  Ashby, Greenhouse or Workable is missing from the file entirely. That is the
+  first five minutes of a scan, so skipping it saves you almost nothing.
+- **It is up to a week old.** Roles die in days. A seeded role may already be
+  filled, and the file has no way to tell you so.
+- **A scan's answer wins on every field.** So run one anyway. The sequence
+  that works is: load the seed, start a scan, read the dashboard while the
+  scan corrects it underneath you.
 
 ```bash
 job-radar seed load https://github.com/maccydee/job-radar/releases/download/seed-latest
 ```
 
-It reads an index, works out which shards your `locations.countries` needs,
-and downloads only those. A UK reader takes 38MB and 41,038 roles, against
-242MB and 289,640 for the whole world. Roles whose country could not be read, and roles open in
-several countries at once, come with every download, because neither is
-evidence that a job is somewhere else.
+It reads an index of what is published, works out which country files your
+`locations.countries` needs, and downloads only those. A UK reader takes 38MB
+and 41,038 rows, against 242MB and 289,640 for the whole world. Roles whose
+country could not be read, and roles open in several countries at once, come
+with every download, because neither is evidence that a job is somewhere else.
+
+Those are rows rather than distinct adverts. A job open in six towns is
+written once per town, and the database keeps one row per posting, so around
+2% of a UK download is the same advert twice. The count is simply larger than
+the number of jobs, which is why the roles stored come out fewer than the
+roles `seed load` reports as matching.
 
 What arrives is screened against **your** config, exactly as a scan is. The
 file carries no score, no fit and no reasons: those are answers to a question
 only your own settings ask, and nobody else's filters can reach you. The
 request sends a user agent and nothing else.
 
-It does not replace a scan and it does not make one faster. It is rebuilt
-weekly, roles die in days, and a scan reads the fast half that is not in it at
-all. So run a scan anyway; its answer wins on every field. What the seed
-changes is that your first hour is spent reading a dashboard rather than
-watching a counter. What it changes is that your first hour is spent reading a
-dashboard rather than watching a counter.
+The download is kept, so a second config or a second machine does not fetch it
+again and a dropped connection resumes rather than starting over. Say where it
+goes with `--keep DIR`; without that flag the location is worked out from
+`--config` and is easy to lose track of. `--dry-run` reports what would be
+stored without writing to the database, but it still downloads the file,
+because it has to read the roles to screen them.
 
 `docs/SEED.md` has the format, the shard sizes and how to build your own.
 
@@ -430,8 +454,12 @@ so these are stated rather than left for you to find.
 - **LinkedIn rows are leads, not postings.** The public `jobs-guest` endpoint
   carries no description and no salary, so those roles cannot be screened
   against your dealbreakers, only looked at.
-- **Salary you can filter on.** Around a third of postings state one. That is
-  the market, not a bug, and the salary rule above is built around it.
+- **Salary you can filter on.** Around a third of postings state one, and
+  where you are looking moves that a long way. Measured across the published
+  seed, US postings state a figure 34% of the time, against 19% for the roles
+  a UK reader gets. So a UK search is closer to one in five than one in
+  three, and most of your list will read `unconfirmed salary`. That is the
+  market, not a bug, and the salary rule above is built around it.
 - **Currencies other than your own** are never converted. With a floor set, a
   salary in another currency is shown, marked "not compared", and can neither
   disqualify a role nor earn it points, because a wrong exchange rate drops

@@ -43,17 +43,45 @@ MIN_FRACTION = 0.80
 # cannot be read.
 MIN_ROLES = 150_000
 
+# And a ceiling. A build twice the size is not a good week either: the shape
+# it catches is every role emitted twice, which is 200% and reads as success.
+MAX_FRACTION = 1.50
+
+
+class Unknown(Exception):
+    """The published index could not be read. Not the same as "none"."""
+
 
 def _published_index() -> dict | None:
-    """The index currently on the release, or None if there is not one."""
+    """The index on the release. None if there is genuinely none.
+
+    Raises `Unknown` if it could not be read, which is a different answer and
+    was being collapsed into the same one. `check()` treats "nothing to
+    compare with" as permission to skip its only comparative test, so a
+    single flaky HTTPS request turned the gate off: the same 159,220-role
+    build was REFUSED when the index loaded, at 55% of what is published, and
+    PUBLISHED when it did not. One dropped connection and the guard becomes a
+    floor of 150,000, which is 52% of the current set.
+
+    This project's own note says a value meaning "we cannot say" must never be
+    read as "no", and this file said it too, one function further down.
+    """
+    req = urllib.request.Request(
+        f"{BASE}/index.json",
+        headers={"User-Agent": "job-radar seed refresh"})
     try:
-        req = urllib.request.Request(
-            f"{BASE}/index.json",
-            headers={"User-Agent": "job-radar seed refresh"})
         with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read().decode("utf-8"))
-    except Exception:
-        return None
+            body = r.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None          # genuinely nothing published yet
+        raise Unknown(f"the published index answered HTTP {exc.code}") from None
+    except Exception as exc:
+        raise Unknown(f"the published index could not be read ({exc})") from None
+    try:
+        return json.loads(body.decode("utf-8"))
+    except ValueError as exc:
+        raise Unknown(f"the published index is not readable JSON ({exc})") from None
 
 
 def _roles(idx: dict | None) -> int:
@@ -84,6 +112,26 @@ def check(new: dict, old: dict | None) -> list[str]:
         if not (new.get("shards") or {}).get(name):
             problems.append(f"no {name} shard, and every reader takes that one")
 
+    if prev and fresh > prev * MAX_FRACTION:
+        # No upper bound at all meant a build that emitted every role twice,
+        # 579,280 of them, sailed through as a very good week.
+        problems.append(
+            f"{fresh:,} roles against {prev:,} published, which is "
+            f"{100 * fresh / prev:.0f}% of it. Anything over "
+            f"{100 * MAX_FRACTION:.0f}% is treated as a bad run too.")
+
+    # A shard that collapsed without disappearing. Only a vanished shard was
+    # caught, so DE going from 6,261 roles to 3 published without a word.
+    if old:
+        for name, was in (old.get("shards") or {}).items():
+            now = (new.get("shards") or {}).get(name)
+            if not now or was.get("roles", 0) < 500:
+                continue
+            if now.get("roles", 0) < was["roles"] * MIN_FRACTION:
+                problems.append(
+                    f"{name} went from {was['roles']:,} roles to "
+                    f"{now.get('roles', 0):,}")
+
     # A platform that vanished entirely. Losing one is the shape of failure a
     # role count alone can hide: Workable is 7% of the roles and 60% of the
     # runtime, so a build that lost all of it still counts as 93% of a good
@@ -94,6 +142,54 @@ def check(new: dict, old: dict | None) -> list[str]:
         if big:
             problems.append(f"shards that had 500+ roles last time are absent "
                             f"now: {', '.join(big)}")
+    return problems
+
+
+def _shards_look_read(out: Path) -> list[str]:
+    """Open a shard and look at a role. Nothing else here ever does.
+
+    Every other check reads the index, and the index is written by
+    `Writer.finish` from its own counters, so it agrees with itself whatever
+    happened. A build of 289,640 rows with every description empty passes all
+    of them, and descriptions are the whole reason the seed carries adverts
+    rather than links.
+
+    Deliberately a sample and a low bar. This is a gate against a broken
+    build, not a quality score, and a real advert is many hundreds of
+    characters: anything that reads like adverts at all clears it easily.
+    """
+    import gzip
+    problems = []
+    for name in ("unplaced", "multiple"):
+        path = out / f"{name}.jsonl.gz"
+        if not path.exists():
+            continue                      # already reported by `check`
+        rows, described, located = 0, 0, 0
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            fh.readline()                 # header
+            for line in fh:
+                if rows >= 400:
+                    break
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    problems.append(f"{path.name} has a row that is not JSON")
+                    break
+                rows += 1
+                if len((row.get("d") or "").strip()) >= 200:
+                    described += 1
+                if (row.get("l") or "").strip():
+                    located += 1
+        if rows and described < rows * 0.5:
+            problems.append(
+                f"{path.name}: only {described} of {rows} sampled roles carry "
+                f"an advert. Without one a role cannot be scored, screened or "
+                f"written from, which is the whole reason the seed is 242MB "
+                f"rather than 20MB.")
+        if rows and located < rows * 0.5:
+            problems.append(
+                f"{path.name}: only {located} of {rows} sampled roles have a "
+                f"location")
     return problems
 
 
@@ -128,7 +224,18 @@ def main(argv=None) -> int:
         print(f"build wrote no index ({exc}), publishing nothing")
         return 1
 
-    problems = check(new, _published_index())
+    try:
+        published = _published_index()
+    except Unknown as exc:
+        # Refusing rather than proceeding without the comparison. The gate's
+        # only test against reality is the published set, and running without
+        # it is running with the guard off. A week-old seed is a small cost;
+        # publishing a half-built one over a good one is not.
+        print(f"{exc}, so this build cannot be compared with what is live. "
+              f"Publishing nothing; it will try again next week.")
+        return 1
+
+    problems = check(new, published) + _shards_look_read(staging)
     print(f"\n{_roles(new):,} roles in {len(new.get('shards') or {})} shards")
     for p in problems:
         print(f"  REFUSED: {p}")
@@ -140,12 +247,29 @@ def main(argv=None) -> int:
         print("\nDry run, so nothing was uploaded.")
         return 0
 
-    print("\nuploading", flush=True)
-    names = ["index.json"] + sorted(p.name for p in staging.glob("*.jsonl.gz"))
-    r = subprocess.run(["gh", "release", "upload", TAG, *names, "--clobber"],
+    # Shards first, index LAST. Uploading the index first meant that for the
+    # length of a 165-asset, 242MB upload the release carried a new index
+    # over old shards, and a failure partway through left it that way until
+    # the next run. Every reader in between would fetch an index promising
+    # roles the shards beside it do not have. `seed.fetch` writes its own
+    # index last for exactly this reason; the publisher was doing the
+    # opposite. The docstring's claim that a bad run never leaves a half set
+    # was true of the local directory and false of the thing people fetch.
+    print("\nuploading shards", flush=True)
+    shards = sorted(p.name for p in staging.glob("*.jsonl.gz"))
+    r = subprocess.run(["gh", "release", "upload", TAG, *shards, "--clobber"],
                        cwd=str(staging))
     if r.returncode != 0:
-        print(f"upload failed with {r.returncode}")
+        print(f"upload failed with {r.returncode}; the published index still "
+              f"describes the previous set, which is still there")
+        return 1
+    print("uploading index", flush=True)
+    r = subprocess.run(["gh", "release", "upload", TAG, "index.json",
+                        "--clobber"], cwd=str(staging))
+    if r.returncode != 0:
+        print(f"index upload failed with {r.returncode}. The new shards are "
+              f"live under the old index, which lists fewer of them; re-run "
+              f"to finish.")
         return 1
 
     if out.exists():

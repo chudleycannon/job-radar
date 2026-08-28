@@ -277,14 +277,42 @@ def fetch(base_url: str, countries: Iterable[str], dest: str | Path,
     idx = json.loads(raw.decode("utf-8"))
     _check(idx.get("schema"), f"{base}/index.json")
 
-    want = [n for n in shards_for(countries) if n in (idx.get("shards") or {})]
+    shards = idx.get("shards") or {}
+    want = [n for n in shards_for(countries) if n in shards]
     if not want:
         say(f"Nothing published for {', '.join(shards_for(countries))}.")
         return idx
-    total = sum(idx["shards"][n]["bytes"] for n in want)
-    say(f"{sum(idx['shards'][n]['roles'] for n in want):,} roles in "
-        f"{len(want)} shard(s), {total / 1e6:.0f}MB, built "
-        f"{idx.get('generated', 'at some point')}.")
+    # Said before the sizes, because the line above drops a country this index
+    # does not carry and the summary below then counts only the two shards
+    # every reader gets. A reader whose country has no shard was told
+    # "21,337 roles in 2 shard(s), 22MB, built 2026-08-28" and nothing else,
+    # which is exactly what a healthy download looks like.
+    #
+    # Not a hypothetical for a small country: `tools/refresh_seed.py` refuses
+    # a build only for a shard that held 500 or more roles last week, so
+    # Norway (323 roles), Turkey (334) and Finland (434) on the build of
+    # 2026-08-28 can each fall out of a build entirely without anything
+    # refusing to publish it. This is the line that would say so.
+    asked = [c.strip() for c in countries if (c or "").strip()]
+    absent = [c for c in asked if c not in shards]
+    if absent:
+        say(f"Nothing published for {', '.join(absent)}: no shard under that "
+            f"name in this index. Taking the two every reader gets.")
+    total = sum(shards[n]["bytes"] for n in want)
+    built = idx.get("generated", "at some point")
+    ride = sum(shards[n]["roles"] for n in want if n in EVERYWHERE)
+    yours = sum(shards[n]["roles"] for n in want if n not in EVERYWHERE)
+    if not asked:
+        say(f"{yours + ride:,} roles in {len(want)} shard(s), "
+            f"{total / 1e6:.0f}MB, built {built}.")
+    else:
+        # Split for the same reason `describe` splits it: 1,584 Portuguese
+        # roles and 21,337 that go to everybody is a different fact from
+        # "22,921 roles", and the reader is deciding whether this file is
+        # worth 23MB to them.
+        say(f"{yours:,} roles in {', '.join(asked)}, plus {ride:,} unplaced "
+            f"or open in several countries. {len(want)} shard(s), "
+            f"{total / 1e6:.0f}MB, built {built}.")
 
     for name in want:
         path = out / f"{name}.jsonl.gz"
@@ -415,25 +443,69 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
                     f"{path.name} does not begin with a shard header. Its "
                     f"first line is {head[:60]!r}. Rebuild the set.") from None
             _check(header.get("schema"), str(path))
+            # The header says which shard it is and how many roles are in it,
+            # and both were parsed and thrown away. A UK.jsonl.gz whose header
+            # reads {"schema":1,"shard":"AE","roles":10} imported as UK: the
+            # index announced 90 roles, the run read 50, printed "50 roles
+            # read", exited 0, and delivered no UK roles at all. Everything
+            # needed to catch it was already on the line.
+            said = header.get("shard")
+            if said and said != name:
+                raise ValueError(
+                    f"{path.name} contains the {said} shard, not {name}. The "
+                    f"set is mislabelled or was assembled by hand; rebuild or "
+                    f"re-fetch it rather than importing one country as "
+                    f"another.")
+            promised = header.get("roles")
+            seen = 0
             for n, line in enumerate(fh, 2):
                 if not line.strip():
                     continue
                 try:
                     yield _unpack(json.loads(line))
-                except (ValueError, TypeError) as exc:
+                    seen += 1
+                except (ValueError, TypeError, KeyError) as exc:
                     # Named by line, because "the file is bad" is not enough
                     # to fix a 35,000 line file with one bad row in it.
                     raise ValueError(
                         f"{path.name} line {n} is not a role ({exc}). "
                         f"Rebuild the set.") from None
+        # Checked after the file rather than trusted before it, because a
+        # gzip stream that ends early decompresses cleanly up to the cut and
+        # a short shard is not a shard that failed, it is a shard with fewer
+        # jobs in it.
+        if isinstance(promised, int) and seen != promised:
+            raise ValueError(
+                f"{path.name} says it holds {promised:,} roles and {seen:,} "
+                f"were readable. Re-fetch it: the difference would look "
+                f"exactly like jobs that do not exist.")
 
 
 def describe(idx: dict, countries: Iterable[str]) -> str:
-    """One line for the user, naming what they are about to get and its age."""
+    """One line for the user, naming what they are about to get and its age.
+
+    The reader's own countries are counted apart from `unplaced` and
+    `multiple`, because adding the three together tells a reader in a quiet
+    country the opposite of the truth. Those two ship with every download and
+    are 21,337 roles on the build of 2026-08-28, so one merged total barely
+    moves whatever the reader's own shard holds. Portugal has 1,584 roles of
+    its own and was announced as "22,921 roles for PT, multiple, unplaced".
+    Norway has 323 and was announced as 21,660. Gibraltar, which has no shard
+    in this index at all, was announced as "21,337 roles for multiple,
+    unplaced", its own country quietly dropped from the list of names by the
+    `k in want` filter below, with nothing anywhere in the line saying so.
+
+    So "nothing published for your country" rendered as a healthy five-figure
+    download, which is the failure this project keeps finding, and the
+    `if not roles` line could never catch it: it only fires when `unplaced`
+    and `multiple` are BOTH empty, and `tools/refresh_seed.py` refuses to
+    publish a build that is missing either. The honest branch was written for
+    the right failure and put where it cannot see it.
+    """
     # Same rule as `_wanted`: no countries configured means no country filter,
     # so the reader gets the whole index rather than the two shards that ride
     # along with every download.
-    asked = [c for c in countries if (c or "").strip()]
+    asked = [c.strip() for c in countries if (c or "").strip()]
     shards = idx.get("shards") or {}
     want = shards_for(asked) if asked else sorted(shards)
     have = {k: v for k, v in shards.items() if k in want}
@@ -442,6 +514,25 @@ def describe(idx: dict, countries: Iterable[str]) -> str:
     if not roles:
         where = ", ".join(want) if want else "any country"
         return f"No prebuilt roles for {where} in this index."
-    return (f"{roles:,} roles for {', '.join(sorted(have))}, "
-            f"{size / 1e6:.0f}MB, built {idx.get('generated', 'at some point')}. "
-            f"Your own scan runs anyway and its answer wins.")
+    tail = (f"{size / 1e6:.0f}MB, built "
+            f"{idx.get('generated', 'at some point')}. Your own scan runs "
+            f"anyway and its answer wins.")
+    if not asked:
+        return f"{roles:,} roles for {', '.join(sorted(have))}, {tail}"
+    mine = {k: v.get("roles", 0) for k, v in have.items()
+            if k not in EVERYWHERE}
+    yours = sum(mine.values())
+    ride = roles - yours
+    # A country the reader asked for that this index does not carry. Named
+    # rather than dropped: it is the single fact they most need and the only
+    # one the old line never printed.
+    absent = [c for c in asked if c not in shards]
+    if not yours:
+        named = ", ".join(absent or asked)
+        return (f"Nothing published for {named}. The {ride:,} roles in "
+                f"unplaced and multiple come with every download, and none "
+                f"of them is placed in {named}. {tail}")
+    line = ", ".join(f"{n:,} in {k}" for k, n in sorted(mine.items()))
+    head = f"Nothing published for {', '.join(absent)}. " if absent else ""
+    return (f"{head}{line}, plus {ride:,} unplaced or open in several "
+            f"countries that come with every download. {tail}")
