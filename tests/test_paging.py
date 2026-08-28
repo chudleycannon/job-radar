@@ -34,8 +34,8 @@ def test_a_result_can_say_it_was_cut_off():
     """On the Result, not inside a payload, because a parser should not have to
     know about a fetcher's paging and the scan summary reads Results."""
     r = fetch_mod.Result(source=None, payload={"x": 1}, truncated=True)
-    assert r.truncated is True
-    # And it is a fact about a GOOD result: the rows are real, there are just
+    # `assert r.truncated is True` used to lead here and asserted only that a
+    # dataclass stores the argument it was handed. It is a fact about a GOOD result: the rows are real, there are just
     # more of them. Not a failure, so `ok` is unaffected.
     assert r.ok is True
     assert fetch_mod.Result(source=None, payload={}).truncated is False

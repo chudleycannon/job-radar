@@ -210,28 +210,14 @@ def test_a_scan_asks_each_source_exactly_once():
     srcs = [Source(company=f"c{i}",
                    url=f"https://h{i % 7}.example.test/api/{i}",
                    platform="greenhouse") for i in range(50)]
-    asked: list[str] = []
-
-    class Recording:
-        def mount(self, prefix, adapter): pass
-
-        def get(self, url, headers=None, timeout=None):
-            asked.append(url)
-
-            class R:
-                status_code = 200
-                headers = {"Content-Type": "application/json"}
-                text = "[]"
-
-                @staticmethod
-                def json():
-                    return []
-            return R()
-
-    import threading
-    fetch_mod._local = threading.local()
-    fetch_mod._local.session = Recording()
-
+    # This used to build a Recording session and assign
+    #     fetch_mod._local = threading.local()
+    # which `interleave_by_host` never consults -- it reorders a list and
+    # opens nothing -- and which was never put back. run_all.py loads all 72
+    # files into one interpreter, so from this file onward every later file
+    # saw a replaced thread-local, and any limiter `fetch.pace_this_thread`
+    # had installed on it was silently gone. Removed rather than wrapped in a
+    # try/finally, because nothing here needed it.
     queued = fetch_mod.interleave_by_host(list(srcs))
     assert len(queued) == len(srcs), "the reorder changed how many boards are read"
     assert {s.key for s in queued} == {s.key for s in srcs}, (

@@ -97,7 +97,11 @@ def test_the_uid_survives_the_round_trip():
     """
     d = _tmp(); seed.build(JOBS, d)
     back = {j.uid for j in seed.load(d, ["UK", "DE"])}
-    assert {j.uid for j in JOBS} <= back | {JOBS[1].uid}
+    # No escape hatch for any row. This read `<= back | {JOBS[1].uid}`, which
+    # handed the DE row -- the one the "DE" in the want list is here to
+    # exercise -- a free pass, so a uid that failed to round-trip in that
+    # shard would have gone through green.
+    assert {j.uid for j in JOBS} <= back
 
 
 def test_the_description_and_a_confirmed_salary_survive():
@@ -147,8 +151,11 @@ def test_a_file_from_a_future_format_is_refused_not_guessed_at():
 def test_a_shard_that_is_absent_is_not_an_error():
     """"No roles in Portugal" and "no Portugal shard" are the same fact."""
     d = _tmp(); seed.build(JOBS, d)
-    assert list(seed.load(d, ["PT"])) or True
-    assert not [j for j in seed.load(d, ["PT"]) if j.country == "PT"]
+    # The load itself is the assertion: an absent shard must come back as a
+    # result, not as an exception. This line read `assert list(...) or True`,
+    # which is a tautology and asserted nothing at all beyond not raising.
+    rows = list(seed.load(d, ["PT"]))
+    assert not [j for j in rows if j.country == "PT"]
 
 
 def test_rebuilding_an_unchanged_set_produces_identical_bytes():

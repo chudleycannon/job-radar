@@ -36,6 +36,10 @@ BARS = (
 )
 
 OFFERS = (
+    # This one read as "not stated", because the pattern wanted the noun next
+    # to the verb and here a clause sits between them. A miss in the safe
+    # direction, but it is an employer saying yes to the reader who needs the
+    # answer most.
     "Visa sponsorship and relocation are provided.",
     "We provide visa sponsorship for this role.",
     "Relocation and visa support offered.",
@@ -73,15 +77,6 @@ def test_equal_opportunity_boilerplate_is_not_a_bar():
     """
     wrong = [t for t in BOILERPLATE if _rights(t) == "no sponsorship"]
     assert not wrong, f"boilerplate read as a bar: {wrong}"
-
-
-def test_an_offer_split_across_a_clause_is_still_an_offer():
-    """"Visa sponsorship and relocation are provided" read as not stated,
-    because the pattern wanted the noun next to the verb. A miss in the safe
-    direction, but it is an employer saying yes to the reader who needs the
-    answer most."""
-    assert _rights("Visa sponsorship and relocation are provided.") \
-        == "sponsorship offered"
 
 
 def test_every_offer_still_reads_as_one():

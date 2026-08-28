@@ -36,12 +36,6 @@ def _uid(url, company="Acme", title="Engineer", location="London"):
                location=location).uid
 
 
-def test_two_postings_that_differ_only_in_the_query_are_two_roles():
-    a = _uid("https://stripe.com/jobs/search?gh_jid=111")
-    b = _uid("https://stripe.com/jobs/search?gh_jid=999")
-    assert a != b, "every job on this board still hashes to one id"
-
-
 def test_the_identifying_parameter_survives_whatever_it_is_called():
     for key in ("gh_jid", "id", "jobid", "jobId", "posting", "req"):
         assert _uid(f"https://x.test/j?{key}=1") != _uid(f"https://x.test/j?{key}=2"), key

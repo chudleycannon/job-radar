@@ -94,10 +94,28 @@ def test_unreadable_or_missing_state_never_stops_a_scan():
 
 def test_nothing_is_written_when_no_path_was_given():
     """A test, a benchmark or a hand probe has no business writing into
-    anybody's state directory."""
-    lim = HostLimiter()
+    anybody's state directory.
+
+    The body used to assert only `blocked_for(URL) > 0`, which is the in-
+    process half and is already covered twice in this file. It never looked
+    at a filesystem, so it could not fail if `block` started writing to a
+    path of its own choosing, which is the fault the name promises to guard.
+    """
+    import os
+
+    d = _path().parent
+    d.mkdir(parents=True, exist_ok=True)
+    before = {p.name for p in d.iterdir()}
+    cwd_before = {p.name for p in Path(os.getcwd()).iterdir()}
+
+    lim = HostLimiter()                    # no remember_blocks, so no path
     lim.block(URL, LONG)
-    assert lim.blocked_for(URL) > 0        # still works within the process
+
+    assert lim.blocked_for(URL) > 0, "the block does not hold in-process"
+    assert {p.name for p in d.iterdir()} == before, (
+        "a limiter given no path wrote into the state directory anyway")
+    assert {p.name for p in Path(os.getcwd()).iterdir()} == cwd_before, (
+        "a limiter given no path wrote into the working directory")
 
 
 def test_the_longest_block_wins_rather_than_the_latest():
@@ -112,8 +130,24 @@ def test_the_longest_block_wins_rather_than_the_latest():
 def test_the_scan_asks_for_this_and_puts_it_somewhere_durable():
     """The fix only exists if the scan passes a path, and a temp directory
     would lose it exactly as reliably as not writing it at all."""
+    import ast
     import inspect
+    import textwrap
+
     from jobradar import cli
-    src = inspect.getsource(cli.cmd_scan)
-    assert "blocks_path=" in src, "the scan no longer remembers host blocks"
-    assert "/tmp" not in src.split("blocks_path=")[1][:200]
+
+    # Parsed rather than greped. This read
+    #     "/tmp" not in src.split("blocks_path=")[1][:200]
+    # over the raw source of cmd_scan, so a comment saying why the path is not
+    # in /tmp -- which is a comment this codebase would write -- would fail it
+    # on its own explanation, and the 200-character window was arbitrary.
+    fn = ast.parse(textwrap.dedent(inspect.getsource(cli.cmd_scan))).body[0]
+    passed = [kw.value for n in ast.walk(fn) if isinstance(n, ast.Call)
+              for kw in n.keywords if kw.arg == "blocks_path"]
+    assert passed, "the scan no longer remembers host blocks"
+    for v in passed:
+        expr = ast.unparse(v)
+        assert "/tmp" not in expr and "gettempdir" not in expr \
+            and "mkdtemp" not in expr, (
+            f"blocks_path={expr} puts the memory somewhere that is cleared, "
+            f"which loses it exactly as reliably as not writing it")

@@ -383,7 +383,11 @@ def test_the_contributor_notes_do_not_carry_a_rotting_number():
     from jobradar import adapters
     facts = {
         f"{len(boards):,} employer boards": True,
-        f"{len(data['sources']):,} \nentries": None,          # wrapped, checked below
+        # Wrapped across a line in CLAUDE.md, so the newline is normalised
+        # away below like every other claim rather than skipped. This was
+        # None with the note "checked below" and no check below it, so the
+        # entries count read as verified and was not.
+        f"{len(data['sources']):,} entries": True,
         f"{len(adapters.REGISTRY)} adapters": True,
         f"{len({s['platform'] for s in boards})} board platforms": True,
     }
@@ -391,4 +395,6 @@ def test_the_contributor_notes_do_not_carry_a_rotting_number():
         if must is None:
             continue
         assert claim in text.replace("\n", " "), f"CLAUDE.md no longer says {claim!r}"
-    assert "—" not in text, "CLAUDE.md has an em-dash in it"
+    # Written as an escape so this file does not itself contain the character
+    # it is here to keep out, which is how test_workflows.py does it.
+    assert "\u2014" not in text, "CLAUDE.md has an em-dash in it"

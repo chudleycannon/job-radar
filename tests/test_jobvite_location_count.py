@@ -41,12 +41,6 @@ def _jobs(*rows):
 COUNT_CELL = ' Remote<span>,</span> <div class="jv-meta"> 4 Locations </div> '
 
 
-def test_a_count_never_survives_as_a_location():
-    j = _jobs(_row("/dwt/job/a2", "Data Analyst", COUNT_CELL))[0]
-    assert not re.match(r"^\d+\s+Locations?$", j.location or "")
-    assert j.location == "Remote"
-
-
 def test_the_count_is_kept_as_a_flag_rather_than_dropped():
     j = _jobs(_row("/dwt/job/a2", "Data Analyst", COUNT_CELL))[0]
     assert any("4 locations" in f for f in j.flags), j.flags

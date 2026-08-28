@@ -92,7 +92,7 @@ def test_no_prompt_contains_an_em_dash():
     """The documents are gated on having none, and a prompt that uses one is
     showing the model the thing it is telling it not to do."""
     for kind in runner.PROMPTS:
-        assert "—" not in _prompt(kind), kind
+        assert "\u2014" not in _prompt(kind), kind
 
 
 # --------------------------------------------------------------------------
@@ -256,7 +256,7 @@ def test_the_date_form_the_prompt_teaches_is_the_one_the_checker_reads():
     not installed on a CI runner.
     """
     pat = re.compile(
-        r"(?:19|20)\d{2}\s*[-–—]\s*(?:[a-z]{3,9}\s)?"
+        r"(?:19|20)\d{2}\s*[-\u2013\u2014]\s*(?:[a-z]{3,9}\s)?"
         r"(?:present|current|now|(?:19|20)\d{2})")
     for example in ("2022 - Present", "2022 - 2025"):
         assert _says("cv", example), f"the prompt no longer shows {example}"
@@ -372,7 +372,6 @@ def test_the_document_prompts_name_the_files_the_recorder_reads():
     assert _says("cv", "cv-rating.txt")
     assert _says("cv", "NN/100"), \
         "the rating format the NN/100 parser anchors on is gone"
-    assert re.search(r"\b(\d{1,3})\s*/\s*100\b", "72/100"), "sanity"
 
     assert _says("cover_letter", "`cover-letter.md`")
     assert _says("cover_letter", "overlap.txt")

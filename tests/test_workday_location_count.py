@@ -79,4 +79,4 @@ def test_a_count_with_no_usable_path_does_not_leave_the_count_behind():
     already knows how to say it does not know."""
     j = _jobs({"title": "x", "locationsText": "4 Locations",
                "externalPath": "", "bulletFields": []})[0]
-    assert "Location" not in (j.location or "")
+    assert j.location == "", f"a count left {j.location!r} behind as a place"

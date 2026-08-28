@@ -74,7 +74,9 @@ def test_the_bundled_list_still_holds_the_boards_its_own_meta_claims():
     assert d["meta"]["boards"] == len(_employer_boards()), (
         f"meta.boards says {d['meta']['boards']} but the file holds "
         f"{len(_employer_boards())} employer boards")
-    assert d["meta"]["boards"] == 17807
+    # No literal here on purpose. `meta.boards` is computed by `sources.save()`
+    # and the assertion above is the invariant; a number written down beside it
+    # only breaks on every legitimate change to the list.
 
 
 def test_no_board_is_named_after_a_url_or_a_bare_hostname():
@@ -111,7 +113,7 @@ def test_no_name_ends_in_a_stray_separator_or_carries_scrape_whitespace():
     bad = []
     for s in _sources():
         n = s.get("company") or ""
-        if re.search(r"[\-–—,;:|/\\(\[{]\s*$", n) or n != n.strip() \
+        if re.search(r"[\-\u2013\u2014,;:|/\\(\[{]\s*$", n) or n != n.strip() \
                 or re.search(r"\s{2,}", n):
             bad.append(n)
     assert bad == [], bad
@@ -349,11 +351,9 @@ def test_the_handshake_error_says_whose_fault_it_is():
     assert err != "SSLError"
 
 
-def test_a_handshake_failure_reads_as_unreachable_and_is_never_prunable(monkeypatch=None):
+def test_a_handshake_failure_reads_as_unreachable_and_is_never_prunable():
     src = Source(company="Roke", platform="custom",
                  url="https://www.roke.co.uk/wp-json/wp/v2/job?per_page=100")
-    real = discover.count_jobs.__globals__  # not patched; we patch fetch_one below
-    del real
 
     def fake_fetch_one(s, **kw):
         return Result(s, error="TLS handshake failed (TLSV1_ALERT_PROTOCOL_VERSION)",

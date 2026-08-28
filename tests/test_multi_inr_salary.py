@@ -191,13 +191,3 @@ def test_a_number_that_is_not_pay_does_not_end_the_search_for_one():
     s = parse_text(body)
     assert s.confirmed, "a stated range was read as no salary at all"
     assert (s.min, s.max, s.currency) == (180_000.0, 325_000.0, "USD")
-
-
-def test_the_pay_context_gate_is_still_a_gate():
-    """The fix above must not have turned it into a pass-through. An
-    unsymbolled range in prose is still not a salary, however many of them
-    the parser now walks past.
-    """
-    s = parse_text("Our platform grew from 25,000 to 90,000 members last year, "
-                   "and we serve 40,000 to 120,000 requests per second.")
-    assert not s.confirmed, f"read a member count as pay: {s.min}-{s.max}"

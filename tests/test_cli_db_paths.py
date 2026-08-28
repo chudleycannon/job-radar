@@ -65,18 +65,6 @@ def _run(cfg, *argv) -> tuple[int, str]:
 
 # ------------------------------------------------- a database that is not there
 
-def test_a_read_command_does_not_invent_a_database():
-    """`job-radar list --db typo.db` printed `0 role(s)`, exited 0, and left a
-    64KB file behind. Nothing about that output said the path was wrong."""
-    with _lab() as (root, cfg):
-        typo = root / "typo.db"
-        code, out = _run(cfg, "list", "--db", str(typo))
-        assert code == 1, out
-        assert "0 role(s)" not in out, out
-        assert str(typo) in out
-        assert not typo.exists(), "a read command created the database"
-
-
 def test_no_read_command_invents_a_database():
     """`applied` already refused, because it looks a role up and finds none.
     The other readers all answered confidently instead, and a rule that holds

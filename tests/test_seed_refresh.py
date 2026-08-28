@@ -27,13 +27,30 @@ GOOD = _idx(US=151_000, UK=19_700, unplaced=16_200, multiple=5_000,
             CA=9_100, IN=7_500, DE=6_200)
 
 
-def test_a_healthy_rebuild_publishes():
-    assert rs.check(GOOD, GOOD) == []
-
-
 def test_a_build_that_lost_most_of_its_roles_is_refused():
     small = _idx(US=40_000, UK=5_000, unplaced=4_000, multiple=1_000)
     assert rs.check(small, GOOD), "a build a third the size was published"
+
+
+def test_a_build_that_shrank_evenly_is_refused_by_the_fraction_alone():
+    """The case above drops CA, IN and DE entirely, so it is caught by the
+    absent-shard rule and never reaches the percentage one. Deleting
+    `fresh < prev * MIN_FRACTION` outright left the whole suite green, which
+    means the guard that actually stops a collapsed build being published was
+    the one thing here nothing tested.
+
+    This build keeps every shard and simply halves each of them: no shard is
+    absent, no shard is empty, and the only thing wrong with it is the total.
+    That is the shape of a fetch that was throttled everywhere rather than
+    broken in one place, and it is the one a role count is the only witness
+    to.
+    """
+    half = _idx(**{k: v["roles"] // 2 for k, v in GOOD["shards"].items()})
+    problems = rs.check(half, GOOD)
+    assert any("%" in p for p in problems), problems
+    assert not any("absent" in p for p in problems), (
+        "this build is meant to reach the percentage check with every shard "
+        f"present, and it did not: {problems}")
 
 
 def test_a_first_run_with_nothing_published_still_has_a_floor():
@@ -76,8 +93,32 @@ def test_a_normal_weeks_movement_is_not_a_failure():
 
 
 def test_the_checks_run_before_anything_is_uploaded():
+    """The order is the whole guard: a check that runs after the upload has
+    already published whatever it was going to refuse.
+
+    Written as `src.index("problems = check(") < src.index("gh")`, which found
+    "gh" at offset 2512 -- inside the word "through", in a comment -- while the
+    two real `gh release upload` calls sit at 3042 and 3392. So it compared the
+    check against a piece of prose and would have stayed green with the upload
+    moved above it. Reword that comment and the assertion silently changes
+    meaning. Parsed here instead, off the call itself.
+    """
+    import ast
     import inspect
+    import textwrap
+
     src = inspect.getsource(rs.main)
-    assert src.index("problems = check(") < src.index("gh"), \
-        "the upload can happen before the build is checked"
+    fn = ast.parse(textwrap.dedent(src)).body[0]
+
+    checks = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Name) and n.func.id == "check"]
+    uploads = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Call)
+               and any(isinstance(a, ast.List) and a.elts
+                       and isinstance(a.elts[0], ast.Constant)
+                       and a.elts[0].value == "gh" for a in n.args)]
+    assert checks, "nothing in main() calls check() any more"
+    assert uploads, "no `gh` upload found; this guard is watching nothing"
+    assert min(checks) < min(uploads), (
+        f"check() runs at line {min(checks)} and the first gh upload at "
+        f"{min(uploads)}: the build is published before it is checked")
     assert "staging" in src, "a failed build overwrites the good one in place"

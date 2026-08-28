@@ -106,15 +106,23 @@ def test_what_survives_the_gate_still_agrees_with_it_after_enrich():
         ("Austin, TX", BODY + "We have not decided the arrangement yet."),
     ]
     cfg = _cfg()
+    kept = 0
     for location, body in cases:
         job = _job(location, body)
         keep, _why = match(job, cfg)
         if not keep:
             continue
+        kept += 1
         enrich(job)
         assert job.work_mode in ("remote", "unstated"), (
             f"{location!r} was kept for a remote-only reader and then "
             f"stored as {job.work_mode!r}")
+    # Without this the loop body is skippable end to end: a gate that tightened
+    # to drop all six would report a pass having asserted nothing, which is the
+    # failure that renders identically to a success. Two of the six survive
+    # today -- "Remote - US" and the undecided Austin role -- and the other
+    # four are dropped as hybrid or office, which is the gate working.
+    assert kept == 2, f"{kept} of {len(cases)} survived the gate, not 2"
 
 
 def test_an_unstated_arrangement_is_still_kept_and_flagged():
