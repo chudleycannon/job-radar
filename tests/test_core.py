@@ -1966,14 +1966,19 @@ def test_a_thin_posting_is_still_read_but_flagged():
 
     keep, hits, flags = run("There is a take home exercise.")
     assert keep is False and hits == ["coding round"], "short text is still read"
-    assert any("not screened" in f for f in flags), "and still flagged as thin"
+    # Flagged as thin, and the flag distinguishes a short advert from no
+    # advert. "No description from this source" was being printed against
+    # postings that plainly had one, which reads as a broken adapter and
+    # sends the reader hunting for a bug that is not there.
+    assert any("barely screened" in f for f in flags), flags
+    assert not any("no description" in f for f in flags), flags
 
     keep, _, flags = run("A perfectly fine role. " * 20)
     assert keep is True and flags == []
 
     for platform in ("workday", "smartrecruiters", "greenhouse", "linkedin"):
         _, _, flags = run("", platform)
-        assert any("not screened" in f for f in flags), platform
+        assert any("no description" in f for f in flags), platform
 
 
 def test_a_posting_cannot_rewrite_another_roles_score():

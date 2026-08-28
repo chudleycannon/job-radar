@@ -722,6 +722,18 @@ def verify_identity(jobs: list, domain: str | None, company: str,
     return "unchecked", "board publishes no company name"
 
 
+def _is_absent(err: str) -> bool:
+    """Whether an error means "there is nothing at this address".
+
+    Only 404 and 410. A 403 is a door that exists and is shut, a 429 is a
+    door that exists and is busy, and a timeout is no answer at all: none of
+    those is evidence of absence, and treating them as such is how a board
+    that is merely blocked gets deleted.
+    """
+    t = (err or "").lower()
+    return "404" in t or "410" in t or "not found" in t
+
+
 def _guess_tokens(domain: str | None, target: str) -> list[tuple[str, str, str]]:
     """Obvious token spellings, built into API URLs for the platforms that
     accept a plain token. Every result is still verified by the caller.
@@ -826,8 +838,11 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
     # schools operator sitting on Ashby `primer` gets caught rather than filed.
     # It does not work for Workday at all: tenant and site names are not
     # derivable from a company name, and 117 attempts proved it.
+    guessed: set[str] = set()
     if not hits:
-        hits.extend(_guess_tokens(domain, target))
+        tokens = _guess_tokens(domain, target)
+        guessed = {api for _p, _t, api in tokens}
+        hits.extend(tokens)
 
     seen_api, checked = set(), []
     for platform, token, api in hits:
@@ -847,6 +862,23 @@ def discover(target: str, company: str | None = None, *, validate: bool = True) 
                 # no adapter yet". Every clause of that is false about a board
                 # we located and then failed to fetch. So it is marked and
                 # kept; `cmd_discover` prints it and refuses to `--add` it.
+                # A 404 on a slug WE invented is not a board we failed to
+                # read. It is the expected answer to a wrong guess, and there
+                # is nothing there to report.
+                #
+                # `discover mollie.com` found the real board, an Ashby one
+                # with 47 roles, and then printed seven blocks of "found, but
+                # could not be read: HTTP 404 ... not added; try again later".
+                # Every one of those was a token this tool made up, and "try
+                # again later" will never work: there is no board at that
+                # address and there never was.
+                #
+                # Deliberately scoped to guessed candidates only. `count_jobs`
+                # is shared with `validate --prune`, and teaching THAT to read
+                # 404 as dead is how a maintenance job opens a pull request
+                # deleting 17,171 of 17,810 sources.
+                if api in guessed and _is_absent(err):
+                    continue
                 f.identity = "unreadable"
                 f.note = f"could not be read: {err}"
             elif n == 0:

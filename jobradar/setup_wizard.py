@@ -189,6 +189,9 @@ locations:
   work_modes:{ylist(answers.get('work_modes'))}
   # Places you would move to. Scored lower than home, but still shown.
   relocate_to:{ylist(answers.get('relocate_to'))}
+  # Countries where you would need a visa. Roles there that state they will
+  # not sponsor are hidden; everywhere else the fact is only reported.
+  need_sponsorship:{ylist(answers.get('need_sponsorship'))}
   # Never show roles in these places.
   exclude:{ylist(answers.get('exclude_locations'))}
 
@@ -246,6 +249,7 @@ DEFAULTS = {
     "countries": ["UK"],
     "remote_ok": True,
     "relocate_to": [],
+    "need_sponsorship": [],
     "exclude_locations": [],
     "salary_floor": None,
     "salary_currency": "GBP",
@@ -414,7 +418,18 @@ def ask_cv(existing: str = "") -> str:
 
 
 def run(path: Path, non_interactive: bool = False, cv: str | None = None,
-        titles: str | None = None, scan: bool = False) -> int:
+        titles: str | None = None, scan: bool = False,
+        countries: list | None = None, currency: str | None = None) -> int:
+    """Build a config, by asking or from flags.
+
+    `countries` and `currency` exist because `--defaults` is the only path
+    that works without a terminal, and it wrote `countries: [UK]` and
+    `currency: GBP` into the config of anyone who used it. There was no flag
+    to say otherwise, so a scripted setup in Austin produced a UK job search
+    and nothing said so. Same failure as the coding-round dealbreaker and the
+    nurse running NHS searches for "engineering manager": a default that is
+    one person's answer, presented as everybody's.
+    """
     if non_interactive:
         if not cv:
             print("A CV is required. Re-run with --cv /path/to/your-cv.docx")
@@ -432,6 +447,11 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         a = dict(DEFAULTS)
         a["cv_path"] = str(p.resolve())
         a["titles_include"] = [x.strip() for x in titles.split(",") if x.strip()]
+        if countries:
+            a["countries"] = [str(c).strip().upper() for c in countries
+                              if str(c).strip()]
+        if currency:
+            a["salary_currency"] = str(currency).strip().upper()
         write_config(path, a)
         print(f"Wrote a default config to {path}.")
         if scan:
@@ -508,7 +528,30 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         print("   Postings that do not state an arrangement are still shown, "
               "and flagged.")
     a["relocate_to"] = _ask_list("   Countries you would relocate to", [])
+    # Never asked, and never written, though config.example.yaml documents it.
+    # Somebody who needs a visa for the places they are searching had no way
+    # to say so short of hand-editing the file, and the roles that will not
+    # sponsor them look exactly like the roles that will.
+    ask_sponsor = [c for c in
+                   list(a.get("countries") or []) + list(a["relocate_to"])]
+    if ask_sponsor:
+        print("   Sponsorship: roles stating they will not sponsor are "
+              "flagged, and hidden for the countries you name here.")
+        a["need_sponsorship"] = _ask_list(
+            "   Countries where you would need visa sponsorship", [])
     a["exclude_locations"] = _ask_list("   Places to always exclude", [])
+
+    # Asked because it is the one setting that changes how long a scan takes,
+    # and the wizard never mentioned it. A Dutch user's first run reads all
+    # 17,811 sources for about seventy-seven minutes when 160 are tagged NL.
+    # Boards tagged for no country, and multinationals, are kept whatever is
+    # answered here, so narrowing it cannot hide an employer that has a
+    # vacancy where you are.
+    print("   Most boards are not tagged with a country, and those are always")
+    print("   read. Naming countries here only skips boards tagged for")
+    print("   somewhere else, which makes a scan shorter.")
+    a["source_countries"] = _ask_list(
+        "   Only read boards tagged for these countries (blank for all)", [])
 
     # 3. salary
     print("\n3. Salary")

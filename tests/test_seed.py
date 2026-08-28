@@ -251,3 +251,29 @@ def test_a_country_the_index_never_mentions_is_still_quiet():
     """"No roles in Portugal" is not an error, it is an answer."""
     d = _tmp(); seed.build(JOBS, d)
     assert [j.company for j in seed.load(d, ["PT"])]  # unplaced + multiple
+
+
+def test_the_raw_pay_string_survives_so_the_reader_does_not_print_none():
+    """`score` interpolates `salary.raw` into a reason it shows the user.
+
+    The seed carried the numbers and not the string, so ten of nineteen
+    priced roles came back reading "pay stated (None)" on the dashboard and
+    in `list --json`, next to a perfectly good "$165k - $185k" label.
+    """
+    d = _tmp()
+    seed.build([_job(url="https://x/p", country="UK",
+                     salary=Salary(min=140000, max=160000, currency="GBP",
+                                   confirmed=True,
+                                   raw="£140,000 - £160,000 per annum"))], d)
+    j = next(iter(seed.load(d, ["UK"])))
+    assert j.salary.raw == "£140,000 - £160,000 per annum"
+
+
+def test_a_shard_written_without_the_raw_string_still_loads():
+    """Appended to the packed list rather than inserted, so a shard set built
+    before this change is read rather than refused."""
+    from jobradar.seed import _unpack
+    old = {"c": "Acme", "t": "EM", "u": "https://x/1", "p": "ashby",
+           "$": [140000, 160000, "GBP", "year", 1]}
+    j = _unpack(old)
+    assert j.salary.min == 140000 and j.salary.raw is None

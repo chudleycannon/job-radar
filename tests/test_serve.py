@@ -588,7 +588,14 @@ def test_a_broken_config_is_not_reported_as_a_missing_cv():
             # Not "No CV configured": `cv.path` is not the thing that is
             # wrong, and sending someone to check it wastes the trip.
             assert "could not read your config" in row["error"], row["error"]
-            assert "AttributeError" in row["error"], row["error"]
+            # Was `AttributeError`, which pinned a bug rather than a
+            # behaviour: a `titles:` written as a list reached `load` and
+            # raised `'list' object has no attribute 'get'`. It is a
+            # ConfigError naming the key now, and the point of this test is
+            # that the reason reaches the user at all, not which exception
+            # class carried it.
+            assert "ConfigError" in row["error"], row["error"]
+            assert "titles" in row["error"], row["error"]
         finally:
             con.close()
 

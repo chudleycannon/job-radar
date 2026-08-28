@@ -705,7 +705,8 @@ _MORE_CITIES = {
     "MV": ("malé",),
     "IN": ("delhi", "new delhi", "gurugram", "chennai", "kolkata",
            "ahmedabad", "jaipur", "kochi", "coimbatore", "nashik", "indore",
-           "chandigarh", "thiruvananthapuram", "vadodara", "surat",
+           "chandigarh", "thiruvananthapuram", "trivandrum", "vadodara",
+           "surat",
            "nagpur", "bhubaneswar"),
     "NL": ("amersfoort", "hoofddorp", "arnhem", "breda", "tilburg",
            "nijmegen", "haarlem", "leiden", "zwolle", "apeldoorn", "almere",
@@ -1016,6 +1017,59 @@ def _is_country_name(seg: str) -> bool:
     if low in _COUNTRY_NAME:
         return True
     return any(re.fullmatch(pat, low, re.I) for pat in _COUNTRY_MARKERS.values())
+
+
+# What a region name covers, for postings that name one instead of a country.
+#
+# "Remote - Europe", "Remote, EU" and "Remote - EMEA" resolved to nothing and
+# were dropped as "location not recognised". Bare "Remote" is kept, so adding
+# the qualifier that makes a role MORE relevant to a European reader was what
+# made it fail. For a reader who wants remote work in the EU, that is their
+# best category being binned.
+#
+# Deliberately not solved by adding these to the "no location given" list.
+# That would hand a Europe-only role to a reader in Texas, which is the same
+# mistake pointing the other way. A region is a set of countries, so it is
+# resolved to one and intersected with the reader's own countries exactly as
+# a named country is.
+#
+# EMEA is treated as Europe plus the Middle East and Africa entries this tool
+# knows about, rather than the full list, because the point is only ever
+# "does the reader's country fall inside it".
+_EUROPE = {"UK", "IE", "FR", "DE", "NL", "BE", "LU", "ES", "PT", "IT", "AT",
+           "CH", "SE", "NO", "DK", "FI", "IS", "PL", "CZ", "SK", "HU", "RO",
+           "BG", "GR", "HR", "SI", "EE", "LV", "LT", "CY", "MT", "RS", "UA"}
+_MEA = {"AE", "SA", "QA", "IL", "TR", "EG", "ZA", "NG", "KE", "MA"}
+_APAC = {"AU", "NZ", "SG", "IN", "JP", "CN", "HK", "KR", "MY", "TH", "ID",
+         "PH", "VN", "TW", "BD", "PK"}
+_NAMER = {"US", "CA", "MX"}
+_LATAM = {"BR", "AR", "CL", "CO", "MX", "PE", "UY"}
+
+REGIONS = {
+    "europe": _EUROPE, "eu": _EUROPE, "eea": _EUROPE,
+    "emea": _EUROPE | _MEA,
+    "apac": _APAC, "asia pacific": _APAC, "asia-pacific": _APAC,
+    "anz": {"AU", "NZ"},
+    "namer": _NAMER, "north america": _NAMER, "nam": _NAMER,
+    "latam": _LATAM, "latin america": _LATAM,
+    "mena": _MEA, "middle east": _MEA,
+}
+# Matched on a whole segment, never as a substring. "EU" inside "EUROPE" is
+# harmless, but a bare `in` test would also find "eu" in "Deutschland" and
+# "nam" in "Vietnam", which is how a location filter starts inventing
+# continents.
+_REGION_RE = re.compile(
+    r"(?<![A-Za-z])(" + "|".join(sorted(map(re.escape, REGIONS), key=len,
+                                        reverse=True)) + r")(?![A-Za-z])",
+    re.I)
+
+
+def regions_in(location: str) -> set[str]:
+    """Every country covered by a region the posting names. Empty if none."""
+    out: set[str] = set()
+    for m in _REGION_RE.finditer(location or ""):
+        out |= REGIONS[m.group(1).lower()]
+    return out
 
 
 def _countries_in(location: str) -> set[str]:
@@ -1418,10 +1472,26 @@ def match(job: Job, cfg: Config) -> tuple[bool, str]:
                 return False, ("remote role and remote is off" if loc
                                else "no location given and remote is off")
             return True, ""
-        if not cfg.remote_ok and job.remote is True:
+        if not cfg.remote_ok and work_mode(job) == "remote" and not city_of(loc):
+            # Was `job.remote is True`, which only ever caught a platform flag
+            # and a bare "Remote". With `countries: [US]` and
+            # `remote_ok: false`, "Remote - US", "US Remote", "Remote (US)"
+            # and "Fully Remote - United States" were all kept, and US
+            # employers write it that way almost every time, so the setting
+            # was close to inert exactly where an American reader needs it.
+            #
+            # `city_of` is what keeps this honest. A posting listing "New
+            # York, Denver, Remote, San Francisco" is a role with offices, and
+            # somebody who said no to remote work still wants it: they are
+            # asking not to work from home, not asking to be hidden from
+            # employers who let other people. Only a location that names no
+            # office at all is a remote-only role.
             return False, "remote role and remote is off"
 
         found = _countries_in(loc)
+        if not found:
+            # A region is a set of countries, not an unrecognised place.
+            found = regions_in(loc)
         if not found:
             return False, (f"location not recognised ({loc})" if loc.strip()
                            else "no location given")
@@ -1471,6 +1541,30 @@ _NO_SPONSOR = re.compile(
     # what the posting says, on the one fact that decides the application.
     r"|(?:unable|not\s+able|cannot|can.t|do(?:es)?\s+not|do(?:es)?n.t|"
     r"will\s+not|won.t|not\s+in\s+a\s+position)\s+(?:to\s+)?sponsor\w*"
+    # The bar stated as a requirement rather than as a refusal. Outside the UK
+    # and the US that is the normal wording, and none of it mentions the word
+    # sponsorship at all:
+    #
+    #   Applicants must be Singapore Citizens or Permanent Residents.
+    #   Candidates must already hold a valid Employment Pass.
+    #   You must hold a valid UAE residency visa and an NOC.
+    #
+    # All three read as "not stated", so a reader who needs a visa was shown
+    # roles they cannot apply for, with nothing to tell them apart from the
+    # ones they can. The gate itself is properly config-driven; it was the
+    # vocabulary that was UK and US only.
+    #
+    # Tied to a requirement verb on purpose. "citizens or permanent residents"
+    # on its own appears in equal-opportunity boilerplate on adverts that
+    # sponsor perfectly happily, and matching that would hide the roles this
+    # reader most needs.
+    r"|(?:must|need\s+to|required\s+to|should)\s+(?:be\s+)?"
+    r"(?:a\s+|an\s+)?(?:\w+\s+){0,3}?"
+    r"(?:citizens?|permanent\s+residents?|nationals?)\b"
+    r"|(?:must|need\s+to|required\s+to|should)\s+(?:already\s+)?"
+    r"(?:hold|have|possess)\s+(?:a\s+|an\s+|the\s+)?(?:\w+\s+){0,3}?"
+    r"(?:employment\s+pass|work\s+pass|residency\s+visa|work\s+visa|"
+    r"work\s+permit|right\s+to\s+work)"
     r"|must\s+(?:already\s+)?have\s+(?:the\s+)?(?:full\s+)?rights?\s+to\s+work"
     r"|full\s+rights?\s+to\s+work", re.I)
 
@@ -1491,6 +1585,12 @@ _WILL_SPONSOR = re.compile(
     r"(?:can|able to|will|do|happy to|willing to)\s+(?:\w+\s+){0,2}?sponsor"
     r"|(?:visa|sponsorship)\s+(?:support\s+)?(?:is\s+)?(?:available|offered|provided)"
     r"|we\s+(?:offer|provide)\s+(?:visa\s+)?sponsorship"
+    # "Visa sponsorship and relocation are provided" read as not stated,
+    # because the alternative above wants the noun next to the verb and this
+    # puts a whole clause between them. A miss in the safe direction, but a
+    # miss: it is an employer saying yes, to the reader who needs the answer.
+    r"|(?:visa\s+)?sponsorship\s+and\s+relocation\s+(?:is|are)\s+"
+    r"(?:available|offered|provided)"
     r"|relocation\s+and\s+visa", re.I)
 
 
@@ -1593,6 +1693,41 @@ def _mention_is_incidental(text: str, start: int) -> bool:
     return bool(_INCIDENTAL.search(text[max(0, start - _INCIDENTAL_LEAD):start]))
 
 
+# Words that turn a dealbreaker into a promise.
+#
+# "There is no night shift and no on-call rota" and "We do not set take-home
+# exercises" both hid the role, silently, with no flag: the pattern matched
+# and nothing looked at what came before it. Those are adverts going out of
+# their way to say the thing you are avoiding is absent, and they were the
+# first ones thrown away.
+#
+# A negated mention is downgraded to a soft flag rather than ignored. Getting
+# this wrong in the other direction would let a real take-home through
+# unseen, and the whole point of a hard dealbreaker is that it does not. Shown
+# and labelled is the safe answer to "we are not certain what this sentence
+# means".
+_NEGATED = re.compile(
+    r"(?:\b(?:no|not|never|without|zero|free\s+from|free\s+of)\b|"
+    r"\bdo(?:es)?\s+not\b|\bdon.t\b|\bwon.t\b|\bisn.t\b|\baren.t\b)"
+    r"[^.;:!?]{0,40}$", re.I)
+
+
+def _mention_is_negated(text: str, at: int) -> bool:
+    """Whether the sentence up to this match negates it."""
+    start = max(0, at - 90)
+    before = text[start:at]
+    # Only within the same sentence: a full stop resets the claim.
+    before = re.split(r"[.;:!?]", before)[-1]
+    return bool(_NEGATED.search(before))
+
+
+def _all_mentions_negated(pattern, text: str, title: str = "") -> bool:
+    if pattern.search(title or ""):
+        return False
+    hits = list(pattern.finditer(text))
+    return bool(hits) and all(_mention_is_negated(text, m.start()) for m in hits)
+
+
 def _all_mentions_incidental(pattern, text: str, title: str = "") -> bool:
     if pattern.search(title or ""):
         return False
@@ -1613,7 +1748,14 @@ def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
     # refusing to read it is the same silent pass by another route.
     text = (job.description or "").strip()
     if len(text) < 200:
-        job.flags.append("not screened: no description from this source")
+        # Two different facts, and one sentence was covering both. "No
+        # description from this source" was printed against postings that
+        # plainly had one, just a short one, which reads as a broken adapter
+        # rather than a thin advert and sends the reader looking for a bug.
+        job.flags.append(
+            "not screened: no description from this source" if not text else
+            f"barely screened: this source gave {len(text)} characters of "
+            f"advert, too little to check properly")
 
     # The title and the location are read too, and they were not.
     #
@@ -1645,6 +1787,10 @@ def screen(job: Job, cfg: Config) -> tuple[bool, list[str]]:
             job.flags.append(
                 f"soft flag: {db.name} mentioned, but only in passing "
                 f"(another team, or an example) -- shown rather than hidden")
+        elif _all_mentions_negated(pat, scanned, job.title):
+            job.flags.append(
+                f"soft flag: {db.name} appears only as something this role "
+                f"does NOT have -- shown rather than hidden, check the advert")
         else:
             hard.append(db.name)
     return (not hard), hits
@@ -1661,12 +1807,32 @@ def apply_salary(job: Job, cfg: Config) -> tuple[bool, str]:
 # above or below the level you asked for, which the score was blind to: a
 # Principal role and a grade-I role got identical numbers because nothing in
 # the calculation read the candidate at all.
+# Two things were wrong here and they compounded.
+#
+# The level-2 vocabulary was a list of engineering job nouns, so every title
+# outside engineering scored 0: "Product Designer", "Data Scientist", "Scrum
+# Master" and "Nurse Practitioner" all had no level at all. A target list of
+# 0s and 3s then made every senior posting look like a leap.
+#
+# And `staff` and `principal` sat above `manager`, which reads the individual
+# and the management tracks as one ladder. They are parallel: Staff is the
+# rung above Senior on the IC side, roughly level with Manager, and Principal
+# is the one above that. With the old numbers a remote-only product designer
+# searching for "Product Designer" and "Senior Product Designer" saw "Staff
+# Product Designer" -- the correct next role for them -- scored "2 levels
+# above your targets" and docked 25, landing it below a plain junior posting.
+# Their ranked list came out upside down.
 _LEVELS = [
     (1, r"\b(?:junior|graduate|trainee|apprentice|entry.level|assistant)\b|\bI\b$"),
-    (2, r"\b(?:analyst|associate|engineer|officer|advisor|coordinator|executive)\b"),
+    (2, r"\b(?:analyst|associate|engineer|officer|advisor|coordinator|"
+        r"executive|designer|scientist|developer|researcher|consultant|"
+        r"nurse|teacher|technician|accountant|planner|writer|editor|"
+        r"recruiter|buyer|controller|architect|administrator)\b"),
     (3, r"\b(?:senior|snr|specialist|lead(?!ership)|supervisor)\b"),
-    (4, r"\b(?:manager|management)\b"),
-    (5, r"\b(?:principal|staff|head of|senior manager|group manager)\b"),
+    # Staff sits with Manager, not above it: one is the senior IC rung and
+    # the other is the first management rung, and neither outranks the other.
+    (4, r"\b(?:manager|management|staff)\b"),
+    (5, r"\b(?:principal|head of|senior manager|group manager)\b"),
     (6, r"\b(?:director|vp|vice president|chief|c-level|partner)\b"),
 ]
 

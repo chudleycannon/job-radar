@@ -89,7 +89,14 @@ def _pack(j: Job) -> dict:
             out[short] = v
     s = j.salary
     if s and (s.min is not None or s.max is not None or s.confirmed):
-        out["$"] = [s.min, s.max, s.currency, s.period, 1 if s.confirmed else 0]
+        # `raw` is carried, sixth, because the reader prints it. Without it
+        # every seeded role with a price came back with `salary.raw = None`,
+        # and `score` interpolated that straight into a reason: ten of
+        # nineteen priced roles read "pay stated (None)" on the dashboard and
+        # in `list --json`, beside a perfectly good "$165k - $185k" label.
+        # Appended rather than inserted, so an older reader ignores it.
+        out["$"] = [s.min, s.max, s.currency, s.period,
+                    1 if s.confirmed else 0, s.raw]
     return out
 
 
@@ -102,7 +109,8 @@ def _unpack(d: dict) -> Job:
     sal = d.get("$")
     if sal:
         kw["salary"] = Salary(min=sal[0], max=sal[1], currency=sal[2],
-                              period=sal[3] or "year", confirmed=bool(sal[4]))
+                              period=sal[3] or "year", confirmed=bool(sal[4]),
+                              raw=sal[5] if len(sal) > 5 else None)
     return Job(**kw)
 
 
@@ -250,8 +258,23 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
                     f"or was written by a different version of job-radar. "
                     f"Rebuild it rather than importing part of it.")
             continue
-        with gzip.open(path, "rt", encoding="utf-8") as fh:
-            head = fh.readline()
+        try:
+            fh = gzip.open(path, "rt", encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"{path.name} is not readable as a shard "
+                             f"({exc}). Rebuild the set.") from None
+        with fh:
+            try:
+                head = fh.readline()
+            except (OSError, EOFError, UnicodeDecodeError) as exc:
+                # gzip.BadGzipFile is an OSError, and it was reaching the user
+                # as a nine-frame traceback out of the standard library. A
+                # shard that is not a shard is a thing to say plainly, not a
+                # thing to crash over.
+                raise ValueError(f"{path.name} is not a readable gzip file "
+                                 f"({exc}). The shard set is corrupt or was "
+                                 f"only partly downloaded; rebuild or "
+                                 f"re-fetch it.") from None
             if not head.strip():
                 # An empty file is not an empty shard. A shard that exists is
                 # a shard somebody meant to publish, and reading nothing out
@@ -259,10 +282,24 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
                 raise ValueError(f"{path} is empty, so it was not written "
                                  f"properly. Refusing to read it as a shard "
                                  f"with no roles in it.")
-            _check(json.loads(head).get("schema"), str(path))
-            for line in fh:
-                if line.strip():
+            try:
+                header = json.loads(head)
+            except ValueError:
+                raise ValueError(
+                    f"{path.name} does not begin with a shard header. Its "
+                    f"first line is {head[:60]!r}. Rebuild the set.") from None
+            _check(header.get("schema"), str(path))
+            for n, line in enumerate(fh, 2):
+                if not line.strip():
+                    continue
+                try:
                     yield _unpack(json.loads(line))
+                except (ValueError, TypeError) as exc:
+                    # Named by line, because "the file is bad" is not enough
+                    # to fix a 35,000 line file with one bad row in it.
+                    raise ValueError(
+                        f"{path.name} line {n} is not a role ({exc}). "
+                        f"Rebuild the set.") from None
 
 
 def describe(idx: dict, countries: Iterable[str]) -> str:
