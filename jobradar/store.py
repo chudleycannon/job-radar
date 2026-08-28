@@ -108,12 +108,95 @@ PROGRESS = {"new": 0, "skipped": 1, "interested": 2, "applied": 3,
             "interviewing": 8, "offer": 9}
 
 
-def connect(path: str | Path | None = None) -> sqlite3.Connection:
+class StoreError(Exception):
+    """A `--db` path this tool cannot use, phrased for whoever typed it.
+
+    Everything here used to come out as a raw sqlite exception with a nine
+    frame traceback above it. Three separate mistakes -- pointing `--db` at a
+    directory, at a file that is not a database, and into a directory this
+    user cannot write -- all surfaced as `unable to open database file` or
+    `file is not a database`, which name neither the path nor the fix. The
+    message is the whole of the useful part, so it is written here and the
+    traceback is dropped.
+    """
+
+
+def _path_problem(p: Path, must_exist: bool) -> str:
+    """Why `p` cannot be used, or "" if there is nothing wrong with the path.
+
+    Checked before sqlite is asked, because sqlite collapses every one of
+    these into the same sentence and this is the layer that still knows which
+    mistake was made.
+    """
+    if p.is_dir():
+        return (f"{p} is a directory, not a database file.\n"
+                f"--db wants the file itself, the way "
+                f"`--db {p / DEFAULT_PATH.name}` does.")
+    if must_exist:
+        if not p.exists():
+            # The bug this exists for: `job-radar list --db typo.db` created
+            # an empty database, printed "0 role(s)", exited 0, and left a
+            # 64KB file behind. "0 roles" from a mistyped path is
+            # indistinguishable from "0 roles" from the real one, and it is
+            # the confident wrong answer this whole tool exists to not give.
+            return (f"No database at {p}.\n"
+                    f"A read command will not create one, because an empty "
+                    f"database answers every question with nothing and that "
+                    f"reads exactly like a real answer. Check the path, or "
+                    f"run `job-radar scan` to build it.")
+        return ""
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return (f"Cannot create {p.parent} to hold the database: {exc}\n"
+                f"Pick a --db path somewhere you can write.")
+    return ""
+
+
+def _sqlite_problem(p: Path, exc: Exception) -> str:
+    """One line naming which of sqlite's two sentences this is."""
+    msg = str(exc).lower()
+    if "not a database" in msg or "encrypted" in msg:
+        return (f"{p} exists but is not a job-radar database "
+                f"(sqlite says: {exc}).\n"
+                f"--db wants the .db file a scan wrote, not a config, an "
+                f"export or a shard set.")
+    if "unable to open" in msg or "readonly" in msg or "attempt to write" in msg:
+        # WAL mode needs to create `-wal` and `-shm` beside the file, so a
+        # readable database in an unwritable directory fails here too, and
+        # "unable to open database file" never says that is what happened.
+        return (f"Cannot open {p}: this user cannot write there, and the "
+                f"database needs to write beside itself.\n"
+                f"sqlite says: {exc}")
+    return f"Cannot use {p} as a database: {exc}"
+
+
+def connect(path: str | Path | None = None, *,
+            must_exist: bool = False) -> sqlite3.Connection:
+    """Open the database. `must_exist` refuses to invent one.
+
+    Creating on demand is right for `scan` and `seed load`, which are the two
+    commands whose job is to fill a database, and wrong for every command that
+    only reads one: those are the ones a typo turns into a confident empty
+    answer plus a stray file. So the read path passes `must_exist=True` and
+    the two writers do not.
+    """
     p = Path(path or DEFAULT_PATH)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(p, timeout=15, isolation_level=None)
-    con.row_factory = sqlite3.Row
-    con.executescript(SCHEMA)
+    # `:memory:` is a database that by definition does not exist on disk, and
+    # `scan --dry-run` is built on it. None of the path rules apply.
+    if str(p) != ":memory:":
+        why = _path_problem(p, must_exist)
+        if why:
+            raise StoreError(why)
+    try:
+        con = sqlite3.connect(p, timeout=15, isolation_level=None)
+        con.row_factory = sqlite3.Row
+        con.executescript(SCHEMA)
+    except sqlite3.DatabaseError as exc:
+        # `from None`: the traceback is nine frames of this tool's own call
+        # stack above one sentence, and the sentence is the only part that
+        # tells anybody what to change.
+        raise StoreError(_sqlite_problem(p, exc)) from None
     # A database made by an older version is missing columns the dashboard
     # now reads. Adding them on open rather than only in the write path means
     # `serve` and `list` cannot crash on a database that has not been scanned
@@ -124,6 +207,12 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
 
 @contextmanager
 def open_db(path=None):
+    # Deliberately calls `connect` with the path alone. Tests stub
+    # `store.connect` with a one-argument function, which is the whole of the
+    # signature this has ever needed, and threading `must_exist` through here
+    # would break every one of them for a keyword nothing asks this for: the
+    # read commands call `connect` themselves. Two of them went red on exactly
+    # that.
     con = connect(path)
     try:
         yield con
@@ -196,15 +285,24 @@ def _ensure_columns(con) -> None:
                 "name TEXT PRIMARY KEY, taken_at TEXT NOT NULL)")
 
 
-def upsert_roles(con, jobs: Iterable) -> tuple[int, int]:
+def upsert_roles(con, jobs: Iterable, run: int | None = None) -> tuple[int, int]:
     """Insert or refresh roles. Returns (new, seen_before).
 
     `first_seen` is never overwritten: it is what makes "new since last run"
     meaningful across months rather than across one scan.
+
+    `run` is the run number to stamp on rows this call inserts. It defaults to
+    "one past the counter, read right now", which is only correct while
+    nothing else is scanning. Two scans overlapping -- a cron run and a manual
+    one, which is an entirely ordinary Tuesday -- read that counter at
+    different moments and stamped and queried different numbers, so the loser
+    reported `250 match your config, 0 new` on 250 roles that were all new.
+    A caller that will later ask "what was new on MY run" has to pin the
+    number once and pass it to both halves. See `cli.cmd_scan`.
     """
     _ensure_columns(con)
     today = date.today().isoformat()
-    run = int(get_meta(con, "runs", "0")) + 1      # the run these belong to
+    run = int(run) if run is not None else int(get_meta(con, "runs", "0")) + 1
     new = seen = 0
     for j in jobs:
         row = con.execute("SELECT uid FROM roles WHERE uid=?", (j.uid,)).fetchone()
@@ -313,7 +411,7 @@ def new_today(con) -> set[str]:
         f"SELECT uid FROM roles r WHERE {NEW_SQL}")}
 
 
-def new_since_last_run(con, uids: list[str]) -> set[str]:
+def new_since_last_run(con, uids: list[str], run: int | None = None) -> set[str]:
     """Roles first seen on THIS run, not merely today.
 
     Keying on the date meant a second scan the same afternoon re-reported every
@@ -322,15 +420,22 @@ def new_since_last_run(con, uids: list[str]) -> set[str]:
 
     The very first run reports nothing as new: "here are 300 new roles" on day
     one is not an alert, it is the whole database.
+
+    `run` is this caller's own run number, and it must be the same one it
+    handed `upsert_roles`. Left to the default it is re-derived from the
+    counter, which another scan may have moved in between: measured, two
+    scans over the same 250 roles on a fresh database had the second one
+    stamp its rows `first_run=1` and then go looking for `first_run=2`.
     """
     _ensure_columns(con)
-    runs = int(get_meta(con, "runs", "0"))
-    if runs == 0 or not uids:
+    this_run = (int(run) if run is not None
+                else int(get_meta(con, "runs", "0")) + 1)
+    if this_run <= 1 or not uids:
         return set()
     q = ",".join("?" * len(uids))
     rows = con.execute(
         f"SELECT uid FROM roles WHERE first_run=? AND uid IN ({q})",
-        (runs + 1, *uids))
+        (this_run, *uids))
     return {r["uid"] for r in rows}
 
 
@@ -672,10 +777,26 @@ def set_meta(con, k, v) -> None:
 
 
 def bump_runs(con) -> int:
-    n = int(get_meta(con, "runs", "0")) + 1
-    set_meta(con, "runs", n)
+    """Add one to the run counter, in the database rather than in Python.
+
+    This was `n = read() + 1; write(n)`, which is a read-modify-write and
+    loses an increment whenever anything else bumps in between. Two scans
+    overlapping is the ordinary case, not an exotic one -- a cron scan and a
+    person running one by hand -- and both of them finishing left the counter
+    at one past where it started rather than two. No error, no lock message,
+    just a number that had quietly stopped counting runs.
+
+    One statement, so sqlite serialises it and neither caller can read a value
+    the other is about to overwrite. The read-back afterwards may see a number
+    a third scan has since bumped again, which is why nothing keys newness off
+    this return value: `cmd_scan` pins its own run number before it writes a
+    single role.
+    """
+    con.execute("INSERT INTO meta (k,v) VALUES ('runs','1') "
+                "ON CONFLICT(k) DO UPDATE SET "
+                "v = CAST(CAST(meta.v AS INTEGER) + 1 AS TEXT)")
     set_meta(con, "last_run", _now())
-    return n
+    return int(get_meta(con, "runs", "0"))
 
 
 def _now() -> str:

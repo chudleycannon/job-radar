@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -98,6 +99,49 @@ def pacing_floors(srcs, limiter=None) -> list[tuple[float, str, int, float]]:
 
 
 # ---------------------------------------------------------------- scan
+def out_dir_problem(outdir: Path) -> str:
+    """Why nothing can be written into `outdir`, or "" if it is fine.
+
+    Called before the first request, because the answer does not change during
+    the scan and finding it out at the end is the worst possible moment. A
+    full run is about 77 minutes and it ended in a `PermissionError` traceback
+    at `atomic_write_text`, for a directory that was already unwritable when
+    the command was typed. Nothing about the network, the boards or the
+    filters was needed to know that.
+
+    The probe is a real file rather than `os.access`, because a real file is
+    what `atomic_write_text` is going to create: it writes `.index.html.NNN.
+    tmp` alongside the target and renames it, so write permission on the
+    DIRECTORY is the thing that matters and read-only-ness of any existing
+    file is not. `os.access` also lies under sudo and on network mounts, and a
+    pre-flight check that says yes and then fails is worse than none.
+    """
+    if outdir.exists() and not outdir.is_dir():
+        return (f"output.dir is {outdir}, which is a file, not a directory.\n"
+                f"The scan writes index.html and roles.json into it.")
+    try:
+        outdir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return (f"Cannot create the output directory {outdir}: {exc}\n"
+                f"Set `output.dir` in your config, or pass `-o` a path you "
+                f"can write.")
+    probe = outdir / f".job-radar-write-test.{os.getpid()}"
+    try:
+        probe.write_text("", encoding="utf-8")
+    except OSError as exc:
+        return (f"Nothing can be written into the output directory "
+                f"{outdir}: {exc}\n"
+                f"That is where index.html and roles.json go, so the scan "
+                f"would spend an hour reading boards and then fail at the "
+                f"last step. Set `output.dir` in your config, or pass `-o` a "
+                f"path you can write.")
+    try:
+        probe.unlink()
+    except OSError:
+        pass          # writable is what was being asked; tidiness is a bonus
+    return ""
+
+
 def _mins(m: float) -> str:
     """A duration a person can act on.
 
@@ -134,7 +178,7 @@ def _phase_minutes(group) -> float:
     return max(worst, len(group) * 0.48 / DEFAULT_CONCURRENCY / 60)
 
 
-def _flush_phase(con, cfg, jobs, args) -> int:
+def _flush_phase(con, cfg, jobs, args, run=None) -> int:
     """Store and render what the scan has so far, between passes.
 
     Deliberately quiet and deliberately partial. It screens and writes what
@@ -142,9 +186,11 @@ def _flush_phase(con, cfg, jobs, args) -> int:
     says nothing: the counts belong to the summary at the end, and four
     "N new roles" lines for one scan would read as four scans.
 
-    Nothing here decides what is new. `new_since_last_run` is keyed on the run
-    counter and the counter is bumped once, at the end, so a role found in
-    pass one and a role found in pass four are equally new to the same run.
+    Nothing here decides what is new. `run` is the scan's own run number, so a
+    role found in pass one and a role found in pass four are stamped the same
+    and are equally new to the same run. It is passed in rather than read off
+    the counter here, because a second scan finishing between two of these
+    passes moves that counter underneath us.
     """
     from . import store
     from .output import html as html_mod
@@ -153,7 +199,7 @@ def _flush_phase(con, cfg, jobs, args) -> int:
     if not kept:
         return 0
     try:
-        store.upsert_roles(con, kept)
+        store.upsert_roles(con, kept, run=run)
         con.commit()
         outdir = Path(args.out or cfg.out_dir)
         if "html" in cfg.formats:
@@ -171,6 +217,17 @@ def _flush_phase(con, cfg, jobs, args) -> int:
 
 def cmd_scan(args) -> int:
     cfg = load_cfg(args.config)
+    # First, and before a single request. See `out_dir_problem`: this is the
+    # one failure the scan used to discover 77 minutes in, having already done
+    # all of the work and every bit of the asking-other-people's-servers.
+    # A dry run is exempt because it deliberately writes nothing here, and a
+    # config with no formats at all writes nothing either; refusing those
+    # would be inventing a failure rather than reporting one.
+    if not args.dry_run and cfg.formats:
+        why = out_dir_problem(Path(args.out or cfg.out_dir))
+        if why:
+            _say(why)
+            return 1
     srcs = _load_sources(cfg)
     # Whether the limit actually cut anything, rather than merely whether one
     # was asked for. `--limit 20000` against a 13,440-source config read every
@@ -387,6 +444,26 @@ def cmd_scan(args) -> int:
     #
     # A database that is the configured one keeps the old behaviour, because
     # that is the upgrade path this function exists for.
+    # The run number this scan writes, taken once and used for every role it
+    # stamps and every question it asks about newness.
+    #
+    # It used to be re-derived from the counter at each of those moments, as
+    # "whatever runs is now, plus one". Two scans over the same database do
+    # not take turns: a cron scan overlapping a manual one had the second scan
+    # stamp its rows `first_run=1`, then read the counter again after the
+    # first scan had bumped it, and go looking for `first_run=2`. Both scans
+    # found the same 250 roles on a fresh database; the first said "first
+    # scan, all new" and the second said `250 match your config, 0 new`. No
+    # corruption, no lock error, no warning -- just the one sentence this
+    # tool exists to never print, on 250 roles that were every one of them
+    # new.
+    #
+    # Pinning it makes the two scans agree instead of contradicting each
+    # other, which is why this is a fix rather than a warning: both are
+    # honestly reporting what was new when THEY started, and on a fresh
+    # database that is all of it. `store.bump_runs` is separately atomic now,
+    # so the counter itself cannot lose one of the two increments either.
+    this_run = store.current_run(con) + 1
     own_db = not args.db or Path(args.db) == store.DEFAULT_PATH
     mig = ({"roles": 0, "statuses": 0} if args.dry_run else
            store.migrate(con,
@@ -438,7 +515,7 @@ def cmd_scan(args) -> int:
             # nothing.
             ready = 0
             if not args.dry_run and (n < len(est) or n == 1):
-                ready = _flush_phase(con, cfg, all_jobs, args)
+                ready = _flush_phase(con, cfg, all_jobs, args, run=this_run)
 
             if args.dry_run:
                 pass
@@ -582,8 +659,9 @@ def cmd_scan(args) -> int:
     if args.dry_run:
         new_ids = set()
     else:
-        store.upsert_roles(con, kept)
-        new_ids = store.new_since_last_run(con, [j.uid for j in kept])
+        store.upsert_roles(con, kept, run=this_run)
+        new_ids = store.new_since_last_run(
+            con, [j.uid for j in kept], run=this_run)
 
     settled = store.settled_uids(con)
     hidden = [j for j in kept if j.uid in settled]
@@ -597,10 +675,13 @@ def cmd_scan(args) -> int:
     if hidden:
         _say(f"  {len(hidden)} settled and hidden")
 
-    # Read this BEFORE bumping, or it is always False and the first-run
-    # message below is dead code: day one printed "0 new" and was
-    # indistinguishable from a no-change repeat.
-    first_run = store.current_run(con) == 0
+    # Read off this scan's own pinned run number rather than off the counter,
+    # which by now another scan may have bumped. Reading the counter here also
+    # had to happen BEFORE `bump_runs` or it was always False and the
+    # first-run message below was dead code: day one printed "0 new" and was
+    # indistinguishable from a no-change repeat. Pinning removes both
+    # orderings as things anybody has to remember.
+    first_run = this_run == 1
     if not args.dry_run:
         store.bump_runs(con)
     new = [j for j in kept if j.uid in new_ids]
@@ -736,22 +817,33 @@ def cmd_scan(args) -> int:
     }
     outdir = Path(args.out or cfg.out_dir)
     written = []
+    unwritable = ""
     # A dry run prints "nothing was recorded", which was true of the database
     # and false of the filesystem: it still overwrote out/index.html and
     # out/roles.json, so `--limit 200 --dry-run` replaced a full dashboard
     # with a 200-source sample of one.
-    if args.dry_run:
-        _say("  (dry run, so out/ was left alone)")
-    elif "html" in cfg.formats:
-        written.append(output.html_out.write(
-            outdir / "index.html", new=new, seen=seen, dropped=dropped,
-            sources_ok=ok, sources_total=len(srcs), throttled=throttled,
-            postings=len(all_jobs),
-        ))
-    if not args.dry_run and "json" in cfg.formats:
-        written.append(output.write_json(outdir / "roles.json", new, seen, meta))
-    if not args.dry_run and ("markdown" in cfg.formats or "md" in cfg.formats):
-        written.append(output.write_markdown(outdir / "roles.md", new, seen, meta))
+    #
+    # The whole block is guarded, even though `out_dir_problem` has already
+    # said the directory is writable, because that was true when the command
+    # was typed and this is an hour later: a disk fills up, a network share
+    # drops, someone changes a mode. What must not happen is what used to --
+    # a bare traceback out of `atomic_write_text` as the last act of a
+    # 77-minute run, reading exactly like the scan itself was lost.
+    try:
+        if args.dry_run:
+            _say("  (dry run, so out/ was left alone)")
+        elif "html" in cfg.formats:
+            written.append(output.html_out.write(
+                outdir / "index.html", new=new, seen=seen, dropped=dropped,
+                sources_ok=ok, sources_total=len(srcs), throttled=throttled,
+                postings=len(all_jobs),
+            ))
+        if not args.dry_run and "json" in cfg.formats:
+            written.append(output.write_json(outdir / "roles.json", new, seen, meta))
+        if not args.dry_run and ("markdown" in cfg.formats or "md" in cfg.formats):
+            written.append(output.write_markdown(outdir / "roles.md", new, seen, meta))
+    except OSError as exc:
+        unwritable = str(exc)
 
     if not args.dry_run:
         # A one-directional export so a fresh GitHub Actions runner has a
@@ -763,6 +855,20 @@ def cmd_scan(args) -> int:
 
     for p in written:
         _say(f"  wrote {p}")
+    if unwritable:
+        # Say where the roles ARE. Everything this scan found was committed to
+        # the database several steps ago, so this is a rendering failure and
+        # not a lost scan, and the difference is the difference between
+        # shrugging and running the whole hour again.
+        _say("")
+        _say(f"  Could not write into {outdir}: {unwritable}")
+        _say(f"  The {len(kept):,} role(s) this scan found are already in the "
+             f"database and nothing was lost. `job-radar serve` reads them "
+             f"straight from it,")
+        _say(f"  and `job-radar list` prints them. Fix the permissions, or "
+             f"point `output.dir` somewhere else, and the next scan writes "
+             f"the files.")
+        return 1
     return 0
 
 
@@ -981,7 +1087,19 @@ def _daily_sync_nudge(cfg, db=None) -> None:
         return
     from . import store
     from datetime import date
-    con = store.connect(db)
+    # A nudge must not be the thing that creates the database. It runs before
+    # every `list`, `serve` and `rank`, so with a mistyped `--db` it got there
+    # first and left the stray file the command was then blamed for. No
+    # database yet also means nowhere to remember "said it today", so on a
+    # fresh install it is said every time until the first scan writes one --
+    # which is a fortnight-old source list being mentioned to the one person
+    # who has never scanned, and that is the right way round.
+    if not Path(db or store.DEFAULT_PATH).is_file():
+        _say(f"Your source list was last checked {days} days ago; upstream "
+             f"checks it weekly. Run `git pull` to pick up boards that have "
+             f"moved and employers added since.\n")
+        return
+    con = store.connect(db, must_exist=True)
     try:
         today = date.today().isoformat()
         if store.get_meta(con, "sync_nudge", "") == today:
@@ -1228,12 +1346,32 @@ def cmd_seed_load(args) -> int:
     countries = list(dict.fromkeys(list(cfg.countries)
                                    + list(cfg.relocate_to)))
     _say(seed_mod.describe(idx, countries))
-    jobs = list(seed_mod.load(args.path, countries))
-    if not jobs:
-        _say("Nothing in this index for your countries. Config `locations."
-             "countries`, or run a scan.")
-        return 0
-    kept, _ = screen_run(jobs, cfg)
+    # Inside the same handling as `read_index` above, which it was not.
+    # `seed.load` opens and decompresses the shards themselves, so it is the
+    # call that meets a truncated download: a shard set whose index parses
+    # fine and whose UK.jsonl.gz is eight bytes of HTML produced
+    # `ValueError: UK.jsonl.gz is not a readable gzip file` under a nine-frame
+    # traceback, one line after this command had printed a cheerful summary of
+    # what it was about to read. `seed.load` writes an actionable sentence for
+    # both of these now; the traceback above it was the only thing left.
+    #
+    # The screening is in here too, because `load` is a generator: nothing is
+    # read off disk until something consumes it, and a `list()` on the line
+    # above only looks like the place the file is touched.
+    try:
+        jobs = list(seed_mod.load(args.path, countries))
+        if not jobs:
+            _say("Nothing in this index for your countries. Config `locations."
+                 "countries`, or run a scan.")
+            return 0
+        kept, _ = screen_run(jobs, cfg)
+    except (OSError, ValueError) as exc:
+        # One clause for both: a missing shard arrives as FileNotFoundError,
+        # which is an OSError, and `seed.load` already names the shard and
+        # says whether to rebuild or re-fetch. Splitting them only let this
+        # command restate what the message underneath it had just said.
+        _say(f"Could not read the seed at {args.path}: {exc}")
+        return 1
     _say(f"{len(jobs):,} roles read, {len(kept):,} match your config.")
     if args.dry_run:
         _say("Dry run, so nothing was written.")
@@ -1471,7 +1609,7 @@ def cmd_applied(args) -> int:
     """Record what happened with a role. Writes the database, same as the
     dashboard does, so the two cannot disagree."""
     from . import store
-    con = store.connect(args.db)
+    con = store.connect(args.db, must_exist=True)
     try:
         if args.status not in store.STATUSES:
             _say(f"status must be one of: {', '.join(store.STATUSES)}")
@@ -1499,7 +1637,7 @@ def cmd_generate(args) -> int:
     deliberate spend.
     """
     from . import runner, store
-    con = store.connect(args.db)
+    con = store.connect(args.db, must_exist=True)
     try:
         if args.kind not in runner.KINDS:
             _say(f"kind must be one of: {', '.join(runner.KINDS)}")
@@ -1575,7 +1713,7 @@ def cmd_enrich(args) -> int:
     """Fill in descriptions for roles whose source only returned a headline."""
     from . import enrich, store
     cfg = _cfg_or_default(args.config)
-    con = store.connect(args.db)
+    con = store.connect(args.db, must_exist=True)
     try:
         rows = enrich.candidates(con, limit=args.limit)
         if not rows:
@@ -1616,7 +1754,7 @@ def cmd_rank(args) -> int:
     """
     from . import rank as rank_mod, store
     cfg = _cfg_or_default(args.config)
-    con = store.connect(args.db)
+    con = store.connect(args.db, must_exist=True)
     try:
         rows = rank_mod.candidates(con, refresh=args.refresh)
         if not rows:
@@ -1684,10 +1822,11 @@ def cmd_rescreen(args) -> int:
     """
     from . import store
     from .models import Job, Salary
-    from .screen import match, apply_salary, screen as screen_one
+    from .screen import (match, apply_salary, screen as screen_one,
+                         enrich as enrich_derived)
 
     cfg = _cfg_or_default(args.config)
-    con = store.connect(args.db)
+    con = store.connect(args.db, must_exist=True)
     try:
         # The salary columns and the real URL are selected because this has to
         # run the SAME filters a scan runs. It used to call `match` alone,
@@ -1702,9 +1841,11 @@ def cmd_rescreen(args) -> int:
             "SELECT r.uid, r.company, r.title, r.url, r.platform, r.location, "
             "r.description, r.salary_min, r.salary_max, r.salary_currency, "
             "r.salary_period, r.salary_confirmed, r.salary_label, "
+            "r.city, r.country, r.work_mode, "
             "COALESCE(s.status,'new') st "
             "FROM roles r LEFT JOIN role_state s ON s.uid=r.uid").fetchall()
         stale, kept_by_status = [], []
+        rederived = 0
         for r in rows:
             j = Job(company=r["company"], title=r["title"],
                     url=r["url"] or "https://example.invalid/x",
@@ -1715,6 +1856,52 @@ def cmd_rescreen(args) -> int:
                                   period=r["salary_period"] or "year",
                                   confirmed=bool(r["salary_confirmed"]),
                                   raw=r["salary_label"]))
+            # Re-derive the stored columns, not only the verdict.
+            #
+            # `city`, `country` and `work_mode` are computed by `screen.enrich`
+            # at scan time and then written into the table, so every fix to
+            # that derivation, or to an adapter feeding it, reached new rows
+            # only. This command re-ran the titles, the locations, the
+            # dealbreakers and the floor, reported honestly on all four, and
+            # left those three columns holding whatever the scan that first
+            # saw the role happened to think -- which is the dashboard's city
+            # filter, its work-mode filter and the right-to-work gate all
+            # reading a stale answer with nothing anywhere saying so. Measured
+            # on one row: a Manchester posting stored as city "US Remote",
+            # country US, mode remote stayed exactly that through a rescreen
+            # that printed "All 1 roles still match your config."
+            #
+            # Run BEFORE `match` here, where `screen.run` runs it after. That
+            # is deliberate and it is not the ordering that file calls
+            # load-bearing: `match` reads nothing `enrich` sets (it resolves
+            # countries itself), and `enrich` still lands before `apply_salary`
+            # and `screen`, which is the part that matters. `screen.run` puts
+            # it second purely to skip the 85% of screening CPU it costs on
+            # the 99% of postings the title gate throws away. There is no such
+            # saving here: a role that fails the gate may still be kept
+            # because you acted on it, and it would then be the one row on the
+            # dashboard nobody had refreshed.
+            enrich_derived(j)
+            city, mode = j.city or "", j.work_mode or "unstated"
+            # The board's own country tag is the fallback a scan uses when the
+            # posting names nowhere, and it is not stored per role, so this
+            # command cannot recompute it. Where the location names no country
+            # the stored value is kept rather than blanked: an empty country
+            # is read by the country filter as "not here", and dropping a role
+            # out of somebody's results is a worse error than an old tag.
+            # `city` and `work_mode` have no such problem -- both are computed
+            # from the location and the description, both of which are stored,
+            # and "unstated" is an honest bucket the dashboard already has.
+            # The one thing lost is a work mode that rested only on the
+            # platform's own remote flag, which is not a column here; the next
+            # scan restores it, and until then "unstated" is true where
+            # "remote" was a claim nothing stored can still support.
+            country = j.country or r["country"] or ""
+            if (city, country, mode) != (r["city"] or "", r["country"] or "",
+                                         r["work_mode"] or "unstated"):
+                con.execute("UPDATE roles SET city=?, country=?, work_mode=? "
+                            "WHERE uid=?", (city, country, mode, r["uid"]))
+                rederived += 1
             ok, _ = match(j, cfg)
             if ok:
                 ok, _ = apply_salary(j, cfg)
@@ -1727,6 +1914,15 @@ def cmd_rescreen(args) -> int:
                 continue
             (kept_by_status if r["st"] not in ("new", "") else stale).append(r)
 
+        con.commit()
+        if rederived:
+            # Said whatever the verdict is, and said first, because it is the
+            # only thing this command CHANGES on a database where every role
+            # still matches. "All 1,670 roles still match your config" and a
+            # silent rewrite of three columns is a report that omits its own
+            # only effect.
+            _say(f"Re-derived the city, country or work mode on {rederived} "
+                 f"of {len(rows)} roles from the current rules.")
         if not stale and not kept_by_status:
             _say(f"All {len(rows)} roles still match your config.")
             return 0
@@ -1758,7 +1954,12 @@ def cmd_rescreen(args) -> int:
 def cmd_list(args) -> int:
     """Everything the dashboard shows, as text."""
     from . import store
-    con = store.connect(args.db)
+    # `must_exist`, because this is the command the bug was found on:
+    # `job-radar list --db typo.db` created the file, printed `0 role(s)` and
+    # exited 0. Every read command here now refuses to invent a database, for
+    # the reason spelled out in `store.connect`. The two writers, `scan` and
+    # `seed load`, still create one, because that is their job.
+    con = store.connect(args.db, must_exist=True)
     try:
         q = ("SELECT r.*, COALESCE(s.status,'new') status, "
              "COALESCE(s.note,'') note FROM roles r "
@@ -1847,20 +2048,69 @@ def cmd_list(args) -> int:
 
 # ---------------------------------------------------------------- serve
 def cmd_serve(args) -> int:
+    from . import store
     from .serve import serve
+    # Checked here rather than inside `serve`, because the server opens a
+    # connection per request: a bad `--db` would otherwise be found by the
+    # first page load, after a browser had already been launched at a
+    # dashboard that cannot answer. The connection is closed straight away;
+    # this is a check on the path, not the server's own handle.
+    store.connect(args.db, must_exist=True).close()
     return serve(db_path=args.db, host=args.host, port=args.port,
                  open_browser=not args.no_browser, docs_base=args.docs,
                  config_path=args.config)
 
 
 # ---------------------------------------------------------------- setup
+def _csv_list(raw: str | None) -> list[str]:
+    """A comma or space separated flag value, as a list.
+
+    Both separators, because the flags this parses take things people write
+    both ways: `--countries UK,IE` and `--countries "UK IE"` are the same
+    request, and answering one of them with a single country code called
+    "UK IE" is the sort of wrong answer that then looks like a config nobody
+    can find a fault in.
+    """
+    return [x.strip() for x in re.split(r"[,\s]+", raw or "") if x.strip()]
+
+
 def cmd_setup(args) -> int:
+    import inspect
+
     from .setup_wizard import run as wizard
     from .setup_wizard import NoInput
+
+    # `--defaults` is the only path that works without a terminal, so it is
+    # the whole of the story for scripts, CI and anyone setting this up over
+    # ssh. It wrote `countries: [UK]` and `currency: GBP` with no flag able to
+    # say otherwise, so somebody in Austin got a config filtering their
+    # results to the wrong continent and pricing them in the wrong money, and
+    # nothing on the way through said so.
+    extra = {}
+    if args.countries:
+        extra["countries"] = [c.upper() for c in _csv_list(args.countries)]
+    if args.currency:
+        extra["currency"] = args.currency.strip().upper()
+    # Checked against the wizard rather than assumed, because the two halves
+    # of these flags live in different modules -- the flag is declared here
+    # and the answer is written there -- and a namespace that does not match
+    # the parser has already shipped four times in this file. Passing a
+    # keyword the wizard does not take is a TypeError in front of somebody
+    # running setup for the first time; dropping it quietly is worse, because
+    # they would get `countries: [UK]` in their config having explicitly typed
+    # `--countries US`, which is the exact failure the flag exists to fix.
+    takes = set(inspect.signature(wizard).parameters)
+    unusable = sorted(f"--{k}" for k in extra if k not in takes)
+    if unusable:
+        _say(f"This build's setup wizard cannot apply {', '.join(unusable)}, "
+             f"so nothing was written. A config that silently ignored them "
+             f"would be worse than none.")
+        return 1
     try:
         return wizard(_cfg_write_path(args.config),
                       non_interactive=args.defaults, cv=args.cv,
-                      titles=args.titles, scan=getattr(args, "scan", False))
+                      titles=args.titles, scan=getattr(args, "scan", False),
+                      **extra)
     except NoInput:
         # stdin closed part-way through. The isatty guard in the wizard turns
         # most of these away at the door; this catches the rest, such as a pty
@@ -1892,6 +2142,15 @@ def _limit(v: str) -> int:
     return n
 
 
+# Written once because it is on nine subcommands, and because the second
+# sentence is the behaviour a reader has to be told: `list --db typo.db` used
+# to answer `0 role(s)` and leave a 64KB file behind, which is the confident
+# wrong answer this tool exists to not give.
+_DB_HELP = ("database path (default data/job-radar.db). This command only "
+            "reads, so it will not create one: a path that is not there is "
+            "an error rather than an empty answer.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="job-radar",
@@ -1902,8 +2161,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("scan", help="fetch every source and report matches")
-    s.add_argument("-o", "--out", default=None)
-    s.add_argument("--state", default=None)
+    s.add_argument("-o", "--out", default=None,
+                   help="directory for index.html, roles.json and roles.md "
+                        "(default: `output.dir` from your config, or out/). "
+                        "Checked for writability before the first request, "
+                        "not after an hour of reading boards.")
+    s.add_argument("--state", default=None,
+                   help="the seen-set file, and the folder the "
+                        "host-block memory sits in "
+                        "(default state/seen.json). The database is the real "
+                        "record; this is the export a CI runner commits.")
     s.add_argument("--db", default=None, help="database path (default data/job-radar.db)")
     s.add_argument("--limit", type=_limit, default=0,
                    help="read only the first N sources, for a quick look. "
@@ -1928,9 +2195,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("discover", help="find a company's job board from its careers page")
     d.add_argument("targets", nargs="+", help="domain, careers URL, or company name")
-    d.add_argument("--company", default=None)
+    d.add_argument("--company", default=None,
+                   help="the employer name to record. Without it the name is "
+                        "guessed from the domain, which turns "
+                        "boards.greenhouse.io/acmeco into \"Acmeco\".")
     d.add_argument("--add", action="store_true", help="write results into your config")
-    d.add_argument("--no-validate", action="store_true")
+    d.add_argument("--no-validate", action="store_true",
+                   help="do not fetch each board found to check it answers "
+                        "and is really this employer's. Faster, and the "
+                        "results are then guesses.")
     d.set_defaults(func=cmd_discover)
 
     sd = sub.add_parser("seed", help="prebuilt roles for the slow half of a scan")
@@ -1949,8 +2222,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     v = sub.add_parser("validate", help="check known sources are alive and are who they claim")
     v.add_argument("--file", default=None, help="a sources.json to check instead of the config set")
-    v.add_argument("--report", default=None)
-    v.add_argument("--limit", type=_limit, default=0)
+    v.add_argument("--report", default=None,
+                   help="write the full result as JSON to this path. It is "
+                        "the only durable trace of a run that costs hours of "
+                        "network, and it is what --prune argues from.")
+    v.add_argument("--limit", type=_limit, default=0,
+                   help="check only the first N sources. 0 checks all of "
+                        "them.")
     v.add_argument("--prune", action="store_true", help="rewrite --file without dead sources")
     v.add_argument("--force-prune", action="store_true",
                    help="prune even when most of the list came back empty, "
@@ -1958,7 +2236,9 @@ def build_parser() -> argparse.ArgumentParser:
     v.set_defaults(func=cmd_validate)
 
     c = sub.add_parser("coverage", help="where the source list is thin")
-    c.add_argument("--file", default=None)
+    c.add_argument("--file", default=None,
+                   help="a sources.json to measure instead of the set your "
+                        "config would scan")
     c.set_defaults(func=cmd_coverage)
 
     ap = sub.add_parser("applied", help="record what happened with a role")
@@ -1966,23 +2246,29 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-s", "--status", default="applied",
                     help="new|interested|applied|submitted|interviewing|offer|"
                          "rejected|withdrawn|skipped|closed")
-    ap.add_argument("--note", default=None)
-    ap.add_argument("--db", default=None)
+    ap.add_argument("--note", default=None,
+                   help="free text kept against the role, shown by `list` and "
+                        "on the dashboard. Pass an empty string to clear one.")
+    ap.add_argument("--db", default=None, help=_DB_HELP)
     ap.set_defaults(func=cmd_applied)
 
     g = sub.add_parser("generate", help="screen a role, or draft a CV or cover letter")
     g.add_argument("target", help="a posting URL, a company name, or a uid")
     g.add_argument("-k", "--kind", default="screen",
                    help="screen | cv | cover_letter")
-    g.add_argument("--db", default=None)
-    g.add_argument("--docs", default=None)
+    g.add_argument("--db", default=None, help=_DB_HELP)
+    g.add_argument("--docs", default=None,
+                   help="where the CV or cover letter is written "
+                        "(default $JOB_RADAR_DOCS, or ~/job-applications)")
     g.add_argument("--force", action="store_true",
                    help="screen even when the posting has no description")
     g.set_defaults(func=cmd_generate)
 
     en = sub.add_parser("enrich",
                         help="fetch full postings for headline-only sources")
-    en.add_argument("--limit", type=_limit, default=0)
+    en.add_argument("--limit", type=_limit, default=0,
+                    help="fetch at most N postings. 0 fetches every one that "
+                         "arrived as a headline only.")
     # Defaults to None, not to a number, so "the user asked for a pause" can
     # be told apart from "nobody said". A pause is now a request to go one at
     # a time: each host is paced on its own clock, so a blanket delay between
@@ -1993,18 +2279,22 @@ def build_parser() -> argparse.ArgumentParser:
                          "separately and different hosts run in parallel.")
     en.add_argument("--concurrency", type=int, default=None,
                     help="how many postings to fetch at once (ignored with --pause)")
-    en.add_argument("--dry-run", action="store_true")
-    en.add_argument("--db", default=None)
+    en.add_argument("--dry-run", action="store_true",
+                    help="say how many postings would be fetched and fetch "
+                         "none of them")
+    en.add_argument("--db", default=None, help=_DB_HELP)
     en.set_defaults(func=cmd_enrich)
 
     rk = sub.add_parser("rank", help="score every role against your CV, cheaply")
     rk.add_argument("--refresh", action="store_true",
                     help="re-score roles that already have a fit")
-    rk.add_argument("--limit", type=_limit, default=0)
+    rk.add_argument("--limit", type=_limit, default=0,
+                    help="score at most N roles, which is also how you cap "
+                         "the spend. 0 scores every unranked one.")
     rk.add_argument("--top", type=int, default=12, help="how many to print")
     rk.add_argument("--dry-run", action="store_true",
                     help="show what it would cost and send nothing")
-    rk.add_argument("--db", default=None)
+    rk.add_argument("--db", default=None, help=_DB_HELP)
     rk.set_defaults(func=cmd_rank)
 
     rs = sub.add_parser("rescreen",
@@ -2013,26 +2303,42 @@ def build_parser() -> argparse.ArgumentParser:
                     help="delete the ones that no longer match and that you "
                          "have not acted on")
     rs.add_argument("--limit", type=_limit, default=0, help="how many to list")
-    rs.add_argument("--db", default=None)
+    rs.add_argument("--db", default=None, help=_DB_HELP)
     rs.set_defaults(func=cmd_rescreen)
 
     ls = sub.add_parser("list", help="the dashboard, as text")
-    ls.add_argument("--status", default=None)
+    ls.add_argument("--status", default=None,
+                    help="only roles at this status: "
+                         "new|interested|applied|submitted|interviewing|offer|"
+                         "rejected|withdrawn|skipped|closed. Naming a settled "
+                         "one shows it, which is otherwise what --all is for.")
     ls.add_argument("--all", action="store_true",
                     help="include settled roles and ones no longer on a board")
     ls.add_argument("--new", action="store_true",
                     help="only roles first seen on the most recent scan")
-    ls.add_argument("--limit", type=_limit, default=0)
-    ls.add_argument("--json", action="store_true")
-    ls.add_argument("--db", default=None)
+    ls.add_argument("--limit", type=_limit, default=0,
+                    help="print at most N roles, best score first. 0 prints "
+                         "all of them.")
+    ls.add_argument("--json", action="store_true",
+                    help="print the same roles as JSON, one object each, with "
+                         "their notes and generated documents attached")
+    ls.add_argument("--db", default=None, help=_DB_HELP)
     ls.set_defaults(func=cmd_list)
 
     sv = sub.add_parser("serve", help="open the dashboard you can act from")
-    sv.add_argument("--db", default=None)
-    sv.add_argument("--host", default="127.0.0.1")
-    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--db", default=None, help=_DB_HELP)
+    sv.add_argument("--host", default="127.0.0.1",
+                    help="address to listen on (default 127.0.0.1). This "
+                         "database holds your application history and private "
+                         "notes, so anything other than a loopback address "
+                         "publishes it to your network.")
+    sv.add_argument("--port", type=int, default=8765,
+                    help="port to listen on (default 8765). The scan opens "
+                         "the dashboard on this port too, so a server already "
+                         "holding it is why you would change this.")
     sv.add_argument("--docs", default=None, help="where generated documents go")
-    sv.add_argument("--no-browser", action="store_true")
+    sv.add_argument("--no-browser", action="store_true",
+                    help="start the server without opening a browser at it")
     sv.set_defaults(func=cmd_serve)
 
     w = sub.add_parser("setup", help="build a config by answering a few questions")
@@ -2043,12 +2349,22 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--cv", default=None, help="path to your CV (required with --defaults)")
     w.add_argument("--titles", default=None,
                    help="comma-separated job titles (required with --defaults)")
+    w.add_argument("--countries", default=None,
+                   help="country codes you can work in, comma or space "
+                        "separated, e.g. 'US' or 'UK,IE'. With --defaults "
+                        "this is the only way to say so: it wrote UK for "
+                        "everybody.")
+    w.add_argument("--currency", default=None,
+                   help="currency your salary floor is in, e.g. USD. With "
+                        "--defaults this is the only way to say so: it wrote "
+                        "GBP for everybody.")
     w.set_defaults(func=cmd_setup)
 
     return p
 
 
 def main(argv=None) -> int:
+    from .store import StoreError
     args = build_parser().parse_args(argv)
     try:
         # Before the command, so it is read rather than scrolled past at the
@@ -2074,6 +2390,15 @@ def main(argv=None) -> int:
             except Exception:
                 pass          # a nudge must never stop the command
         return args.func(args)
+    except StoreError as e:
+        # A `--db` this tool cannot use. Every one of these used to arrive as
+        # a raw sqlite exception under a nine-frame traceback: a directory and
+        # an unwritable folder both read `unable to open database file`, and a
+        # text file read `file is not a database`, none of which name the path
+        # or the fix. `store` writes the sentence; this prints it and nothing
+        # else.
+        _say(str(e))
+        return 1
     except FileNotFoundError as e:
         _say(str(e))
         return 1
