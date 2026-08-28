@@ -396,9 +396,11 @@ so these are stated rather than left for you to find.
   against your dealbreakers, only looked at.
 - **Salary you can filter on.** Around a third of postings state one. That is
   the market, not a bug, and the salary rule above is built around it.
-- **Currencies other than your own** are never converted. A salary in another
-  currency is shown, marked "not compared", and can neither disqualify a role
-  nor earn it points, because a wrong exchange rate drops real roles quietly.
+- **Currencies other than your own** are never converted. With a floor set, a
+  salary in another currency is shown, marked "not compared", and can neither
+  disqualify a role nor earn it points, because a wrong exchange rate drops
+  real roles quietly. With no floor set nothing is compared at all, so nothing
+  carries that mark.
 - **The right to work.** A posting that states its sponsorship position is
   flagged, read from the description. Most state nothing, and nothing here is
   filtered on it, so treat an unflagged role as unknown rather than as

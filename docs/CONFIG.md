@@ -50,7 +50,7 @@ empty.
 
 | key | type | notes |
 |---|---|---|
-| `currency` | `GBP`, `USD` or `EUR` | Anything else is refused. A salary in a different currency to your floor is never converted: it is shown and marked "not compared", and it can neither disqualify a role nor earn it points. |
+| `currency` | any of the 45 the parser reads | Anything else is refused; the list is `salary.KNOWN_CURRENCIES`, built from the parser's own tables so the two cannot drift. A salary in a different currency to your floor is never converted: it is shown and marked "not compared", and it can neither disqualify a role nor earn it points. With no floor set nothing is compared, so nothing carries that mark. |
 | `floor` | number | `70000`. `£70,000` and `70,000` are accepted and converted. Words are refused. A role whose **stated** pay is below this is hidden; a role with **no** stated pay is always shown and marked. |
 
 ## dealbreakers

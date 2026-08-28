@@ -24459,7 +24459,7 @@
    "country": "multi"
   },
   {
-   "company": "About",
+   "company": "Nextdoor",
    "url": "https://boards-api.greenhouse.io/v1/boards/nextdoor/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -25737,7 +25737,7 @@
    "country": "UK"
   },
   {
-   "company": "App",
+   "company": "Lyft",
    "url": "https://boards-api.greenhouse.io/v1/boards/lyft/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "healthcare",
@@ -26301,7 +26301,7 @@
    "country": "US"
   },
   {
-   "company": "Ats",
+   "company": "Contentstack",
    "url": "https://boards-api.greenhouse.io/v1/boards/contentstack/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
@@ -33750,7 +33750,7 @@
    "country": "US"
   },
   {
-   "company": "Ghst",
+   "company": "Ghost",
    "url": "https://boards-api.greenhouse.io/v1/boards/ghost/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "finance",
