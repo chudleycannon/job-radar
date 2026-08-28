@@ -1395,6 +1395,16 @@ def cmd_seed_load(args) -> int:
         keep = Path(args.keep) if args.keep else (
             Path(args.config).resolve().parent if args.config
             else Path.cwd()) / "seed"
+        if args.dry_run:
+            # Said before the download, not after it. A dry run genuinely has
+            # to fetch the shards, because screening them means reading them,
+            # and the file is kept and reused. What was wrong was the report:
+            # it downloaded 134MB and then printed "Dry run, so nothing was
+            # written", which is a sentence about the database being read as
+            # one about the disk.
+            _say("--dry-run writes nothing to the database, but it still has "
+                 "to download the shards to screen them. They are kept and "
+                 "reused, so this is not wasted.")
         try:
             seed_mod.fetch(src, countries, keep, say=_say)
         except (OSError, ValueError) as exc:
@@ -1508,7 +1518,9 @@ def cmd_seed_load(args) -> int:
         return 1
     _say(f"{len(jobs):,} roles read, {len(kept):,} match your config.")
     if args.dry_run:
-        _say("Dry run, so nothing was written.")
+        _say(f"Dry run: nothing was written to the database"
+             + (f". The shards are in {keep}." if str(args.path).startswith(
+                 ("http://", "https://")) else "."))
         return 0
     con = store.connect(args.db)
     # The legacy import follows the database, not the working directory --

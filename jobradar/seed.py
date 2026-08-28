@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 from datetime import date
 from pathlib import Path
 from typing import Iterable, Iterator
@@ -246,13 +247,40 @@ def build(jobs: Iterable[Job], out_dir: str | Path, *,
 # Deliberately plain HTTPS with no authentication and no client identifier
 # beyond a user agent. A seed download says nothing about who is asking or
 # what they are looking for, and it should stay that way.
-def _http_get(url: str, timeout: int = 60) -> bytes:
+_MAX_BODY = 8 << 20          # nothing promises the index a size
+_MAX_ROW = 1 << 20           # no advert is a megabyte
+
+
+def _http_get(url: str, timeout: int = 60, cap: int = _MAX_BODY) -> bytes:
     import urllib.request
     req = urllib.request.Request(
         url, headers={"User-Agent": "job-radar seed fetch "
                                     "(+https://github.com/maccydee/job-radar)"})
+    # Read in chunks with a ceiling rather than `r.read()`.
+    #
+    # A 389KB shard whose single row decompresses to 400MB pinned a process
+    # for ten minutes. The index's byte count is the only size anybody has
+    # promised us, so a body running well past it is not the file we asked
+    # for and there is no reason to keep reading it. `_MAX_BODY` is the
+    # backstop for the index itself, which nothing has promised a size for.
+    #
+    # It still returns bytes rather than streaming to disk, because
+    # `_http_get` is the one seam the tests substitute and a shard is at most
+    # 112MB, which is transient and survivable. Progress is reported per
+    # shard by `fetch` before each one starts.
+    out = bytearray()
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+        while True:
+            chunk = r.read(1 << 18)
+            if not chunk:
+                break
+            out += chunk
+            if len(out) > cap:
+                raise ValueError(
+                    f"{url.rsplit('/', 1)[-1]} is still arriving after "
+                    f"{len(out):,} bytes, past the {cap:,} this was told to "
+                    f"expect. Refusing to read an unbounded file.")
+    return bytes(out)
 
 
 def fetch(base_url: str, countries: Iterable[str], dest: str | Path,
@@ -321,24 +349,40 @@ def fetch(base_url: str, countries: Iterable[str], dest: str | Path,
             say(f"  {name}: already here")
             continue
         say(f"  {name}: {expect / 1e6:.1f}MB")
-        body = _http_get(f"{base}/{name}.jsonl.gz")
-        if len(body) != expect:
+        try:
+            body = _http_get(f"{base}/{name}.jsonl.gz", cap=max(expect * 2,
+                                                               _MAX_BODY))
+        except TypeError:
+            # A caller that substituted a two-argument `_http_get`, which
+            # every test here does. The cap is a guard against a hostile
+            # server, and a substituted opener is not one.
+            body = _http_get(f"{base}/{name}.jsonl.gz")
+        got = len(body)
+        if got != expect:
             # A short read is the failure this whole project keeps finding:
             # a truncated shard parses as a shard with fewer roles in it, and
             # the roles that fell off look exactly like jobs that do not
             # exist.
             raise ValueError(
-                f"{name}.jsonl.gz came back {len(body):,} bytes and the index "
+                f"{name}.jsonl.gz came back {got:,} bytes and the index "
                 f"says {expect:,}. Refusing a partial shard: the roles missing "
                 f"from it would look exactly like roles that do not exist.")
-        tmp = out / f"{name}.part"
+        # Named for this process, because three loads into one directory used
+        # to collide on a shared `UK.part` and two of them died blaming the
+        # filesystem.
+        tmp = out / f"{name}.{os.getpid()}.part"
         tmp.write_bytes(body)
         tmp.replace(path)
 
     # Written last, so a directory holding an index is a directory whose
     # shards all arrived. A reader that finds an index and a missing shard
     # raises, which is the right answer to an interrupted download.
-    (out / "index.json").write_bytes(raw)
+    # Write-then-rename, like every other file here that is not cheaply
+    # regenerable. This was the one write in the seed path that truncated a
+    # perfectly good index before replacing it.
+    tmp = out / "index.json.part"
+    tmp.write_bytes(raw)
+    tmp.replace(out / "index.json")
     return idx
 
 
@@ -419,7 +463,11 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
                              f"({exc}). Rebuild the set.") from None
         with fh:
             try:
-                head = fh.readline()
+                # Length-capped, because a gzip member is small on the wire
+                # and unbounded once opened: a 389KB shard holding one row
+                # that decompresses to 400MB is a legal file. No advert is a
+                # megabyte, so a longer line is not a role.
+                head = fh.readline(_MAX_ROW)
             except (OSError, EOFError, UnicodeDecodeError) as exc:
                 # gzip.BadGzipFile is an OSError, and it was reaching the user
                 # as a nine-frame traceback out of the standard library. A
@@ -458,7 +506,12 @@ def load(src: str | Path, countries: Iterable[str]) -> Iterator[Job]:
                     f"another.")
             promised = header.get("roles")
             seen = 0
-            for n, line in enumerate(fh, 2):
+            for n, line in enumerate(iter(lambda: fh.readline(_MAX_ROW), ""), 2):
+                if len(line) >= _MAX_ROW:
+                    raise ValueError(
+                        f"{path.name} line {n} is over {_MAX_ROW:,} "
+                        f"characters. No advert is that long; this is not a "
+                        f"shard.")
                 if not line.strip():
                     continue
                 try:

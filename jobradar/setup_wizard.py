@@ -557,8 +557,26 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
     print("\n3. Salary")
     print("   Roles with a stated figure below this are hidden.")
     print("   Roles with no stated figure are always shown and marked.")
-    floor = _ask("   Minimum acceptable (blank for none)", "")
-    a["salary_floor"] = int(re.sub(r"[^\d]", "", floor)) if re.search(r"\d", floor) else None
+    # Read with the same parser the config file uses, and re-asked when it
+    # cannot be read.
+    #
+    # This stripped every non-digit and kept whatever was left, so "40 LPA"
+    # became a floor of 40, "70k" became 70 and "4 million" became 4. A floor
+    # of 40 hides nothing, so the filter was off and the config said it was
+    # on. `config._num` already reads "70k" correctly and already refuses
+    # "40 LPA" with a sentence saying how to write it, which made the
+    # interactive path strictly worse than editing the file by hand.
+    from .config import ConfigError, _num
+    while True:
+        floor = _ask("   Minimum acceptable (blank for none)", "")
+        if not floor.strip():
+            a["salary_floor"] = None
+            break
+        try:
+            a["salary_floor"] = int(_num(floor, "salary.floor"))
+            break
+        except (ConfigError, TypeError, ValueError) as exc:
+            print(f"   {exc}")
     a["salary_currency"] = _ask("   Currency", "GBP").upper()
 
     # 4. dealbreakers
