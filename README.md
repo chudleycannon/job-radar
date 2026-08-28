@@ -106,6 +106,40 @@ be found rather than failing quietly.
 
 ---
 
+## Skip the slow hour, if you want to
+
+A scan reads its sources in four passes. The first is about five minutes and
+gives you roughly half the roles. The other three are 8,779 employer boards
+one request at a time, and `apply.workable.com` is paced at 0.7 requests a
+second because it once answered a burst with a sixteen hour refusal, so that
+part is fifty minutes whatever your machine is doing.
+
+Those three passes are published, rebuilt from the same code you are running:
+
+```bash
+job-radar seed load https://github.com/maccydee/job-radar/releases/download/seed-latest
+```
+
+It reads an index, works out which shards your `locations.countries` needs,
+and downloads only those. A UK reader takes about 27MB, not the 181MB the
+whole world weighs. Roles whose country could not be read, and roles open in
+several countries at once, come with every download, because neither is
+evidence that a job is somewhere else.
+
+What arrives is screened against **your** config, exactly as a scan is. The
+file carries no score, no fit and no reasons: those are answers to a question
+only your own settings ask, and nobody else's filters can reach you. The
+request sends a user agent and nothing else.
+
+It does not replace a scan and it does not make one faster. Roles die in days
+and the file is a day old at best, so run a scan anyway; its answer wins on
+every field. What it changes is that your first hour is spent reading a
+dashboard rather than watching a counter.
+
+`docs/SEED.md` has the format, the shard sizes and how to build your own.
+
+---
+
 ## What a scan gives you
 
 A scan ends with the roles that passed your filters, and `job-radar list`
