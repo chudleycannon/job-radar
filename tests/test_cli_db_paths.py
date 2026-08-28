@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import shutil
 import sys
 import tempfile
@@ -28,6 +29,7 @@ from jobradar.cli import main
 
 
 @contextlib.contextmanager
+
 def _lab():
     """A scratch directory, plus a config that loads without a network."""
     root = Path(tempfile.mkdtemp())
@@ -164,8 +166,8 @@ def test_a_directory_nobody_can_write_is_named_as_one():
     WAL mode writes `-wal` and `-shm` beside the database, so this is what a
     scan meets pointing `--db` at a folder it cannot write, and sqlite's
     sentence names neither the directory nor the permission."""
-    if os.geteuid() == 0:
-        return          # root can write anywhere, so there is nothing to test
+    if _cannot_make_a_directory_unwritable():
+        return
     with _lab() as (root, cfg):
         ro = root / "readonly"
         ro.mkdir()
@@ -183,7 +185,7 @@ def test_a_scan_into_an_unwritable_folder_says_so_before_it_scans():
     """The writer's half of the same mistake. `store.connect` is the first
     thing `scan` does with the path, so this has to be a sentence there too
     rather than an exception the CLI never catches."""
-    if os.geteuid() == 0:
+    if _cannot_make_a_directory_unwritable():
         return
     with _lab() as (root, cfg):
         ro = root / "ro"
@@ -197,3 +199,35 @@ def test_a_scan_into_an_unwritable_folder_says_so_before_it_scans():
                 assert "Pick a --db path somewhere you can write" in str(exc)
         finally:
             ro.chmod(0o755)
+
+
+def _cannot_make_a_directory_unwritable() -> bool:
+    """Whether this platform can even set up the case under test.
+
+    Two ways it cannot. On Windows a directory mode is not a write
+    permission: `chmod(0o500)` sets the read-only attribute, which NTFS
+    ignores for creating files inside, so the "unwritable" directory is
+    perfectly writable and the test asserts against a thing that did not
+    happen. And root writes anywhere regardless of the mode.
+
+    Checked by trying it rather than by naming platforms, so a filesystem
+    that behaves differently is handled by what it does, not by what its
+    operating system usually does. `os.geteuid` is not used: it does not
+    exist on Windows, and every one of these tests died on the
+    AttributeError before reaching its own subject.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        ro = pathlib.Path(d) / "ro"
+        ro.mkdir()
+        try:
+            ro.chmod(0o500)
+            (ro / "probe").write_text("x", encoding="utf-8")
+        except OSError:
+            return False        # genuinely refused: the case is testable
+        finally:
+            try:
+                ro.chmod(0o700)
+            except OSError:
+                pass
+        return True             # the write went through, so there is no case

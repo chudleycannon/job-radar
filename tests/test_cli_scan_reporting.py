@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import pathlib
 import shutil
 import sys
 import tempfile
@@ -34,6 +35,7 @@ from jobradar.models import Job
 
 
 # --------------------------------------------------------------- the harness
+
 
 def _cfg(tmp: Path, n_sources: int = 2) -> Path:
     cfg = tmp / "config.yaml"
@@ -91,7 +93,7 @@ def test_an_unwritable_output_directory_stops_the_scan_before_it_starts():
     """The whole point. This used to be an hour of somebody else's servers
     followed by a traceback, for a fact that was true when they pressed
     enter."""
-    if os.geteuid() == 0:
+    if _cannot_make_a_directory_unwritable():
         return
     with _tmp() as root:
         ro = root / "ro"
@@ -122,7 +124,7 @@ def test_an_unwritable_output_directory_stops_the_scan_before_it_starts():
 def test_the_output_check_runs_before_a_single_request():
     """A check that fires after the reading has saved nobody anything. Proved
     by a fetch that raises: if it is reached at all, this test fails."""
-    if os.geteuid() == 0:
+    if _cannot_make_a_directory_unwritable():
         return
 
     def explode(*a, **k):
@@ -272,3 +274,35 @@ def test_the_run_counter_does_not_lose_an_increment():
                 f"{store.current_run(con)}")
         finally:
             con.close()
+
+
+def _cannot_make_a_directory_unwritable() -> bool:
+    """Whether this platform can even set up the case under test.
+
+    Two ways it cannot. On Windows a directory mode is not a write
+    permission: `chmod(0o500)` sets the read-only attribute, which NTFS
+    ignores for creating files inside, so the "unwritable" directory is
+    perfectly writable and the test asserts against a thing that did not
+    happen. And root writes anywhere regardless of the mode.
+
+    Checked by trying it rather than by naming platforms, so a filesystem
+    that behaves differently is handled by what it does, not by what its
+    operating system usually does. `os.geteuid` is not used: it does not
+    exist on Windows, and every one of these tests died on the
+    AttributeError before reaching its own subject.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        ro = pathlib.Path(d) / "ro"
+        ro.mkdir()
+        try:
+            ro.chmod(0o500)
+            (ro / "probe").write_text("x", encoding="utf-8")
+        except OSError:
+            return False        # genuinely refused: the case is testable
+        finally:
+            try:
+                ro.chmod(0o700)
+            except OSError:
+                pass
+        return True             # the write went through, so there is no case
