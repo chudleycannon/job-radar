@@ -1355,15 +1355,61 @@ def cmd_seed_load(args) -> int:
     from . import seed as seed_mod, store
     cfg = load_cfg(args.config)
     src = args.path
+    # The relocation countries too, and for the reason `sources.load`
+    # already gives: `screen.match` allows `countries | relocate_to`, so a
+    # config with `countries: [IN]` and `relocate_to: [SG, AE]` screens
+    # Singapore roles happily and was never handed the Singapore shard to
+    # screen. Measured on a 120-board seed: 284 roles read and 0 matches,
+    # against 468 read and 6 matches once SG and AE are included -- and
+    # the six were exactly the roles `relocate_to` exists to find.
+    #
+    # Computed HERE, above the download, because `fetch` was handed
+    # `cfg.countries` alone while `describe` and `load` below were handed
+    # this list. The download then fetched fewer shards than the read
+    # demanded, and every config with a `relocate_to` in it died on
+    # `the index lists a SG shard holding 20 roles, but SG.jsonl.gz is not
+    # there. This shard set is incomplete or was written by a different
+    # version of job-radar. Rebuild it rather than importing part of it.`
+    # The published set was fine. The reader had simply never asked for that
+    # shard, and the message sent them to rebuild somebody else's file.
+    countries = list(dict.fromkeys(list(cfg.countries)
+                                   + list(cfg.relocate_to)))
     if str(src).startswith(("http://", "https://")):
         # Kept, not thrown away. It is tens of megabytes and a second machine,
         # a second config or a re-import should not fetch it again.
-        keep = Path(args.keep) if args.keep else \
-            Path(args.config or ".").resolve().parent / "seed"
+        #
+        # `.parent` is right for a config FILE and wrong for the `"."` that
+        # stood in for one when `-c` was not given: `Path(".").resolve()` is
+        # already the working directory, so its parent is one level ABOVE it.
+        # `seed load <url>` with no `-c` therefore wrote into the parent of
+        # wherever it was run, and docs/SEED.md promises `seed/` beside the
+        # config. Two people working in sibling directories silently shared
+        # one cache: /Users/cal/job-radar-seedtest/seed ended up holding PT,
+        # UK and a 112MB US shard put there by three different runs, none of
+        # which had asked for the others' countries.
+        #
+        # That is not merely untidy. `seed._wanted` reads an empty
+        # `locations.countries` as "every shard on disk", so the next reader
+        # with no countries set imports a neighbour's country out of a
+        # directory neither of them named, and the run reports it as roles.
+        keep = Path(args.keep) if args.keep else (
+            Path(args.config).resolve().parent if args.config
+            else Path.cwd()) / "seed"
         try:
-            seed_mod.fetch(src, cfg.countries or [], keep, say=_say)
+            seed_mod.fetch(src, countries, keep, say=_say)
         except (OSError, ValueError) as exc:
             _say(f"Could not download the seed from {src}: {exc}")
+            # The one URL mistake worth naming, because GitHub answers it 200
+            # with a web page rather than 404. `releases/tag/seed-latest` is
+            # the page a person lands on from the repository and it differs
+            # from the download base by two path segments, so `index.json`
+            # under it is HTML and the run ended on
+            # `Expecting value: line 8 column 1 (char 9)`, which describes a
+            # JSON parser's disappointment and not the reader's mistake.
+            if "/releases/tag/" in str(src):
+                _say(f"That is the release's web page. The shard set lives "
+                     f"under the download base: "
+                     f"{str(src).replace('/releases/tag/', '/releases/download/')}")
             return 1
         _say(f"Kept in {keep}")
         src = keep
@@ -1379,16 +1425,47 @@ def cmd_seed_load(args) -> int:
     except (OSError, ValueError) as exc:
         _say(f"Could not read the seed at {src}: {exc}")
         return 1
-    # The relocation countries too, and for the reason `sources.load`
-    # already gives: `screen.match` allows `countries | relocate_to`, so a
-    # config with `countries: [IN]` and `relocate_to: [SG, AE]` screens
-    # Singapore roles happily and was never handed the Singapore shard to
-    # screen. Measured on a 120-board seed: 284 roles read and 0 matches,
-    # against 468 read and 6 matches once SG and AE are included -- and
-    # the six were exactly the roles `relocate_to` exists to find.
-    countries = list(dict.fromkeys(list(cfg.countries)
-                                   + list(cfg.relocate_to)))
-    _say(seed_mod.describe(idx, countries))
+    # Described from the shards that are ON DISK, not from every shard the
+    # index names.
+    #
+    # `describe` reads an index, and an index describes the whole published
+    # set. `load` reads a directory. Those are the same list only when the
+    # whole set was downloaded, and for a reader with no countries configured
+    # they are not: `seed.shards_for([])` is `unplaced, multiple`, so `fetch`
+    # takes two shards, while `describe` and `seed._wanted` both read an empty
+    # country list as "no country filter, take everything". The run printed
+    #
+    #     289,640 roles for AE, AR, ... US, 242MB, built 2026-08-28.
+    #     21,337 roles read, 21,337 match your config.
+    #     Stored.
+    #
+    # and exited 0. 93% of the seed was never fetched and nothing said so,
+    # which is this project's own signature failure: a line that renders
+    # exactly like a healthy import of the whole file.
+    #
+    # Filtering to what is here also names a shard left behind by an earlier
+    # run under different countries, which `_wanted` will read when the
+    # country list is empty and which the published index would have hidden
+    # inside a total.
+    root = Path(src)
+    root = root if root.is_dir() else root.parent
+    here = {k: v for k, v in (idx.get("shards") or {}).items()
+            if (root / f"{k}.jsonl.gz").exists()}
+    _say(seed_mod.describe({**idx, "shards": here}, countries))
+    if not countries:
+        # Said outright rather than left to be inferred from a shard list.
+        # "No countries configured" is documented in `config.example.yaml` as
+        # "no country filter", and a reader who set it that way is expecting
+        # the lot.
+        whole = idx.get("shards") or {}
+        missing = sum(v.get("roles", 0) for k, v in whole.items()
+                      if k not in here)
+        if missing:
+            _say(f"No countries are set in your config, so only the shards "
+                 f"every reader gets were downloaded. {missing:,} more roles "
+                 f"in {len(whole) - len(here)} shard(s) are published and "
+                 f"were not fetched. Set `locations.countries` to the ones "
+                 f"you want.")
     # Inside the same handling as `read_index` above, which it was not.
     # `seed.load` opens and decompresses the shards themselves, so it is the
     # call that meets a truncated download: a shard set whose index parses
@@ -1408,6 +1485,20 @@ def cmd_seed_load(args) -> int:
                  "countries`, or run a scan.")
             return 0
         kept, _ = screen_run(jobs, cfg)
+    except EOFError as exc:
+        # A shard truncated ON DISK, which the index's byte check cannot see
+        # because it only ever looks at what came down the wire. `seed.load`
+        # guards its first `readline` against this and its row loop does not,
+        # so a file cut off after row one raised EOFError out of the gzip
+        # module, past `except (OSError, ValueError)` below, and reached the
+        # user as a fifteen-frame traceback ending in "Compressed file ended
+        # before the end-of-stream marker was reached". Caught here so the run
+        # ends in a sentence; naming the shard belongs in `seed.load`, which
+        # is the only thing that knows which file it was reading.
+        _say(f"A shard in {src} is cut short ({exc}). The set is truncated or "
+             f"was only partly written; re-fetch it, or delete the directory "
+             f"and let `seed load <url>` download it again.")
+        return 1
     except (OSError, ValueError) as exc:
         # One clause for both: a missing shard arrives as FileNotFoundError,
         # which is an OSError, and `seed.load` already names the shard and
@@ -1436,9 +1527,42 @@ def cmd_seed_load(args) -> int:
         con.commit()
     finally:
         con.close()
-    _say("Stored. Run a scan when you can: these are a day old at best and "
-         "the fast half of the sources is not in them at all.")
+    # The real age, not "a day old at best".
+    #
+    # That sentence was true of a set fetched the morning it was published and
+    # false of every other one, and this command's whole job is importing a
+    # file somebody else built at a time the reader did not choose. The
+    # published set is rebuilt weekly, and `seed load ./seed` on a directory
+    # downloaded in June said "a day old at best" about roles four months
+    # dead, one line under a `built 2026-06-01` the reader had no reason to
+    # read as a warning. A stale import is not visibly different from a fresh
+    # one: the roles are simply gone from the boards, which looks exactly like
+    # a role nobody wants to fill.
+    age = _seed_age_days(idx.get("generated"))
+    if age is None:
+        old = "This set does not say when it was built"
+    elif age <= 1:
+        old = "These are a day old at best"
+    else:
+        old = f"These were built {age:,} day{'s' if age != 1 else ''} ago"
+    _say(f"Stored. {old} and the fast half of the sources is not in them at "
+         f"all, so run a scan when you can: its answer wins on every field.")
     return 0
+
+
+def _seed_age_days(generated) -> int | None:
+    """How many days ago the shard set was built, or None if it will not say.
+
+    None rather than 0. "We cannot read the build date" and "it was built
+    today" are the two answers this repo keeps confusing, and the second one
+    is the one that reassures.
+    """
+    from datetime import date as _date
+    try:
+        built = _date.fromisoformat(str(generated))
+    except (TypeError, ValueError):
+        return None
+    return max(0, (_date.today() - built).days)
 
 
 def cmd_validate(args) -> int:
