@@ -85,8 +85,9 @@ looking for.
 It does **not** replace a scan, and it does not make one faster. None of these
 board APIs has a "changed since" parameter, so a scan still reads every board.
 What changes is that your first hour is spent reading a dashboard rather than
-watching a counter. Roles die in days and a published file is a day old at
-best, so run a scan anyway; its answer wins on every field.
+watching a counter. The published set is rebuilt weekly, roles die in days,
+and the fast half of the sources is not in it at all, so run a scan anyway;
+its answer wins on every field.
 
 ## Building one
 
@@ -141,8 +142,34 @@ never enter history and can be replaced in place. `seed load <url>` expects
 the assets to sit under one base URL with `index.json` beside them, which is
 what a release download URL gives you.
 
-`seed build` itself publishes nothing. Uploading is a separate, deliberate
-step.
+`seed build` itself publishes nothing. Uploading is a separate step, and
+`tools/refresh_seed.py` is the one that does both on a schedule.
+
+## Keeping it fresh
+
+    python3 tools/refresh_seed.py            # build, check, upload
+    python3 tools/refresh_seed.py --dry-run  # build and check only
+
+Run weekly by `com.maccydee.jobradar.seed`, Sundays at 11:00 local, after the
+source validation and the crawler so it reads a list those two have already
+had their turn at. Weekly rather than daily because it is 8,779 requests to
+other people's servers and 242MB to a release, and the seed's job is to save
+somebody the slow hour rather than to be current.
+
+It is unattended and it writes to a public release, so the failure it is built
+against is not a crash, which is loud, but a build that half works and
+publishes anyway. A short seed is not visibly broken: it is a seed with fewer
+jobs in it, and the ones that fell off look exactly like jobs that do not
+exist. So a new build is compared with what is already published and refused
+if it is under 80% of it, under 150,000 roles outright, missing `unplaced` or
+`multiple`, or missing a shard that had 500 roles last week. That last check
+is the one a role count cannot do on its own: Workable is 7% of the roles and
+60% of the runtime, so a build that fetched none of it is still 93% of a good
+one.
+
+It builds into `seed-build.new` and only swaps that in after uploading, so a
+bad run never leaves a half set where the good one was. `--force` overrides
+the checks, which is for a genuine market change and never for the schedule.
 
 It should also be built from a machine on a normal connection. GitHub Actions
 runners are Azure addresses, and the hosts here refuse those far harder than

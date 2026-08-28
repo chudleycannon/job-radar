@@ -131,9 +131,11 @@ file carries no score, no fit and no reasons: those are answers to a question
 only your own settings ask, and nobody else's filters can reach you. The
 request sends a user agent and nothing else.
 
-It does not replace a scan and it does not make one faster. Roles die in days
-and the file is a day old at best, so run a scan anyway; its answer wins on
-every field. What it changes is that your first hour is spent reading a
+It does not replace a scan and it does not make one faster. It is rebuilt
+weekly, roles die in days, and a scan reads the fast half that is not in it at
+all. So run a scan anyway; its answer wins on every field. What the seed
+changes is that your first hour is spent reading a dashboard rather than
+watching a counter. What it changes is that your first hour is spent reading a
 dashboard rather than watching a counter.
 
 `docs/SEED.md` has the format, the shard sizes and how to build your own.
