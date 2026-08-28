@@ -1278,7 +1278,22 @@ def cmd_seed_build(args) -> int:
     from . import sources as src_mod
     from .screen import enrich as enrich_one
     cfg = load_cfg(args.config)
-    srcs = [x for x in src_mod.load(cfg) if src_mod.phase_of(x) > 1]
+    # The BUNDLED list only, never the operator's own config.
+    #
+    # `sources.load(cfg)` adds `sources.extra` and applies `sectors` and
+    # `sources.countries`. On this machine that meant a published seed would
+    # have carried four boards nobody put on the bundled list -- Seamflow,
+    # Balbix, Intel471, Dropzone -- which is not a list of employers, it is a
+    # list of the companies the person building it has been applying to. A
+    # public file is the wrong place to say that. And a `sectors` or
+    # `countries` setting would have quietly published a seed narrowed to one
+    # person's search while describing itself as the slow half of the scan.
+    #
+    # Read straight off the file for the same reason the seed carries no
+    # score and no fit: what is published has to be the same for everybody,
+    # whoever ran the command.
+    srcs = [x for x in src_mod.load_file(src_mod.BUNDLED)
+            if src_mod.phase_of(x) > 1]
     if args.limit:
         srcs = srcs[:args.limit]
     _say(f"Reading {len(srcs):,} slow-phase boards. This is the part a new "

@@ -277,3 +277,22 @@ def test_a_shard_written_without_the_raw_string_still_loads():
            "$": [140000, 160000, "GBP", "year", 1]}
     j = _unpack(old)
     assert j.salary.min == 140000 and j.salary.raw is None
+
+
+def test_a_published_seed_carries_nobody_s_own_boards():
+    """`seed build` reads the bundled file, not `sources.load(cfg)`.
+
+    Through the config it would have picked up `sources.extra`, and on the
+    machine this was written on that was four boards: Seamflow, Balbix,
+    Intel471 and Dropzone. That is not a list of employers, it is a list of
+    the companies the person running the command has been applying to, and a
+    public file is the wrong place to say so. A `sectors` or
+    `sources.countries` setting would have narrowed it to one person's search
+    while the index went on describing itself as the slow half of the scan.
+    """
+    import inspect
+    from jobradar import cli
+    src = inspect.getsource(cli.cmd_seed_build)
+    assert "load_file(src_mod.BUNDLED)" in src, \
+        "seed build is reading sources through somebody's config again"
+    assert "src_mod.load(cfg)" not in src
