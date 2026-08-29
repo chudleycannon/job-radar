@@ -11,31 +11,29 @@ dealbreakers the scanner uses.
 | Skill | Source of truth | Vendored at |
 |---|---|---|
 | `rate-cv` | [maccydee/rate-cv](https://github.com/maccydee/rate-cv) | `acca44e` |
+| `natural-writing` | [maccydee/natural-writing](https://github.com/maccydee/natural-writing) | `6443f21` |
 | `screen-role` | this repo | native |
 | `job-radar-setup` | this repo | native |
 
-`rate-cv` ships in two places on purpose. It stands on its own for anyone who
-only wants a CV scored, and it ships here so that cloning job-radar gets you a
-working set rather than a scanner and a list of things to go and install.
+`rate-cv` and `natural-writing` ship in two places on purpose. They stand on
+their own for anyone who only wants a CV scored or prose checked, and they ship
+here so that cloning job-radar gets you a working set rather than a scanner and
+a list of things to go and install.
 
-**Its own repository is the source of truth.** The copy in this directory is
-generated. Do not edit it here: changes belong upstream, and
+**Their own repositories are the source of truth.** The copies in this
+directory are generated. Do not edit them here: changes belong upstream, and
 `.github/workflows/sync-skills.yml` checks weekly that this copy still matches
 and opens a pull request when it does not. Editing the copy directly is how two
 versions of the same skill quietly stop agreeing with each other.
 
-## Optional writing gate
+## Writing gate
 
-The drafting prompts and two of the four quality gates call
-[natural-writing](https://github.com/maccydee/natural-writing). It is not
-vendored here because it is a general writing skill with a life of its own,
-and generation is better with it. `job-radar generate` names any skill it
-could not find and drafts anyway, rather than leaving you to guess. Install it
-to let the prompts and local gates use it:
-
-```bash
-git clone https://github.com/maccydee/natural-writing ~/.claude/skills/natural-writing
-```
+The drafting prompts and two of the local quality gates call
+[natural-writing](https://github.com/maccydee/natural-writing). It is bundled
+here so Docker and API-backed generation can run the checker without a local
+Claude skills install. A personal `~/.claude/skills/natural-writing` copy still
+wins when present, which lets you test local edits without changing the
+vendored copy.
 
 ## Installing
 
@@ -49,4 +47,5 @@ To use them in Claude Code generally, copy them where Claude Code looks:
 
 ```bash
 cp -r skills/rate-cv ~/.claude/skills/
+cp -r skills/natural-writing ~/.claude/skills/
 ```

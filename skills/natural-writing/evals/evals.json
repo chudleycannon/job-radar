@@ -1,0 +1,29 @@
+{
+  "skill_name": "natural-writing",
+  "evals": [
+    {
+      "id": 0,
+      "name": "deslop-newsletter-intro",
+      "prompt": "I wrote this intro for my newsletter with ChatGPT and it sounds like a robot. Can you rewrite it so it sounds like an actual person wrote it? Here it is:\n\n\"In today's fast-paced digital landscape, staying productive is more crucial than ever. Whether you're a seasoned entrepreneur or just starting out, mastering your workflow can be a game-changer. In this issue, we'll delve into three powerful strategies that will not only boost your efficiency but also transform the way you work.\"",
+      "expected_output": "A rewritten intro that reads as human: no throat-clearing opener, none of the tell-words (crucial, delve, game-changer), no 'not only... but also', varied sentence length, a real voice. Should stay a newsletter intro (short, inviting), not become an essay.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 1,
+      "name": "write-notion-to-plaintext-post",
+      "prompt": "Write a short blog post (~400 words) about why I switched from Notion to plain text files for my notes. I'm a freelance web developer. Make it sound like me, a real person, not like SEO marketing copy.",
+      "expected_output": "A ~400-word first-person blog post with a clear stance, concrete specifics (real reasons/tools), varied rhythm, contractions, no AI tells, no throat-clearing intro or recap conclusion.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "name": "coffee-roastery-about-section",
+      "prompt": "Write the 'About' section for my small coffee roastery website. We're called Cedar & Ash, based in Portland, we roast light, and we mostly sell to home espresso folks. Keep it around 150 words and don't make it sound like every other startup 'About' page.",
+      "expected_output": "~150-word About section with concrete detail specific to Cedar & Ash, a distinct voice, no relentless-positivity marketing slop, no tell-words (artisanal/passion/vibrant/journey/crafted), some rhythm variation.",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import errno
 import json
+import mimetypes
 import os
 import re
 import sqlite3
@@ -76,6 +77,36 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _file(self, path: Path, name: str = ""):
+        body = path.read_bytes()
+        ctype = (mimetypes.guess_type(str(path))[0]
+                 or "application/octet-stream")
+        self._answered = True
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{_download_name(name or path.name)}"')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _artifact_path(self, raw: str) -> Path:
+        p = Path(raw or "")
+        if p.is_absolute():
+            return p
+        candidates = [Path.cwd() / p]
+        try:
+            candidates.append(self._data_home() / p)
+        except Exception:
+            pass
+        db = Path(self.db_path or store.DEFAULT_PATH).expanduser()
+        if db.is_absolute():
+            candidates.extend([db.parent / p, db.parent.parent / p])
+        for c in candidates:
+            if c.exists() and c.is_file():
+                return c
+        return p
 
     def _body(self):
         """The posted JSON object, or {} if there is not one.
@@ -262,6 +293,32 @@ class Handler(BaseHTTPRequestHandler):
                 })
             finally:
                 con.close()
+        if path.startswith("/artifact/"):
+            raw_id = path.removeprefix("/artifact/").strip("/")
+            if not raw_id.isdigit():
+                return self._json({"ok": False, "error": "bad artifact"}, 400)
+            con = store.connect(self.db_path)
+            try:
+                row = con.execute(
+                    "SELECT id,kind,path,body FROM artifacts WHERE id=?",
+                    (int(raw_id),)).fetchone()
+            finally:
+                con.close()
+            if not row:
+                return self._json({"ok": False, "error": "not found"}, 404)
+            p = self._artifact_path(row["path"] or "")
+            if row["kind"] in ("cv", "cover_letter") and p.exists() and p.is_file():
+                try:
+                    return self._file(p)
+                except OSError as exc:
+                    _log_error(f"could not read artifact {row['id']}: {exc}")
+            if (row["body"] or "").strip():
+                return self._html(
+                    "<pre style='white-space:pre-wrap;font:14px/1.6 "
+                    "ui-monospace,monospace;max-width:44rem;margin:3rem auto;"
+                    "padding:0 1.5rem'>"
+                    f"{_h.escape(row['body'])}</pre>")
+            return self._json({"ok": False, "error": "not found"}, 404)
         if path.startswith("/open"):
             # Checked like a POST. It is a GET, but it runs `open -R` on a
             # path from the query string, so any page in the browser could
@@ -601,6 +658,12 @@ def _rank_elapsed(con) -> int:
         return max(0, int((datetime.now() - datetime.fromisoformat(stamp)).total_seconds()))
     except ValueError:
         return 0
+
+
+def _download_name(name: str) -> str:
+    """A conservative Content-Disposition filename."""
+    cleaned = re.sub(r'[^A-Za-z0-9._ -]+', "-", name).strip(" .")
+    return cleaned or "document"
 
 
 def _abandon_rank(con, error: str = "") -> None:
@@ -1097,7 +1160,8 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
         con.close()
 
     Handler.db_path = db_path
-    Handler.docs_base = docs_base
+    Handler.docs_base = str(docs_base) if docs_base else str(
+        runner.default_docs_base(db_path))
     Handler.bind_host = host or ""
     # Without this the runner resolved a config from its working directory, so
     # generation used whatever config.yaml happened to be in cwd rather than

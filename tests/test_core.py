@@ -6887,7 +6887,9 @@ def test_the_bundled_skills_are_found_without_a_user_skills_tree():
         assert runner._copy_skills(d, "screen") == ["screen-role"]
         copied = runner._copy_skills(d, "cv")
     assert "rate-cv" in copied, copied
+    assert "natural-writing" in copied, copied
     assert (d / runner.SKILL_DIR / "rate-cv" / "SKILL.md").is_file()
+    assert (d / runner.SKILL_DIR / "natural-writing" / "SKILL.md").is_file()
     assert (d / runner.SKILL_DIR / "screen-role" / "SKILL.md").is_file()
     # Resolved from the package, not the working directory: the dashboard is
     # started by launchd and the CLI is run from wherever the person is.
@@ -6896,20 +6898,24 @@ def test_the_bundled_skills_are_found_without_a_user_skills_tree():
 
 def test_a_skill_that_is_nowhere_says_so_and_still_drafts():
     """`natural-writing` is required by the cv and cover_letter prompts and by
-    two of the four gates, and it is not vendored here.
+    two of the local gates.
 
-    On a machine that has not installed it a first CV draft ran with none of
-    its skills and produced a worse document in silence. Missing must be
-    visible; it must not be fatal, because a CV drafted without it is still a
-    CV and refusing to draft one is the worse trade."""
+    Docker now gets a bundled copy, but a broken package build could still omit
+    it. Missing must be visible; it must not be fatal, because a CV drafted
+    without it is still a CV and refusing to draft one is the worse trade."""
     import contextlib, io, os, tempfile
     from unittest import mock
     from jobradar import runner
 
     home, env = _empty_home()
+    bundled = Path(tempfile.mkdtemp())
+    (bundled / "rate-cv").mkdir()
+    (bundled / "rate-cv" / "SKILL.md").write_text("rate\n", encoding="utf-8")
     d = Path(tempfile.mkdtemp())
     buf = io.StringIO()
-    with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(buf):
+    with mock.patch.dict(os.environ, env), \
+            mock.patch.object(runner, "_BUNDLED_SKILLS", bundled), \
+            contextlib.redirect_stdout(buf):
         copied = runner._copy_skills(d, "cv")
     said = buf.getvalue()
 
@@ -6918,7 +6924,7 @@ def test_a_skill_that_is_nowhere_says_so_and_still_drafts():
     assert "natural-writing" in said, said
     # Both places, named, or the reader cannot act on it.
     assert str(home / ".claude" / "skills") in said, said
-    assert str(runner._BUNDLED_SKILLS) in said, said
+    assert str(bundled) in said, said
 
 
 def test_the_users_own_copy_of_a_skill_beats_the_bundled_one():
@@ -7021,14 +7027,14 @@ def test_a_natural_writing_gate_that_could_not_run_is_not_a_pass():
     counted as nothing: a document nothing had ever checked rendered exactly
     like one that passed. That is the same defect the overlap gate was fixed
     for."""
-    import os, tempfile
+    import tempfile
     from unittest import mock
     from jobradar import runner
 
-    home, env = _empty_home()
     d = Path(tempfile.mkdtemp())
     (d / "CV.md").write_text("# CV\n\nRan the newsletter.\n", encoding="utf-8")
-    with mock.patch.dict(os.environ, env):
+    empty = Path(tempfile.mkdtemp())
+    with mock.patch.object(runner, "_skill_roots", lambda: [empty]):
         gates = runner._gates(d, "CV.md")
 
     assert gates["written"] is True

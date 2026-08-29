@@ -99,8 +99,9 @@ docker run --rm -it -p 8765:8765 -v "$PWD/.docker-data:/data" \
 ```
 
 Open <http://127.0.0.1:8765>, fill in setup, then start the first scan from
-the dashboard. With Compose, the service is already wired to bind the
-container interface and mount `.docker-data`:
+the dashboard. Generated CVs and cover letters are saved under the mounted
+data folder and linked from each role in the UI. With Compose, the service is
+already wired to bind the container interface and mount `.docker-data`:
 
 ```bash
 docker compose up job-radar
@@ -310,8 +311,12 @@ a document is finished, only drafted.
 **Nothing generates unless you click it.** No schedule, no watcher, no
 speculative drafting. Every token spent is one you asked for.
 
-Documents land in `~/job-applications/<date>-<company>-<role>/`, outside the
-repository, alongside a snapshot of the job description. That snapshot matters:
+Documents land in the folder you pass with `--docs`, or in `JOB_RADAR_DOCS`.
+Without either, they go beside the database in
+`documents/<date>-<company>-<role>/`; in the plain Docker command that means
+the mounted `/data/data/documents/` tree. The dashboard links generated CVs
+and cover letters directly, so you can download them from the browser. Each
+folder also holds a snapshot of the job description. That snapshot matters:
 postings are pulled the moment they are filled, which is usually just before
 someone calls you about one.
 
@@ -621,7 +626,8 @@ not your skills, your other roles, or your machine.
 header against the address it actually bound to rather than against the
 Origin, because both headers are attacker-controlled together under DNS
 rebinding and used to agree with each other. `/open` will only reveal files
-this tool recorded making.
+this tool recorded making, and `/artifact/<id>` will only serve documents
+recorded in the artifact table.
 
 ---
 

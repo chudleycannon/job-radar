@@ -1,12 +1,12 @@
 name: sync vendored skills
 
-# rate-cv ships in two places: its own repository, and vendored into
-# skills/rate-cv here so that cloning job-radar gives you a working set rather
-# than a scanner and a list of things to install separately.
+# Some skills ship in two places: their own repositories, and vendored into
+# skills/ here so that cloning job-radar gives you a working set rather than a
+# scanner and a list of things to install separately.
 #
-# Its own repository is the source of truth. This job checks the copy still
-# matches and opens a pull request when it does not, because two copies of the
-# same skill that nobody diffs is how they quietly stop agreeing.
+# Their own repositories are the source of truth. This job checks the copies
+# still match and opens a pull request when they do not, because two copies of
+# the same skill that nobody diffs is how they quietly stop agreeing.
 
 on:
   schedule:
@@ -29,16 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch upstream rate-cv
+      - name: Fetch upstream skills
         run: |
           git clone --depth 1 https://github.com/maccydee/rate-cv.git /tmp/rate-cv
-          echo "REV=$(git -C /tmp/rate-cv rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "RATE_CV_REV=$(git -C /tmp/rate-cv rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          git clone --depth 1 https://github.com/maccydee/natural-writing.git /tmp/natural-writing
+          echo "NATURAL_WRITING_REV=$(git -C /tmp/natural-writing rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       - name: Copy over the vendored version
         run: |
           rm -rf skills/rate-cv
           mkdir -p skills/rate-cv
           rsync -a --exclude '.git' --exclude '.github' /tmp/rate-cv/ skills/rate-cv/
+          rm -rf skills/natural-writing
+          mkdir -p skills/natural-writing
+          rsync -a --exclude '.git' --exclude '.github' /tmp/natural-writing/ skills/natural-writing/
           # This was a `sed -i -E "s|...|...|"` whose replacement text was a
           # markdown table row, so it contained the delimiter. sed read the
           # third `|` as the end of the substitution and the rest as flags,
@@ -54,34 +59,43 @@ jobs:
 
           p = pathlib.Path("skills/README.md")
           text = p.read_text(encoding="utf-8")
-          pat = re.compile(
-              r"^(\| `rate-cv` \| \[maccydee/rate-cv\]"
-              r"\(https://github\.com/maccydee/rate-cv\) \| )`[^`]*`( \|)$", re.M)
-          new, n = pat.subn(lambda m: f"{m.group(1)}`{os.environ['REV']}`{m.group(2)}",
-                            text)
-          if n != 1:
-              raise SystemExit(
-                  f"skills/README.md: expected one rate-cv revision row, found {n}. "
-                  "The table was edited; update this workflow to match it.")
-          p.write_text(new, encoding="utf-8")
+          rows = {
+              "rate-cv": ("RATE_CV_REV", r"maccydee/rate-cv",
+                          r"https://github\.com/maccydee/rate-cv"),
+              "natural-writing": ("NATURAL_WRITING_REV", r"maccydee/natural-writing",
+                                  r"https://github\.com/maccydee/natural-writing"),
+          }
+          for skill, (env, label, url) in rows.items():
+              pat = re.compile(
+                  rf"^(\| `{re.escape(skill)}` \| \[{label}\]"
+                  rf"\({url}\) \| )`[^`]*`( \|)$", re.M)
+              text, n = pat.subn(
+                  lambda m, env=env: f"{m.group(1)}`{os.environ[env]}`{m.group(2)}",
+                  text)
+              if n != 1:
+                  raise SystemExit(
+                      f"skills/README.md: expected one {skill} revision row, found {n}. "
+                      "The table was edited; update this workflow to match it.")
+          p.write_text(text, encoding="utf-8")
           PY
 
       - name: Open a pull request if it drifted
         uses: peter-evans/create-pull-request@v6
         with:
-          branch: chore/sync-rate-cv
-          title: "Sync vendored rate-cv to ${{ env.REV }}"
+          branch: chore/sync-vendored-skills
+          title: "Sync vendored skills"
           body: |
-            The vendored copy of `rate-cv` no longer matches
-            [maccydee/rate-cv](https://github.com/maccydee/rate-cv).
+            One or more vendored skills no longer match their upstream
+            repositories.
 
             This pull request replaces `skills/rate-cv/` with upstream at
-            `${{ env.REV }}`. If the diff contains changes that were made here
-            rather than upstream, that is the bug: edits belong in the source
-            repository, not in this copy.
+            `${{ env.RATE_CV_REV }}` and `skills/natural-writing/` with
+            upstream at `${{ env.NATURAL_WRITING_REV }}`. If the diff contains
+            changes that were made here rather than upstream, that is the bug:
+            edits belong in the source repository, not in this copy.
           add-paths: |
             skills/**
-          commit-message: "skills: sync rate-cv to ${{ env.REV }}"
+          commit-message: "skills: sync vendored skills"
           delete-branch: true
 
       - name: Report a failed run
@@ -102,7 +116,7 @@ jobs:
           done || true
           gh issue create \
             --title "Vendored skill sync failed: run ${{ github.run_id }}" \
-            --body "The weekly rate-cv sync did not finish, so \`skills/rate-cv\` may now be behind its own repository.
+            --body "The weekly vendored-skill sync did not finish, so \`skills/rate-cv\` or \`skills/natural-writing\` may now be behind its own repository.
 
           Log: ${RUN_URL}
 

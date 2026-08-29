@@ -157,6 +157,7 @@ def test_anthropic_compatible_base_url_can_point_at_deepseek():
 
     assert calls[0][0] == "https://api.deepseek.com/anthropic/v1/messages"
     assert calls[0][1]["json"]["model"] == "deepseek-v4-pro"
+    assert calls[0][1]["json"]["thinking"] == {"type": "disabled"}
     assert calls[0][1]["json"]["reasoning"] == {"effort": "none"}
 
 
@@ -184,6 +185,7 @@ def test_plain_anthropic_calls_do_not_get_deepseek_reasoning_options():
         ) == "ok"
 
     assert calls[0][0] == "https://api.anthropic.com/v1/messages"
+    assert "thinking" not in calls[0][1]["json"]
     assert "reasoning" not in calls[0][1]["json"]
 
 

@@ -748,8 +748,8 @@ def test_the_data_the_tool_reads_at_runtime_is_declared_for_the_wheel():
     Both of those are directories outside the package, reachable only because
     setuptools was told about them. `sources/` was declared and survives;
     `skills/` was not, so a wheel install found no bundled skills and every CV
-    was drafted without them. Verified by building a wheel: before, zero
-    skill files in it; after, eight.
+    was drafted without them. Verified by building a wheel: before, zero skill
+    files in it; after, the bundled skill trees are included.
 
     This checks the declaration rather than building a wheel, because the
     build needs network. If a third runtime directory is ever added, add it

@@ -865,7 +865,7 @@ def _row(r, arts, job, run=0) -> str:
         fails = [k for k, v in json.loads(a["gates"] or "{}").items() if v is False]
         gate = (f'<span class="gatefail">{len(fails)} gate(s) failed</span>'
                 if fails else "")
-        docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">CV</a> {rating} {gate}')
+        docs.append(f'<a href="/artifact/{int(a["id"])}">CV</a> {rating} {gate}')
     if "cover_letter" in arts:
         a = arts["cover_letter"]
         ov = json.loads(a["gates"] or "{}").get("no_overlap_with_cv")
@@ -874,7 +874,7 @@ def _row(r, arts, job, run=0) -> str:
                 '<span class="gatefail">'
                 + ('overlaps the CV' if ov is False else 'overlap not checked')
                 + '</span>')
-        docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">Cover letter</a> {warn}')
+        docs.append(f'<a href="/artifact/{int(a["id"])}">Cover letter</a> {warn}')
     # The screening is the thing you asked for, so it goes in the row rather
     # than behind a link to a file. <details> gives the minimise for free and
     # keeps working with JavaScript off. Open by default: you clicked Screen

@@ -105,7 +105,11 @@ def _anthropic_message(prompt: str, *, api_key: str, model: str,
             # DeepSeek's Anthropic-compatible endpoint defaults to thinking
             # mode. Ranking asks for a short JSON array, so hidden reasoning
             # can spend the response budget before any visible text is
-            # emitted. Disable it for these one-shot structured calls.
+            # emitted. DeepSeek's docs describe `reasoning` for Anthropic
+            # format, while its compatibility table also supports `thinking`,
+            # so send both DeepSeek-only switches for these one-shot
+            # structured calls.
+            body["thinking"] = {"type": "disabled"}
             body["reasoning"] = {"effort": "none"}
         r = requests.post(
             _anthropic_url(base_url),

@@ -2630,7 +2630,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--db", default=None, help=_DB_HELP)
     g.add_argument("--docs", default=None,
                    help="where the CV or cover letter is written "
-                        "(default $JOB_RADAR_DOCS, or ~/job-applications)")
+                        "(default $JOB_RADAR_DOCS, or documents beside the db)")
     g.add_argument("--force", action="store_true",
                    help="screen even when the posting has no description")
     g.set_defaults(func=cmd_generate)

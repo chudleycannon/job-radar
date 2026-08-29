@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jobradar import runner
+from jobradar import runner, store
 
 CLEAN_CV = """# Dana Whitfield
 
@@ -62,10 +63,10 @@ DRUM_ROLL = CLEAN_CV.replace(
 def _skills(detect_report: str) -> Path:
     """A skills tree this test controls, holding a stub linter.
 
-    natural-writing is not in this repo and is not on a CI runner, so a test
-    that calls the real one is testing whether the developer happens to have
-    it installed. That exact mistake was fixed once today in test_core.py and
-    made again here, in the tests written to check that documents get checked.
+    natural-writing is vendored here now, but this test still should not depend
+    on the real linter's current wording. The linter has its own tests; this
+    one checks whether `_quality` reads its output and feeds failures back into
+    the revision loop.
 
     What is under test is the wiring: does `_quality` read the linter's output,
     pull out the failing lines, and hand them back in a form a revision prompt
@@ -136,6 +137,170 @@ def test_the_cv_checks_catch_what_the_prose_check_cannot():
         assert not ok and any("date range" in p for p in problems), problems
 
 
+def test_a_cv_over_the_hard_word_limit_is_sent_back():
+    """The prompt can ask for two pages, but the checker has to enforce it
+    when a model summarizes the whole master CV anyway."""
+    long = CLEAN_CV + ("\n\nExtra relevant but repetitive evidence. " * 170)
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, scores = runner._quality(_dir(long), "CV.md", "cv")
+    assert ok is False
+    assert scores["words"] > 800
+    assert any("needs 550 to 750" in p for p in problems), problems
+
+
+def test_a_cv_that_keeps_master_cv_sections_is_sent_back():
+    draft = CLEAN_CV + (
+        "\n\n## Core expertise and keywords\n\n"
+        "- Engineering leadership, data platforms and operational resilience.\n"
+        "\n\n## Additional notes for matching systems\n\n"
+        "- Use this CV as a broad factual base.\n")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, _ = runner._quality(_dir(draft), "CV.md", "cv")
+    assert ok is False
+    assert any("master-CV section" in p for p in problems), problems
+
+
+def test_skills_bullets_do_not_count_as_too_many_achievement_bullets():
+    draft = CLEAN_CV.replace(
+        "Python, Go, SQL, incident command, hiring, capacity planning",
+        "\n".join(f"- Skill cluster {i}" for i in range(24)))
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, _ = runner._quality(_dir(draft), "CV.md", "cv")
+    assert not any(p.startswith("selection:") for p in problems), problems
+
+
+def test_a_cv_that_moves_metrics_between_employers_is_sent_back():
+    source = """# Ryan Begen
+
+## Professional experience
+
+## Engineering Manager - Matillion
+- January 2022 - December 2023
+- Managed customer-impacting incidents and escalations, supporting investigation, resolution, stakeholder communication and operational improvements.
+
+## Senior Software Engineer and Squad Lead - Skyscanner
+- June 2014 - June 2020
+- Improved OpenTSDB service availability from approximately 80% to 99.999% over three months and increased deployment frequency from 2-3 releases per month to 2-3 deployments per day.
+- Improved internal customer satisfaction from 1.7 to 4.3 by prioritising reliability, usability, platform stability and developer experience.
+"""
+    draft = CLEAN_CV + """
+
+### Engineering Manager - Matillion | 2022 - 2023
+- Increased deployment frequency from 2-3 releases per month to 2-3 deployments per day through CI/CD, testing and workflow improvements.
+- Improved internal customer satisfaction from 1.7 to 4.3 through reliability, usability and developer experience improvements.
+"""
+    d = _dir(draft)
+    (d / "source-cv.txt").write_text(source, encoding="utf-8")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, _ = runner._quality(d, "CV.md", "cv")
+    assert ok is False
+    assert sum(p.startswith("attribution:") for p in problems) == 2, problems
+    assert any("Matillion" in p and "Skyscanner" in p for p in problems), problems
+
+
+def test_a_low_cv_rating_is_sent_back_for_better_tailoring():
+    d = _dir(CLEAN_CV)
+    (d / "cv-rating.txt").write_text(
+        "56/100 · currency 4/8 · weak fit\n", encoding="utf-8")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, scores = runner._quality(d, "CV.md", "cv")
+    assert ok is False
+    assert scores["cv_rating"] == 56
+    assert any("needs 70 or more" in p for p in problems), problems
+
+
+def test_a_good_cv_rating_overrides_coarse_all_bullet_quantification():
+    d = _dir(CLEAN_CV)
+    (d / "cv-rating.txt").write_text(
+        "80/100 · currency 5/8 · qualified\n", encoding="utf-8")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(
+            "  SLOP SCORE: 6/100   (bar: <= 20, and no FAILs)   ->  PASS\n"
+            "  quantified: 7/30 = 23%  (target >=60%)")), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, scores = runner._quality(d, "CV.md", "cv")
+    assert scores["cv_rating"] == 80
+    assert not any("only 23% of bullets" in p for p in problems), problems
+
+
+def test_a_cover_letter_over_the_word_limit_is_sent_back():
+    body = ("Dear Hiring Manager,\n\n"
+            + ("I am applying because the role matches my experience. " * 70)
+            + "\n\nYours sincerely,\nRyan Begen\n")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, scores = runner._quality(
+            _dir(body, "cover-letter.md"), "cover-letter.md", "cover_letter")
+    assert ok is False
+    assert scores["words"] > 500
+    assert any("needs 350 to 500" in p for p in problems), problems
+
+
+def test_a_hard_quality_failure_is_not_published_as_a_cv_artifact():
+    d = Path(tempfile.mkdtemp())
+    db, docs = d / "j.db", d / "docs"
+    cv = d / "source.md"
+    cv.write_text("Ryan Begen. Acted as Incident Controller.\n", encoding="utf-8")
+    cfg = d / "config.yaml"
+    cfg.write_text(
+        "titles:\n  include: [Major Incident Manager]\n"
+        "locations:\n  countries: [UK]\n"
+        "cv:\n  path: " + repr(str(cv)) + "\n"
+        "ai:\n"
+        "  provider: anthropic\n"
+        "  model: claude-sonnet-5\n"
+        "  anthropic_api_key: sk-ant-api03-test\n",
+        encoding="utf-8")
+    con = store.connect(db)
+    try:
+        con.execute(
+            "INSERT INTO roles (uid,company,title,url,description,first_seen,last_seen) "
+            "VALUES ('u','Standard Life','Major Incident Manager','https://x',?,"
+            "date('now'),date('now'))",
+            ("Major incident management and service restoration. " * 20,))
+        job = store.enqueue(con, "u", "cv")
+    finally:
+        con.close()
+
+    def write_draft(*_a, **_k):
+        folder = docs / (
+            f"{date.today().isoformat()}-standard-life-major-incident-manager-u")
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "CV.md").write_text(CLEAN_CV, encoding="utf-8")
+        (folder / "cv-rating.txt").write_text("68/100\n", encoding="utf-8")
+        return "drafted"
+
+    with mock.patch("jobradar.runner._run_api_prompt", write_draft), \
+            mock.patch("jobradar.runner._run_api_revision", write_draft), \
+            mock.patch("jobradar.runner._quality",
+                       lambda *a, **k: (
+                           False,
+                           ["length: CV.md is 1890 words, needs 550 to 750"],
+                           {"words": 1890})):
+        runner.run_job(job, db_path=db, base=docs, config_path=cfg)
+
+    con = store.connect(db)
+    try:
+        row = con.execute("SELECT state,error FROM jobs WHERE id=?", (job,)).fetchone()
+        art = con.execute("SELECT 1 FROM artifacts WHERE uid='u' AND kind='cv'").fetchone()
+    finally:
+        con.close()
+    assert row["state"] == "failed", dict(row)
+    assert "hard quality checks" in row["error"], row["error"]
+    assert art is None
+
+
 def test_an_uncheckable_document_is_a_failure_not_a_pass():
     """The rule this file already applies everywhere else. A document nothing
     checked must not look like one that was checked and cleared."""
@@ -153,6 +318,40 @@ def test_the_revision_prompt_says_what_not_to_do():
     assert "colon-reveal" in p
     assert "Do not remove content" in p
     assert "source-cv.txt" in p, "must not invent facts to fix a score"
+
+
+def test_the_revision_prompt_can_delete_master_cv_sections():
+    p = runner._revision_prompt(
+        "CV.md",
+        ["selection: remove the master-CV section 'core expertise and keywords'"])
+    lower = p.lower()
+    assert "delete any master-cv-only section" in lower
+    assert "matching-system" in lower
+    assert "keep the same structure and the same headings" not in lower
+
+
+def test_the_revision_prompt_fixes_bad_attribution_and_low_rating():
+    p = runner._revision_prompt(
+        "CV.md",
+        ["attribution: achievement under Matillion appears to come from Skyscanner",
+         "cv-rating: score 56/100, needs 70 or more before publishing"])
+    lower = p.lower()
+    assert "move the achievement back under the employer" in lower
+    assert "low cv rating" in lower
+    assert "opening half-page" in lower
+
+
+def test_a_shorter_overlong_cv_counts_as_revision_progress():
+    before = [
+        "length: CV.md is 1890 words, needs 550 to 750",
+        "selection: remove the master-CV section 'core expertise and keywords'",
+    ]
+    after = [
+        "length: CV.md is 1463 words, needs 550 to 750",
+        "selection: remove the master-CV section 'core expertise and keywords'",
+    ]
+    assert runner._quality_improved(
+        before, {"words": 1890}, after, {"words": 1463})
 
 
 def test_the_loop_is_capped():

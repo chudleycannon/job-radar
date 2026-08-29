@@ -508,6 +508,129 @@ def test_open_falls_back_to_the_stored_copy_when_the_file_is_gone():
         assert "no longer on disk" in body, body
 
 
+def test_artifact_download_serves_a_generated_cv_from_the_ui():
+    """The dashboard should link to a browser-readable artifact, not a
+    desktop-only reveal command that is useless inside Docker."""
+    with _lab() as (root, db, home):
+        cv = root / "source-cv.md"
+        cv.write_text("Rowan Ashby\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n",
+            encoding="utf-8")
+        con = store.connect(db)
+        try:
+            made = root / "docs" / "CV.docx"
+            made.parent.mkdir(parents=True, exist_ok=True)
+            made.write_text("download me", encoding="utf-8")
+            aid = store.add_artifact(con, "uid-one", "cv", str(made),
+                                     body="download me")
+        finally:
+            con.close()
+
+        with _server(db, config_path=cfg) as base:
+            code, page = _req(base, "/", method="GET")
+            assert code == 200, (code, page)
+            assert f'/artifact/{aid}' in page, page
+
+            code, body = _req(base, f"/artifact/{aid}", method="GET")
+            assert code == 200, (code, body)
+            assert "download me" in body, body
+
+
+def test_artifact_download_resolves_paths_relative_to_the_data_folder():
+    """Docker records paths like data/documents/...; serving them must not
+    depend on the process still having /data as its current directory."""
+    with _lab() as (root, db, home):
+        cv = root / "source-cv.md"
+        cv.write_text("Rowan Ashby\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n",
+            encoding="utf-8")
+        made = root / "data" / "documents" / "role" / "CV.docx"
+        made.parent.mkdir(parents=True, exist_ok=True)
+        made.write_bytes(b"fake docx bytes")
+        con = store.connect(db)
+        try:
+            aid = store.add_artifact(
+                con, "uid-one", "cv", "data/documents/role/CV.docx",
+                body="stored fallback")
+        finally:
+            con.close()
+
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, f"/artifact/{aid}", method="GET")
+            assert code == 200, (code, body)
+            assert body == "fake docx bytes", body
+
+
+def test_browser_generation_defaults_documents_beside_the_database():
+    """A Docker run that mounts `/data` but does not pass `--docs` should
+    still leave generated CVs in the mounted data tree."""
+    with tempfile.TemporaryDirectory() as tmp, _env(
+            JOB_RADAR_CLAUDE=str(Path(tmp) / "no-such-claude")):
+        old_docs = os.environ.pop("JOB_RADAR_DOCS", None)
+        root = Path(tmp)
+        try:
+            db = root / "data" / "job-radar.db"
+            cv = root / "source-cv.md"
+            cv.write_text("Rowan Ashby. Ran the release train for 3 years.\n",
+                          encoding="utf-8")
+            cfg = root / "config.yaml"
+            cfg.write_text(
+                "titles:\n  include: [Engineering Manager]\n"
+                "locations:\n  countries: [UK]\n"
+                "cv:\n  path: " + json.dumps(str(cv)) + "\n"
+                "ai:\n"
+                "  provider: anthropic\n"
+                "  model: \"claude-sonnet-5\"\n"
+                "  anthropic_api_key: \"sk-ant-api03-test\"\n",
+                encoding="utf-8")
+            con = store.connect(db)
+            try:
+                con.execute(
+                    "INSERT INTO roles (uid,company,title,url,description,"
+                    "first_seen,last_seen) VALUES "
+                    "('uid-one','Tidewater Optics','Head of Platform Engineering',"
+                    "'https://example.invalid/1',?,date('now'),date('now'))",
+                    (LONG_DESC,))
+                job_id = store.enqueue(con, "uid-one", "cv")
+            finally:
+                con.close()
+
+            answer = (
+                "===== BEGIN FILE: CV.md =====\n"
+                "# Rowan Ashby\n\nRan the release train for 3 years.\n"
+                "===== END FILE: CV.md =====\n"
+                "===== BEGIN FILE: cv-rating.txt =====\n"
+                "68/100\n"
+                "===== END FILE: cv-rating.txt =====\n")
+            with mock.patch("jobradar.ai.complete", lambda *a, **k: answer), \
+                    mock.patch("jobradar.runner._quality",
+                               lambda *a, **k: (True, [], {"slop": 99})), \
+                    mock.patch("jobradar.runner._gates", lambda *a, **k: {}):
+                runner.run_job(job_id, db_path=db, config_path=cfg)
+
+            con = store.connect(db)
+            try:
+                art = con.execute(
+                    "SELECT path FROM artifacts WHERE kind='cv'").fetchone()
+            finally:
+                con.close()
+            assert art is not None
+            path = Path(art["path"])
+            assert path.exists(), path
+            assert path.is_relative_to(root / "data" / "documents"), path
+        finally:
+            if old_docs is not None:
+                os.environ["JOB_RADAR_DOCS"] = old_docs
+
+
 # ---------------------------------------------------- jobs that go wrong
 
 def test_a_worker_that_dies_before_it_starts_does_not_leave_a_spinner():

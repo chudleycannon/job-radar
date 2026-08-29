@@ -151,7 +151,7 @@ Scanning and filtering work without them.
 |---|---|---|
 | `-c, --config` | all | Which config to load. |
 | `--db` | scan, enrich, rank, rescreen, list, applied, generate, serve | Database path. Default `data/job-radar.db`. Pointing a scan somewhere else isolates it: the one-off import of `state/seen.json` and `applications.local.yaml` follows the database, not the working directory, so `--db /tmp/scratch.db` does not copy your real history into a scratch file. |
-| `--docs` | generate, serve | Where generated documents go. Default `~/job-applications`. |
+| `--docs` | generate, serve | Where generated documents go. Default `JOB_RADAR_DOCS` when set, otherwise `documents/` beside the database. |
 | `--limit` | scan, validate, enrich, rank, rescreen, list | Cap the sources fetched or checked, the roles re-read, scored or listed. |
 | `--dry-run` | scan, rank, enrich | Do not record what was seen, and do not write into `out/` either: a dry run leaves the last real dashboard where it is. On `rank`, show what it would cost and send nothing. |
 | `--json` | list | Machine-readable output. |

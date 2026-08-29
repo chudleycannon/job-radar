@@ -12,4 +12,4 @@ services:
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
       ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      JOB_RADAR_DOCS: /data/job-applications
+      JOB_RADAR_DOCS: /data/documents
