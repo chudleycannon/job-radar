@@ -2422,6 +2422,10 @@ def cmd_setup(args) -> int:
         extra["countries"] = [c.upper() for c in _csv_list(args.countries)]
     if args.currency:
         extra["currency"] = args.currency.strip().upper()
+    # Goes through the same signature check as the rest, so a build whose
+    # wizard predates the flag says so rather than fetching 130MB nobody
+    # asked for, or silently not fetching what somebody did.
+    extra["seed"] = not getattr(args, "no_seed", False)
     # Checked against the wizard rather than assumed, because the two halves
     # of these flags live in different modules -- the flag is declared here
     # and the answer is written there -- and a namespace that does not match
@@ -2680,6 +2684,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     w = sub.add_parser("setup", help="build a config by answering a few questions")
     w.add_argument("--defaults", action="store_true", help="write a default config, ask nothing")
+    w.add_argument("--no-seed", action="store_true",
+                   help="do not fetch the published seed. Setup fetches it by "
+                        "default because it is the slow three quarters of a "
+                        "scan already read, and it lands in about a minute "
+                        "where a scan takes an hour.")
     w.add_argument("--scan", action="store_true",
                    help="with --defaults, run the first scan too. The "
                         "interactive wizard always does.")

@@ -288,6 +288,60 @@ def _sources_it_will_read(config_path: Path) -> int:
         return 0
 
 
+# Where the published shard set lives. One place, so the README, the docs and
+# this cannot drift apart.
+SEED_URL = "https://github.com/maccydee/job-radar/releases/download/seed-latest"
+
+
+def seed_first(config_path: Path) -> int:
+    """Fetch the published seed before the first scan. Returns roles stored.
+
+    A new user's first scan takes over an hour, because `apply.workable.com`
+    is 2,094 boards paced at 0.7 requests a second and that is fifty minutes
+    whatever else happens. The seed is those passes, already fetched, and it
+    lands in about thirty seconds. Setup did not mention it, so the fast path
+    existed and the only people using it were the ones who had read the
+    README to the end.
+
+    It is announced rather than asked. The scan that follows takes an hour and
+    downloads far more than this does; a question here would be one keypress
+    guarding the cheaper half of the same operation. `--no-seed` turns it off,
+    and the size is printed before anything is fetched.
+
+    Failure is not fatal. The seed is a shortcut, and a shortcut that is
+    unavailable leaves the scan behind it doing the whole job.
+    """
+    from . import cli
+
+    home = config_path.expanduser().resolve().parent
+    print("\nFetching the published seed first.")
+    print("It holds the slow three quarters of a scan, already read, so you")
+    print("have a dashboard in about a minute rather than in an hour. Only")
+    print("the shards for your countries are downloaded. Your own scan runs")
+    print("straight afterwards and its answer wins on every field.\n")
+
+    class _Args:
+        config = str(config_path)
+        path = SEED_URL
+        keep = str(home / "seed")
+        db = str(home / "data" / "job-radar.db")
+        dry_run = False
+
+    try:
+        return cli.cmd_seed_load(_Args())
+    except KeyboardInterrupt:
+        print("\nStopped. The scan below still does the whole job.")
+        return 1
+    except Exception as exc:
+        # Named, not swallowed. A reader who never sees why the fast path was
+        # skipped assumes it does not exist.
+        print(f"\nCould not fetch the seed ({exc}).")
+        print("Not a problem: the scan below reads everything anyway, it")
+        print("just takes longer. You can try again later with")
+        print(f"  job-radar seed load {SEED_URL}")
+        return 1
+
+
 def first_scan(config_path: Path) -> int:
     """Scan immediately after setup, and hand over both ways of using it.
 
@@ -424,7 +478,8 @@ def ask_cv(existing: str = "") -> str:
 
 def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         titles: str | None = None, scan: bool = False,
-        countries: list | None = None, currency: str | None = None) -> int:
+        countries: list | None = None, currency: str | None = None,
+        seed: bool = True) -> int:
     """Build a config, by asking or from flags.
 
     `countries` and `currency` exist because `--defaults` is the only path
@@ -460,8 +515,12 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         write_config(path, a)
         print(f"Wrote a default config to {path}.")
         if scan:
+            if seed:
+                seed_first(path)
             return first_scan(path)
-        print("Edit it, then run `job-radar scan`.")
+        if seed:
+            seed_first(path)
+        print("Edit it, then run `job-radar scan` for everything else.")
         return 0
 
     if not sys.stdin.isatty():
@@ -636,4 +695,6 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
 
     write_config(path, a)
     print(f"\nWrote {path}")
+    if seed:
+        seed_first(path)
     return first_scan(path)
