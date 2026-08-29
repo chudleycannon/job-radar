@@ -288,6 +288,90 @@ def _sources_it_will_read(config_path: Path) -> int:
         return 0
 
 
+# Where the published shard set lives. One place, so the README, the docs and
+# this cannot drift apart.
+SEED_URL = "https://github.com/maccydee/job-radar/releases/download/seed-latest"
+
+
+def seed_first(config_path: Path) -> int:
+    """Fetch the published seed before the first scan. Returns roles stored.
+
+    A new user's first scan takes over an hour, because `apply.workable.com`
+    is 2,094 boards paced at 0.7 requests a second and that is fifty minutes
+    whatever else happens. The seed is those passes, already fetched, and it
+    lands in about thirty seconds. Setup did not mention it, so the fast path
+    existed and the only people using it were the ones who had read the
+    README to the end.
+
+    It is announced rather than asked. The scan that follows takes an hour and
+    downloads far more than this does; a question here would be one keypress
+    guarding the cheaper half of the same operation. `--no-seed` turns it off,
+    and the size is printed before anything is fetched.
+
+    Failure is not fatal. The seed is a shortcut, and a shortcut that is
+    unavailable leaves the scan behind it doing the whole job.
+    """
+    from . import cli
+
+    home = config_path.expanduser().resolve().parent
+    print("\nFetching the published seed first.")
+    print("It holds the slow three quarters of a scan, already read, so you")
+    print("have a dashboard in about a minute rather than in an hour. Only")
+    print("the shards for your countries are downloaded. Your own scan runs")
+    print("straight afterwards and its answer wins on every field.\n")
+
+    class _Args:
+        config = str(config_path)
+        path = SEED_URL
+        keep = str(home / "seed")
+        db = str(home / "data" / "job-radar.db")
+        dry_run = False
+
+    try:
+        return cli.cmd_seed_load(_Args())
+    except KeyboardInterrupt:
+        print("\nStopped. The scan below still does the whole job.")
+        return 1
+    except Exception as exc:
+        # Named, not swallowed. A reader who never sees why the fast path was
+        # skipped assumes it does not exist.
+        print(f"\nCould not fetch the seed ({exc}).")
+        print("Not a problem: the scan below reads everything anyway, it")
+        print("just takes longer. You can try again later with")
+        print(f"  job-radar seed load {SEED_URL}")
+        return 1
+
+
+def _span(minutes: float) -> str:
+    """How long something took, in words somebody would use."""
+    if minutes < 1:
+        return "in well under a minute"
+    if minutes < 90:
+        return f"in about {minutes:.0f} minute{'s' if round(minutes) != 1 else ''}"
+    return f"in about {minutes / 60:.1f} hours"
+
+
+def _roles_already_stored(config_path: Path) -> int:
+    """How many roles are on the board. 0 if there is no board yet.
+
+    Never raises: this decorates a message, and a first run must not end in a
+    traceback because a count could not be read.
+    """
+    try:
+        from . import store
+        home = config_path.expanduser().resolve().parent
+        db = home / "data" / "job-radar.db"
+        if not db.exists():
+            return 0
+        con = store.connect(str(db))
+        try:
+            return int(con.execute("SELECT COUNT(*) FROM roles").fetchone()[0])
+        finally:
+            con.close()
+    except Exception:
+        return 0
+
+
 def first_scan(config_path: Path) -> int:
     """Scan immediately after setup, and hand over both ways of using it.
 
@@ -330,8 +414,22 @@ def first_scan(config_path: Path) -> int:
     # something else, so it promises nothing and lets the scan speak.
     n = _sources_it_will_read(config_path)
     reads = f"It reads {n:,} sources" if n else "It reads the bundled list"
+    have = _roles_already_stored(config_path)
     print(f"\nRunning your first scan now. {reads}, in passes, fastest first.")
-    print("It will tell you how long each pass takes before it starts one.")
+    print("It prints the total time before it starts, and the time for each")
+    print("pass before that pass begins.")
+    # Said only when the seed actually landed, and with the number, because
+    # "you already have some" is not a thing anybody can act on. Without this
+    # the scan announced an hour to somebody who had just been handed a
+    # working dashboard and had no idea they could use it now.
+    if have:
+        print()
+        print(f"You already have {have:,} roles from the seed, and they are")
+        print("usable right now: open a second terminal and run")
+        print("`job-radar serve`. This scan refreshes those and adds")
+        print("everything the seed does not carry, which is the fast half of")
+        print("the sources and anything posted since it was built.")
+    print()
     print("You do not have to wait for the end: the dashboard is worth opening")
     print("after the first pass and the rest fill in behind it. Your machine")
     print("is held awake while it runs, though closing the lid will still")
@@ -373,6 +471,8 @@ def first_scan(config_path: Path) -> int:
         # hour. This is the run where it matters most.
         no_open = False
 
+    import time as _time
+    began = _time.monotonic()
     try:
         rc = cli.cmd_scan(_Args())
     except KeyboardInterrupt:
@@ -383,6 +483,19 @@ def first_scan(config_path: Path) -> int:
         print("Your config is written. Try `job-radar scan` to see the error.")
         return 0
 
+    # An explicit ending, with what it cost and what it changed.
+    #
+    # The handover below reads exactly the same whether the scan took three
+    # seconds or eighty minutes, so somebody who walked away came back to a
+    # wall of instructions and no statement that the thing they were waiting
+    # for had finished. The scan reports its own counts as it goes; what was
+    # missing was the line saying it is over.
+    took = (_time.monotonic() - began) / 60
+    now = _roles_already_stored(config_path)
+    print()
+    print(f"Scan finished, {_span(took)}." + (
+        f" Your board went from {have:,} roles to {now:,}."
+        if have and now else f" {now:,} roles on your board." if now else ""))
     print()
     print("Two ways to use this, and they are the same data either way:")
     print()
@@ -424,7 +537,8 @@ def ask_cv(existing: str = "") -> str:
 
 def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         titles: str | None = None, scan: bool = False,
-        countries: list | None = None, currency: str | None = None) -> int:
+        countries: list | None = None, currency: str | None = None,
+        seed: bool = True) -> int:
     """Build a config, by asking or from flags.
 
     `countries` and `currency` exist because `--defaults` is the only path
@@ -460,8 +574,12 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
         write_config(path, a)
         print(f"Wrote a default config to {path}.")
         if scan:
+            if seed:
+                seed_first(path)
             return first_scan(path)
-        print("Edit it, then run `job-radar scan`.")
+        if seed:
+            seed_first(path)
+        print("Edit it, then run `job-radar scan` for everything else.")
         return 0
 
     if not sys.stdin.isatty():
@@ -636,4 +754,6 @@ def run(path: Path, non_interactive: bool = False, cv: str | None = None,
 
     write_config(path, a)
     print(f"\nWrote {path}")
+    if seed:
+        seed_first(path)
     return first_scan(path)

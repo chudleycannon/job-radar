@@ -92,7 +92,7 @@ def _answers(argv, wizard_takes_them=True):
     seen = {}
 
     def fake(path, non_interactive=False, cv=None, titles=None, scan=False,
-             countries=None, currency=None):
+             countries=None, currency=None, seed=True):
         a = dict(setup_wizard.DEFAULTS)
         a["cv_path"] = cv
         a["titles_include"] = [titles]
@@ -100,6 +100,7 @@ def _answers(argv, wizard_takes_them=True):
             a["countries"] = countries
         if currency:
             a["salary_currency"] = currency
+        a["seed"] = seed
         seen.update(a)
         return 0
 
@@ -161,3 +162,27 @@ def test_a_flag_the_wizard_cannot_apply_is_refused_rather_than_ignored():
         wizard_takes_them=False)
     assert code == 1, out
     assert "--countries" in out, out
+
+
+def test_setup_fetches_the_seed_unless_told_not_to():
+    """A new user's first scan takes over an hour and the seed lands in about
+    a minute, and setup never mentioned it. So it is fetched by default, and
+    `--no-seed` is the way out."""
+    _, on, _ = _answers(["-c", "/dev/null", "setup", "--defaults",
+                         "--cv", "cv.docx", "--titles", "engineering manager"])
+    assert on["seed"] is True
+
+    _, off, _ = _answers(["-c", "/dev/null", "setup", "--defaults", "--no-seed",
+                          "--cv", "cv.docx", "--titles", "engineering manager"])
+    assert off["seed"] is False
+
+
+def test_a_wizard_that_cannot_fetch_a_seed_says_so_rather_than_guessing():
+    """The same signature check the country and currency flags get. A build
+    whose wizard predates the flag must not silently skip the fetch, nor
+    silently make one nobody asked for."""
+    code, _, out = _answers(
+        ["-c", "/dev/null", "setup", "--defaults", "--cv", "cv.docx",
+         "--titles", "engineering manager"], wizard_takes_them=False)
+    assert code == 1
+    assert "--seed" in out or "--countries" in out, out
