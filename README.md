@@ -134,6 +134,10 @@ the same roles and fresher ones.
   that works is: load the seed, start a scan, read the dashboard while the
   scan corrects it underneath you.
 
+**`job-radar setup` fetches it for you**, so a fresh install has roles in it
+before the first scan has finished. `setup --no-seed` turns that off. To fetch
+it by hand, or into a config you already have:
+
 ```bash
 job-radar seed load https://github.com/maccydee/job-radar/releases/download/seed-latest
 ```
