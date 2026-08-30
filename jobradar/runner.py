@@ -292,15 +292,17 @@ PROMPTS = {
 {untrusted}
 
 Screen this job for me and write your verdict to `screening.md` in the current
-directory. Read `job-description.md` here for the posting, and `source-cv.txt`
-here for my actual record. Both are in this directory. Do not assess a gap
-without reading the CV: a gap named without checking is a guess wearing the
-same confidence as a finding.
+directory. Read `job-description.md` here for the posting, and
+`candidate-profile.txt` here for my approved reusable profile evidence. Also
+read `source-cv.txt` as fallback context where the profile is incomplete. Do
+not assess a gap without reading the candidate evidence: a gap named without
+checking is a guess wearing the same confidence as a finding.
 
 If `role-evidence.txt` exists, read it too. It contains my own answer to an
 earlier screening result for this role. Treat it as user-provided evidence
 that can clarify gaps, but do not let it override the job posting or invent
-facts not present in either `role-evidence.txt` or `source-cv.txt`.
+facts not present in `candidate-profile.txt`, `role-evidence.txt` or
+`source-cv.txt`.
 
 These are my dealbreakers and filters. They are the whole list; do not invent
 any others, and do not assume anything not written here:
@@ -330,6 +332,10 @@ Draft a CV tailored to the role in `job-description.md` in this directory, and
 write it to `CV.md` here. Base it on my real record in `source-cv.txt` in this
 directory, which is the plain-text extraction of my current master CV. Read
 that file first.
+
+If `candidate-profile.txt` exists and contains approved evidence, use it as
+the primary source of truth. Treat `source-cv.txt` as fallback/audit context,
+not as the shape of the generated CV.
 
 If `role-evidence.txt` exists, read it too. It contains my own answer to a
 previous screening result for this role. You may use it as additional
@@ -450,6 +456,10 @@ Use the natural-writing skill.
 
 Draft a cover letter for the role in `job-description.md` in this directory,
 and write it to `cover-letter.md` here.
+
+Read `candidate-profile.txt` if it exists. Use approved profile evidence as
+the primary source for selecting examples, with `source-cv.txt` as fallback
+context only.
 
 If `role-evidence.txt` exists, read it too. It contains my own answer to a
 previous screening result for this role and can supply role-specific context
@@ -677,7 +687,7 @@ def _api_file_prompt(kind: str, prompt: str, d: Path,
                 f"{p.read_text(encoding='utf-8', errors='ignore')}\n"
                 f"===== END LOCAL FILE =====")
 
-    inputs = ["job-description.md", "source-cv.txt"]
+    inputs = ["job-description.md", "candidate-profile.txt", "source-cv.txt"]
     if (d / "role-evidence.txt").exists():
         inputs.append("role-evidence.txt")
     if kind == "cover_letter":
@@ -770,6 +780,39 @@ def _write_role_evidence(con, uid: str, d: Path) -> None:
         chunks.append(f"## Answer {i}{when}\n\n{r['body'].strip()}")
     (d / "role-evidence.txt").write_text("\n\n".join(chunks) + "\n",
                                           encoding="utf-8")
+
+
+def _write_candidate_profile(con, d: Path) -> None:
+    text = store.approved_candidate_evidence_text(con).strip()
+    if text:
+        (d / "candidate-profile.txt").write_text(text + "\n", encoding="utf-8")
+    else:
+        (d / "candidate-profile.txt").write_text(
+            "(no approved candidate profile evidence yet; use source-cv.txt as fallback)\n",
+            encoding="utf-8")
+
+
+def _write_evidence_trace(con, d: Path, kind: str) -> None:
+    if kind not in ("cv", "cover_letter"):
+        return
+    doc = d / ("CV.md" if kind == "cv" else "cover-letter.md")
+    if not doc.exists():
+        return
+    text = doc.read_text(encoding="utf-8", errors="ignore").lower()
+    used = []
+    for r in store.candidate_evidence(con, statuses=["approved"]):
+        if r["category"] in store.APPLICATION_EXCLUDED_EVIDENCE_CATEGORIES:
+            continue
+        hay = " ".join(re.findall(r"[a-z0-9']+", r["body"].lower()))
+        if not hay:
+            continue
+        tokens = hay.split()
+        snippets = [" ".join(tokens[i:i + 6]) for i in range(0, max(1, len(tokens) - 5), 4)]
+        if any(s and s in text for s in snippets):
+            used.append({"id": r["id"], "title": r["title"], "category": r["category"]})
+    payload = {"kind": kind, "evidence": used}
+    (d / "evidence-used.json").write_text(json.dumps(payload, indent=2),
+                                           encoding="utf-8")
 
 
 def run_job(job_id: int, db_path=None, base=None, cv_source=None,
@@ -867,6 +910,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                 return
             (d / "source-cv.txt").write_text(text, encoding="utf-8")
 
+        _write_candidate_profile(con, d)
         _write_role_evidence(con, job["uid"], d)
 
         prompt = build_prompt(job["kind"], cfg, str(src))
@@ -1014,6 +1058,7 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
                               "revision: " + "; ".join(problems))[:400], out)
                         return
 
+        _write_evidence_trace(con, d, job["kind"])
         _record(con, job, d, out)
         store.mark_job(con, job_id, "done", log=out)
     except Exception as e:                      # never leave a job stuck running
@@ -1069,6 +1114,8 @@ def _record(con, job, d: Path, log: str) -> None:
         gates = _gates(d, "CV.md")
         path = _to_docx(d, "CV.md", "CV.docx")
         store.add_artifact(con, uid, "cv", path, rating=rating, gates=gates)
+        if (d / "evidence-used.json").exists():
+            store.add_artifact(con, uid, "evidence_used", d / "evidence-used.json")
         cur = con.execute("SELECT status FROM role_state WHERE uid=?", (uid,)).fetchone()
         if not cur or cur["status"] == "new":
             store.set_status(con, uid, "interested")
@@ -1091,6 +1138,8 @@ def _record(con, job, d: Path, log: str) -> None:
             gates["no_overlap_with_cv"] = False
             summary = "overlap not checked: no CV.md alongside the letter"
         store.add_artifact(con, uid, "cover_letter", path, summary=summary, gates=gates)
+        if (d / "evidence-used.json").exists():
+            store.add_artifact(con, uid, "evidence_used", d / "evidence-used.json")
 
 
 def shared_ngram(a: str, b: str, n: int = 6) -> str:

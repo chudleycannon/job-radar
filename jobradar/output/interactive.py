@@ -485,11 +485,11 @@ document.addEventListener('change', async e=>{
 });
 
 document.addEventListener('click', async e=>{
-  // Artifact links are browser downloads. They used to point at `/open` and
-  // return JSON for a Finder reveal, so this handler still intercepted them
-  // and tried to parse the .docx response as JSON. The download was cancelled
-  // and the page showed "could not open it" even though `/artifact/<id>` was
-  // serving the file correctly.
+  // Artifact links are real browser pages/downloads. They used to point at
+  // `/open` and return JSON for a Finder reveal, so this handler still
+  // intercepted them and tried to parse the response as JSON. The navigation
+  // was cancelled and the page showed "could not open it" even though
+  // `/artifact/<id>` was serving the artifact correctly.
   const doc=e.target.closest('.docs a');
   if(doc && doc.getAttribute('href').startsWith('/artifact/')) return;
   if(doc){ e.preventDefault();
@@ -551,6 +551,17 @@ document.addEventListener('click', async e=>{
     saveAnswer.disabled=false;
     if(!ok){ say(data.error||'could not save answer',7000); return; }
     say('Screen answer saved for this role');
+    setTimeout(()=>location.reload(),500);
+    return;}
+
+  const reset=e.target.closest('[data-reset-outputs]');
+  if(reset){
+    if(!confirm('Clear saved screening, answers, CV, cover letter and generation history for this role?')) return;
+    reset.disabled=true;
+    const {ok,data}=await post('/api/reset-outputs',{uid});
+    reset.disabled=false;
+    if(!ok){ say(data.error||'could not reset outputs',7000); return; }
+    say('Cleared saved outputs for this role.');
     setTimeout(()=>location.reload(),500);
     return;}
 
@@ -916,7 +927,12 @@ def _row(r, arts, job, run=0) -> str:
         fails = [k for k, v in json.loads(a["gates"] or "{}").items() if v is False]
         gate = (f'<span class="gatefail">{len(fails)} gate(s) failed</span>'
                 if fails else "")
-        docs.append(f'<a href="/artifact/{int(a["id"])}">CV</a> {rating} {gate}')
+        aid = int(a["id"])
+        docs.append(
+            f'<a href="/artifact/{aid}">CV</a> '
+            f'<a href="/artifact/{aid}/download.md">Download MD</a> '
+            f'<a href="/artifact/{aid}/download.docx">Download DOCX</a> '
+            f'{rating} {gate}')
     if "cover_letter" in arts:
         a = arts["cover_letter"]
         ov = json.loads(a["gates"] or "{}").get("no_overlap_with_cv")
@@ -925,7 +941,15 @@ def _row(r, arts, job, run=0) -> str:
                 '<span class="gatefail">'
                 + ('overlaps the CV' if ov is False else 'overlap not checked')
                 + '</span>')
-        docs.append(f'<a href="/artifact/{int(a["id"])}">Cover letter</a> {warn}')
+        aid = int(a["id"])
+        docs.append(
+            f'<a href="/artifact/{aid}">Cover letter</a> '
+            f'<a href="/artifact/{aid}/download.md">Download MD</a> '
+            f'<a href="/artifact/{aid}/download.docx">Download DOCX</a> '
+            f'{warn}')
+    if "evidence_used" in arts:
+        a = arts["evidence_used"]
+        docs.append(f'<a href="/artifact/{int(a["id"])}">Evidence used</a>')
     # The screening is the thing you asked for, so it goes in the row rather
     # than behind a link to a file. <details> gives the minimise for free and
     # keeps working with JavaScript off. Open by default: you clicked Screen
@@ -991,6 +1015,9 @@ def _row(r, arts, job, run=0) -> str:
                  or "not compared" in f or "sponsor" in f)]
     busy = job["kind"] if job else ""
     has_cv = "cv" in arts
+    has_outputs = bool(job or any(k in arts for k in (
+        "screen", "screen_answer", "cv", "cover_letter",
+        "evidence_used", "jd_snapshot")))
 
     def b(kind, label, cls=""):
         on = busy == kind
@@ -1055,6 +1082,8 @@ def _row(r, arts, job, run=0) -> str:
             for s in store.STATUSES)
         + '</select>'
         + '<button data-note="1" title="Add or edit a note">Note</button>'
+        + ('<button data-reset-outputs="1" title="Clear saved screening and generated documents">Reset</button>'
+           if has_outputs else '')
         + '</div>'
         + (f'<div class="err" hidden></div>')
         + '</div>')

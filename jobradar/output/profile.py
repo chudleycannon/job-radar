@@ -29,6 +29,7 @@ document.addEventListener('click',async e=>{
     const card=b.closest('.evidence'), status=b.dataset.status;
     b.disabled=true; cardSay(card,'Saving...');
     try{await post('/api/profile/evidence',{id:+card.dataset.id,status});
+      card.dataset.status=status;
       card.classList.remove('proposed','approved','rejected','archived');
       card.classList.add(status);
       card.querySelector('.ev-status').textContent=status;
@@ -50,6 +51,9 @@ document.addEventListener('click',async e=>{
       employer:card.querySelector('[name=employer]').value,
       role_title:card.querySelector('[name=role_title]').value,
       date_range:card.querySelector('[name=date_range]').value,
+      pinned:card.querySelector('[name=pinned]').checked,
+      needs_detail:card.querySelector('[name=needs_detail]').checked,
+      needs_metric:card.querySelector('[name=needs_metric]').checked,
       tags,
       body:card.querySelector('[name=body]').value
     }); card.querySelector('.card-summary strong').textContent=card.querySelector('[name=title]').value;
@@ -97,6 +101,28 @@ document.addEventListener('click',async e=>{
     finally{kb.disabled=false;}
     return;
   }
+});
+function applyFilters(){
+  const q=document.querySelector('#profile-search').value.trim().toLowerCase();
+  const status=document.querySelector('#profile-status').value;
+  const group=document.querySelector('#profile-group').value;
+  const source=document.querySelector('#profile-source').value;
+  for(const card of document.querySelectorAll('.evidence')){
+    const text=card.textContent.toLowerCase();
+    card.hidden=!!((q&&!text.includes(q))||(status&&card.dataset.status!==status)||
+      (group&&card.dataset.group!==group)||(source&&card.dataset.source!==source));
+  }
+}
+document.querySelectorAll('#profile-search,#profile-status,#profile-group,#profile-source')
+  .forEach(el=>el.addEventListener('input',applyFilters));
+document.querySelector('#bulk-action').addEventListener('click',async ()=>{
+  const action=document.querySelector('#bulk-choice').value;
+  const ids=[...document.querySelectorAll('.pick:checked')].map(x=>+x.value);
+  if(!action||!ids.length){say('Choose cards and an action.',true);return;}
+  try{const d=await post('/api/profile/evidence/bulk',{ids,action});
+    say('Updated '+d.changed+' card'+(d.changed===1?'':'s')+'.');
+    setTimeout(()=>location.reload(),500);}
+  catch(err){say(err.message,true);}
 });
 document.querySelector('#new-evidence').addEventListener('submit',async e=>{
   e.preventDefault();
@@ -197,11 +223,19 @@ def render(rows: list[dict], import_note: str = "",
   letter-spacing:.06em}}
 .group .group-body{{padding:0 var(--s4) var(--s4)}}
 .group .count{{color:var(--muted);font-size:.875rem}}
+.tools{{display:grid;gap:var(--s3)}}
+.filters{{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:var(--s3)}}
+.bulk{{display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center}}
+.bulk a{{color:var(--accent);font-size:.9375rem;font-weight:650}}
+.pickline{{display:flex;align-items:center;gap:10px}}
+.pickline input{{width:18px;height:18px;accent-color:var(--accent)}}
+.badges{{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:.8125rem}}
+.badge{{border:1px solid var(--line);border-radius:999px;padding:2px 8px;background:var(--surface-2)}}
 .group-empty{{color:var(--muted);font-size:.875rem;margin:0 0 var(--s3)}}
 .empty{{color:var(--muted);padding:var(--s5);background:var(--surface);border:1px solid var(--line);
   border-radius:var(--r-lg)}}
 @media(max-width:760px){{.mini-grid{{grid-template-columns:1fr}}.ev-head{{align-items:flex-start;
-  flex-direction:column}}}}
+  flex-direction:column}}.filters{{grid-template-columns:1fr}}}}
 </style></head>
 <body><div class="wrap"><header>
   <div class="brand">{_favicon_mark()}<span>job radar</span></div>
@@ -209,6 +243,21 @@ def render(rows: list[dict], import_note: str = "",
 </header>
 <main class="setup">
   <nav class="profile-nav"><a href="/">Dashboard</a><a href="/settings">Settings</a></nav>
+  <section class="tools">
+    <h2>Maintenance</h2>
+    <div class="filters">
+      <div class="field"><label>Search</label><input id="profile-search" placeholder="Find evidence"></div>
+      <div class="field"><label>Status</label>{_plain_select("profile-status", [""] + store.EVIDENCE_STATUSES)}</div>
+      <div class="field"><label>Group</label>{_plain_select("profile-group", [""] + [g for g, _ in store.EVIDENCE_GROUPS])}</div>
+      <div class="field"><label>Source</label>{_plain_select("profile-source", [""] + _sources(rows))}</div>
+    </div>
+    <div class="bulk">
+      {_plain_select("bulk-choice", ["", "approve", "reject", "archive", "pin", "unpin", "needs_detail", "clear_needs_detail", "needs_metric", "clear_needs_metric", "delete_rejected"])}
+      <button id="bulk-action" type="button">Apply to selected</button>
+      <a href="/profile/export.md">Export Markdown</a>
+      <a href="/profile/export.json">Export JSON</a>
+    </div>
+  </section>
   <section>
     <h2>Personal info</h2>
     <form id="personal-info">
@@ -276,14 +325,14 @@ def _grouped_cards(rows: list[dict], custom_categories: list[str]) -> str:
         items = [r for c in cats for r in by_cat.pop(c, [])]
         if not items:
             continue
-        cards = "\n".join(_card(r, custom_categories) for r in items)
+        cards = "\n".join(_card(r, custom_categories, label) for r in items)
         parts.append(
             f'<details class="group" open><summary><h3>{_h.escape(label)}</h3>'
             f'<span class="count">{len(items)}</span></summary>'
             f'<div class="group-body">{cards}</div></details>')
     leftovers = [r for group in by_cat.values() for r in group]
     if leftovers:
-        cards = "\n".join(_card(r, custom_categories) for r in leftovers)
+        cards = "\n".join(_card(r, custom_categories, "General Info") for r in leftovers)
         parts.append(
             f'<details class="group" open><summary><h3>General Info</h3>'
             f'<span class="count">{len(leftovers)}</span></summary>'
@@ -329,16 +378,19 @@ def _groups(custom_categories: list[str]) -> list[tuple[str, list[str]]]:
     return out
 
 
-def _card(r: dict, custom_categories: list[str] | None = None) -> str:
+def _card(r: dict, custom_categories: list[str] | None = None,
+          group: str = "") -> str:
     custom_categories = custom_categories or []
     tags = ", ".join(r.get("tags") or [])
     opened = "" if r["status"] == "approved" else " open"
+    badges = _badges(r)
     delete = ('<button class="danger" data-delete-evidence="1" type="button">Delete</button>'
               if r["status"] == "rejected" else "")
-    return f"""<details class="evidence {_h.escape(r['status'])}" data-id="{int(r['id'])}"{opened}>
-  <summary class="card-summary"><strong>{_h.escape(r['title'])}</strong>
+    return f"""<details class="evidence {_h.escape(r['status'])}" data-id="{int(r['id'])}" data-status="{_h.escape(r['status'], quote=True)}" data-group="{_h.escape(group, quote=True)}" data-source="{_h.escape(_source_kind(r['source']), quote=True)}"{opened}>
+  <summary class="card-summary"><span class="pickline"><input class="pick" type="checkbox" value="{int(r['id'])}" onclick="event.stopPropagation()"><strong>{_h.escape(r['title'])}</strong></span>
     <span class="ev-status">{_h.escape(r['status'])}</span></summary>
   <div class="card-body">
+  {badges}
   <div class="grid">
     <div class="field"><label>Title</label><input name="title" value="{_h.escape(r['title'], quote=True)}"></div>
     <div class="field"><label>Category</label>{_category_select("category", r['category'], custom_categories)}</div>
@@ -349,6 +401,11 @@ def _card(r: dict, custom_categories: list[str] | None = None) -> str:
     <div class="field"><label>Date range</label><input name="date_range" value="{_h.escape(r['date_range'], quote=True)}"></div>
   </div>
   <div class="field"><label>Tags</label><input name="tags" value="{_h.escape(tags, quote=True)}"></div>
+  <div class="bulk">
+    <label class="check"><input name="pinned" type="checkbox"{" checked" if r.get("pinned") else ""}><span>Pinned</span></label>
+    <label class="check"><input name="needs_detail" type="checkbox"{" checked" if r.get("needs_detail") else ""}><span>Needs detail</span></label>
+    <label class="check"><input name="needs_metric" type="checkbox"{" checked" if r.get("needs_metric") else ""}><span>Needs metric</span></label>
+  </div>
   <div class="field"><label>Evidence</label><textarea name="body">{_h.escape(r['body'])}</textarea></div>
   <div class="hint">Source: {_h.escape(r['source'] or 'Manual')} · Updated {_h.escape(r['updated_at'])}</div>
   <div class="ev-actions">
@@ -382,3 +439,38 @@ def _label(category: str) -> str:
 
 def _esc_attr(value: object) -> str:
     return _h.escape(str(value or ""), quote=True)
+
+
+def _plain_select(name: str, values: list[str]) -> str:
+    labels = {"": "Any", "needs_detail": "mark needs detail",
+              "clear_needs_detail": "clear needs detail",
+              "needs_metric": "mark needs metric",
+              "clear_needs_metric": "clear needs metric",
+              "delete_rejected": "delete rejected"}
+    opts = "".join(
+        f'<option value="{_h.escape(v, quote=True)}">{_h.escape(labels.get(v, v.replace("_", " ")))}</option>'
+        for v in values)
+    return f'<select id="{_h.escape(name, quote=True)}">{opts}</select>'
+
+
+def _sources(rows: list[dict]) -> list[str]:
+    vals = sorted({_source_kind(r.get("source", "")) for r in rows})
+    return [v for v in vals if v]
+
+
+def _source_kind(source: str) -> str:
+    s = str(source or "")
+    if s.startswith("CV import"):
+        return "CV import"
+    if s.startswith("Screening answer"):
+        return "Screening answer"
+    return s or "Manual"
+
+
+def _badges(r: dict) -> str:
+    items = []
+    for key, label in (("pinned", "Pinned"), ("needs_detail", "Needs detail"),
+                       ("needs_metric", "Needs metric")):
+        if r.get(key):
+            items.append(f'<span class="badge">{label}</span>')
+    return f'<div class="badges">{"".join(items)}</div>' if items else ""

@@ -189,6 +189,58 @@ def test_a_screen_answer_can_be_saved_for_later_generation():
         assert row["kind"] == "screen_answer", dict(row)
         assert row["summary"] == "I have led ITIL-aligned incident reviews."
         assert row["body"] == "I have led ITIL-aligned incident reviews."
+        con = store.connect(db)
+        try:
+            ev = store.candidate_evidence(con)
+            assert len(ev) == 1
+            assert ev[0]["status"] == "proposed"
+            assert "ITIL-aligned" in ev[0]["body"]
+        finally:
+            con.close()
+
+
+def test_a_role_can_reset_saved_generation_outputs():
+    with _lab() as (root, db, home), _server(db) as base:
+        con = store.connect(db)
+        try:
+            store.set_status(con, "uid-one", "interested", "keep this note")
+            for kind in ("screen", "screen_answer", "cv", "cover_letter",
+                         "evidence_used", "jd_snapshot"):
+                store.add_artifact(con, "uid-one", kind, body=f"{kind} body")
+            store.add_artifact(con, "uid-one", "other", body="keep me")
+            store.enqueue(con, "uid-one", "cv")
+        finally:
+            con.close()
+
+        code, body = _req(base, "/api/reset-outputs", {"uid": "uid-one"})
+        assert code == 200 and body["ok"] is True, (code, body)
+        assert body["artifacts"] == 6, body
+        assert body["jobs"] == 1, body
+
+        con = store.connect(db)
+        try:
+            remaining = [r["kind"] for r in store.artifacts_for(con, "uid-one")]
+            assert remaining == ["other"], remaining
+            assert con.execute(
+                "SELECT COUNT(*) c FROM jobs WHERE uid='uid-one'"
+            ).fetchone()["c"] == 0
+        finally:
+            con.close()
+        assert _status(db, "uid-one") == ("interested", "keep this note")
+
+
+def test_dashboard_shows_reset_when_a_role_has_saved_outputs():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.add_artifact(con, "uid-one", "screen_answer",
+                               body="extra screening context")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, page = _req(base, "/", method="GET")
+            assert code == 200, (code, page)
+            assert 'data-reset-outputs="1"' in page, page
 
 
 def test_a_blank_screen_answer_is_refused():
@@ -621,7 +673,7 @@ def test_approved_profile_cards_are_collapsed_by_default():
         with _server(db) as base:
             code, body = _req(base, "/profile")
             assert code == 200, (code, body)
-            assert '<summary class="card-summary"><strong>Approved evidence</strong>' in body
+            assert "<strong>Approved evidence</strong>" in body
             assert '<summary class="card-summary"><strong>Approved keywords</strong>' in body
             assert '<details class="evidence approved" data-id=' in body
             assert '<details class="keyword-group approved" data-id=' in body
@@ -688,6 +740,83 @@ def test_the_profile_page_saves_personal_info():
         assert "Ryan Begen" in page
         assert "ryan@example.invalid" in page
         assert "https://github.example/ryan" in page
+
+
+def test_the_profile_page_has_maintenance_filters_bulk_actions_and_exports():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.add_candidate_evidence(
+                con, "Incident command", "Led incidents.",
+                category="incident_management", source="CV import: cv.md",
+                status="approved", pinned=True, needs_metric=True)
+            store.add_candidate_evidence(
+                con, "Weak note", "Needs work.", status="proposed")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, page = _req(base, "/profile")
+            assert code == 200, (code, page)
+            for text in ("profile-search", "profile-status", "profile-group",
+                         "profile-source", "bulk-choice", "bulk-action"):
+                assert text in page
+            assert "/api/profile/evidence/bulk" in page
+            assert "/profile/export.md" in page
+            assert "/profile/export.json" in page
+            assert "Needs metric" in page
+            assert 'name="pinned" type="checkbox" checked' in page
+
+            code, body = _req(base, "/api/profile/evidence/bulk", {
+                "ids": [1, 2], "action": "approve"})
+            assert code == 200 and body["changed"] == 2, (code, body)
+            code, body = _req(base, "/api/profile/evidence/bulk", {
+                "ids": [1], "action": "needs_detail"})
+            assert code == 200 and body["changed"] == 1, (code, body)
+
+            code, md = _req(base, "/profile/export.md", method="GET")
+            assert code == 200, (code, md)
+            assert "Candidate Profile" in md
+            assert "Incident command" in md
+            code, js = _req(base, "/profile/export.json", method="GET")
+            assert code == 200, (code, js)
+            assert any(e["title"] == "Incident command" for e in js["evidence"])
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_evidence(con, statuses=["approved"])
+            assert len(rows) == 2
+            assert rows[0]["needs_detail"] or rows[1]["needs_detail"]
+        finally:
+            con.close()
+
+
+def test_profile_card_edits_save_maintenance_flags():
+    with _lab() as (root, db, home), _server(db) as base:
+        con = store.connect(db)
+        try:
+            eid = store.add_candidate_evidence(
+                con, "Evidence", "A useful fact.", status="approved")
+        finally:
+            con.close()
+        code, body = _req(base, "/api/profile/evidence", {
+            "id": eid,
+            "title": "Evidence",
+            "body": "A useful fact.",
+            "category": "general",
+            "status": "approved",
+            "pinned": True,
+            "needs_detail": True,
+            "needs_metric": True,
+        })
+        assert code == 200 and body["ok"] is True, (code, body)
+        con = store.connect(db)
+        try:
+            row = store.candidate_evidence(con)[0]
+            assert row["pinned"] == 1
+            assert row["needs_detail"] == 1
+            assert row["needs_metric"] == 1
+        finally:
+            con.close()
 
 
 def test_old_personal_statement_style_categories_are_migrated():
@@ -950,9 +1079,9 @@ def test_open_falls_back_to_the_stored_copy_when_the_file_is_gone():
         assert "no longer on disk" in body, body
 
 
-def test_artifact_download_serves_a_generated_cv_from_the_ui():
-    """The dashboard should link to a browser-readable artifact, not a
-    desktop-only reveal command that is useless inside Docker."""
+def test_artifact_link_serves_the_generated_cv_markdown_preview():
+    """The dashboard should open the formatted Markdown source for a generated
+    CV, not download the rendered document."""
     with _lab() as (root, db, home):
         cv = root / "source-cv.md"
         cv.write_text("Rowan Ashby\n", encoding="utf-8")
@@ -967,8 +1096,16 @@ def test_artifact_download_serves_a_generated_cv_from_the_ui():
             made = root / "docs" / "CV.docx"
             made.parent.mkdir(parents=True, exist_ok=True)
             made.write_text("download me", encoding="utf-8")
+            (made.parent / "CV.md").write_text(
+                "# Rowan Ashby\n\n- Led incidents.\n", encoding="utf-8")
             aid = store.add_artifact(con, "uid-one", "cv", str(made),
                                      body="download me")
+            letter = root / "docs" / "cover-letter.docx"
+            letter.write_text("letter docx", encoding="utf-8")
+            (letter.parent / "cover-letter.md").write_text(
+                "# Cover Letter\n\nDear hiring team.\n", encoding="utf-8")
+            lid = store.add_artifact(con, "uid-one", "cover_letter", str(letter),
+                                     body="letter fallback")
         finally:
             con.close()
 
@@ -976,13 +1113,36 @@ def test_artifact_download_serves_a_generated_cv_from_the_ui():
             code, page = _req(base, "/", method="GET")
             assert code == 200, (code, page)
             assert f'/artifact/{aid}' in page, page
+            assert f'/artifact/{aid}/download.md' in page, page
+            assert f'/artifact/{aid}/download.docx' in page, page
+            assert f'/artifact/{lid}' in page, page
+            assert f'/artifact/{lid}/download.md' in page, page
+            assert f'/artifact/{lid}/download.docx' in page, page
 
             code, body = _req(base, f"/artifact/{aid}", method="GET")
             assert code == 200, (code, body)
-            assert "download me" in body, body
+            assert "<h1>Rowan Ashby</h1>" in body, body
+            assert "<li>Led incidents.</li>" in body, body
+            assert "download me" not in body, body
+
+            code, body = _req(base, f"/artifact/{aid}/download.md", method="GET")
+            assert code == 200, (code, body)
+            assert "# Rowan Ashby" in body, body
+            code, body = _req(base, f"/artifact/{aid}/download.docx", method="GET")
+            assert code == 200, (code, body)
+            assert body == "download me", body
+            code, body = _req(base, f"/artifact/{lid}", method="GET")
+            assert code == 200, (code, body)
+            assert "<h1>Cover Letter</h1>" in body, body
+            code, body = _req(base, f"/artifact/{lid}/download.md", method="GET")
+            assert code == 200, (code, body)
+            assert "# Cover Letter" in body, body
+            code, body = _req(base, f"/artifact/{lid}/download.docx", method="GET")
+            assert code == 200, (code, body)
+            assert body == "letter docx", body
 
 
-def test_artifact_download_resolves_paths_relative_to_the_data_folder():
+def test_artifact_preview_resolves_paths_relative_to_the_data_folder():
     """Docker records paths like data/documents/...; serving them must not
     depend on the process still having /data as its current directory."""
     with _lab() as (root, db, home):
@@ -997,6 +1157,8 @@ def test_artifact_download_resolves_paths_relative_to_the_data_folder():
         made = root / "data" / "documents" / "role" / "CV.docx"
         made.parent.mkdir(parents=True, exist_ok=True)
         made.write_bytes(b"fake docx bytes")
+        (made.parent / "CV.md").write_text("# CV\n\nDocker path works.\n",
+                                           encoding="utf-8")
         con = store.connect(db)
         try:
             aid = store.add_artifact(
@@ -1007,6 +1169,10 @@ def test_artifact_download_resolves_paths_relative_to_the_data_folder():
 
         with _server(db, config_path=cfg) as base:
             code, body = _req(base, f"/artifact/{aid}", method="GET")
+            assert code == 200, (code, body)
+            assert "<h1>CV</h1>" in body, body
+            assert "Docker path works." in body, body
+            code, body = _req(base, f"/artifact/{aid}/download.docx", method="GET")
             assert code == 200, (code, body)
             assert body == "fake docx bytes", body
 
@@ -1334,6 +1500,68 @@ def test_generation_prompt_includes_a_saved_screen_answer():
                 con.close()
         assert "===== BEGIN LOCAL FILE: role-evidence.txt =====" in seen["prompt"]
         assert "I have led ITIL-aligned incident reviews." in seen["prompt"]
+
+
+def test_generation_prompt_includes_approved_profile_evidence():
+    with _lab() as (root, db, home), _env(
+            JOB_RADAR_CLAUDE=str(root / "no-such-claude")):
+        cv = root / "cv.md"
+        cv.write_text("Rowan Ashby\nEngineering leader.\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n"
+            "ai:\n"
+            "  provider: anthropic\n"
+            "  model: \"claude-sonnet-5\"\n"
+            "  anthropic_api_key: \"sk-ant-api03-test\"\n",
+            encoding="utf-8")
+        con = store.connect(db)
+        try:
+            store.add_candidate_evidence(
+                con, "Incident command", "Led major incident response.",
+                category="incident_management", status="approved")
+            store.add_candidate_evidence(
+                con, "Search preference", "Prefer remote-first employers.",
+                category="preference", status="approved")
+            store.add_candidate_evidence(
+                con, "Search constraint", "Cannot relocate outside the UK.",
+                category="constraint", status="approved")
+            store.add_candidate_keywords(
+                con, "Operations", ["incident management", "root cause analysis"],
+                status="approved")
+            store.set_personal_info(con, {"name": "Rowan Ashby"})
+        finally:
+            con.close()
+
+        seen = {}
+        answer = (
+            "===== BEGIN FILE: screening.md =====\nAPPLY\n===== END FILE: screening.md =====\n"
+            "===== BEGIN FILE: verdict.txt =====\nAPPLY\n===== END FILE: verdict.txt =====\n")
+
+        def complete(prompt, *a, **k):
+            seen["prompt"] = prompt
+            return answer
+
+        with mock.patch("jobradar.ai.complete", complete), \
+                _server(db, docs=root / "docs", config_path=cfg) as base:
+            code, body = _req(base, "/api/generate",
+                              {"uid": "uid-one", "kind": "screen"})
+            assert code == 200 and body["ok"] is True, (code, body)
+            con = store.connect(db)
+            try:
+                _settle(lambda: con.execute(
+                    "SELECT state FROM jobs WHERE id=?",
+                    (body["job"],)).fetchone()["state"] == "done")
+            finally:
+                con.close()
+        assert "===== BEGIN LOCAL FILE: candidate-profile.txt =====" in seen["prompt"]
+        assert "Led major incident response." in seen["prompt"]
+        assert "Prefer remote-first employers." not in seen["prompt"]
+        assert "Cannot relocate outside the UK." not in seen["prompt"]
+        assert "incident management, root cause analysis" in seen["prompt"]
+        assert "Rowan Ashby" in seen["prompt"]
 
 
 @contextmanager

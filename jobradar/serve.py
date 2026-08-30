@@ -93,6 +93,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _download_text(self, name: str, ctype: str, text: str):
+        body = text.encode("utf-8")
+        self._answered = True
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{_download_name(name)}"')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _markdown_page(self, title: str, text: str):
+        html = _markdown_document(title, text)
+        return self._html(html)
+
     def _artifact_path(self, raw: str) -> Path:
         p = Path(raw or "")
         if p.is_absolute():
@@ -213,6 +228,18 @@ class Handler(BaseHTTPRequestHandler):
                     store.personal_info(con)))
             finally:
                 con.close()
+        if path in ("/profile/export.md", "/profile/export.json"):
+            con = store.connect(self.db_path)
+            try:
+                if path.endswith(".json"):
+                    return self._download_text(
+                        "candidate-profile.json", "application/json",
+                        _profile_export_json(con))
+                return self._download_text(
+                    "candidate-profile.md", "text/markdown; charset=utf-8",
+                    _profile_export_markdown(con))
+            finally:
+                con.close()
         if path == "/api/settings":
             ok, result = _read_ai_settings(self._config_path())
             return self._json(result if ok else {"ok": False, "error": result},
@@ -308,8 +335,10 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 con.close()
         if path.startswith("/artifact/"):
-            raw_id = path.removeprefix("/artifact/").strip("/")
-            if not raw_id.isdigit():
+            parts = [x for x in path.removeprefix("/artifact/").split("/") if x]
+            raw_id = parts[0] if parts else ""
+            download = parts[1] if len(parts) == 2 and parts[1].startswith("download.") else ""
+            if not raw_id.isdigit() or len(parts) > 2 or (len(parts) == 2 and not download):
                 return self._json({"ok": False, "error": "bad artifact"}, 400)
             con = store.connect(self.db_path)
             try:
@@ -321,7 +350,44 @@ class Handler(BaseHTTPRequestHandler):
             if not row:
                 return self._json({"ok": False, "error": "not found"}, 404)
             p = self._artifact_path(row["path"] or "")
-            if row["kind"] in ("cv", "cover_letter") and p.exists() and p.is_file():
+            if download:
+                if row["kind"] not in ("cv", "cover_letter"):
+                    return self._json({"ok": False, "error": "bad artifact"}, 400)
+                md = _artifact_markdown_path(row["kind"], p)
+                if download == "download.md":
+                    if md.exists() and md.is_file():
+                        try:
+                            return self._file(md, md.name)
+                        except OSError as exc:
+                            _log_error(f"could not read artifact markdown {row['id']}: {exc}")
+                    if (row["body"] or "").strip():
+                        name = "CV.md" if row["kind"] == "cv" else "cover-letter.md"
+                        return self._download_text(name, "text/markdown; charset=utf-8",
+                                                   row["body"])
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                if download == "download.docx":
+                    docx = p if p.suffix.lower() == ".docx" else p.with_suffix(".docx")
+                    if docx.exists() and docx.is_file():
+                        try:
+                            return self._file(docx, docx.name)
+                        except OSError as exc:
+                            _log_error(f"could not read artifact {row['id']}: {exc}")
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                return self._json({"ok": False, "error": "bad artifact"}, 400)
+            if row["kind"] in ("cv", "cover_letter"):
+                md = _artifact_markdown_path(row["kind"], p)
+                if md.exists() and md.is_file():
+                    try:
+                        return self._markdown_page(
+                            md.name,
+                            md.read_text(encoding="utf-8", errors="ignore"))
+                    except OSError as exc:
+                        _log_error(f"could not read artifact markdown {row['id']}: {exc}")
+                if (row["body"] or "").strip():
+                    return self._markdown_page(
+                        "CV.md" if row["kind"] == "cv" else "cover-letter.md",
+                        row["body"])
+            if p.exists() and p.is_file():
                 try:
                     return self._file(p)
                 except OSError as exc:
@@ -521,6 +587,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(result if ok else {"ok": False, "error": result},
                               200 if ok else 400)
 
+        if path == "/api/profile/evidence/bulk":
+            ok, result = _bulk_profile_evidence(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
         if path == "/api/profile/personal":
             ok, result = _write_personal_info(self.db_path, data)
             return self._json(result if ok else {"ok": False, "error": result},
@@ -663,7 +734,16 @@ class Handler(BaseHTTPRequestHandler):
                 aid = store.add_artifact(
                     con, uid, "screen_answer", body=text,
                     summary=text.splitlines()[0][:120])
-                return self._json({"ok": True, "uid": uid, "artifact": aid})
+                suggested = candidate_profile.suggest_from_screen_answer(
+                    con, uid, text)
+                return self._json({"ok": True, "uid": uid, "artifact": aid,
+                                   "suggested_evidence": suggested})
+
+            if path == "/api/reset-outputs":
+                counts = store.reset_role_outputs(con, uid)
+                total = counts["artifacts"] + counts["jobs"]
+                return self._json({"ok": True, "uid": uid, "cleared": total,
+                                   **counts})
 
             if path == "/api/generate":
                 kind = data.get("kind")
@@ -732,6 +812,80 @@ def _download_name(name: str) -> str:
     return cleaned or "document"
 
 
+def _artifact_markdown_path(kind: str, artifact_path: Path) -> Path:
+    name = "CV.md" if kind == "cv" else "cover-letter.md"
+    return artifact_path.with_name(name)
+
+
+def _markdown_document(title: str, text: str) -> str:
+    body = _markdown_body(text)
+    css = """
+    body{margin:0;background:#f7f5ef;color:#25211b;font:16px/1.58 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{max-width:760px;margin:0 auto;padding:48px 24px 72px;background:#fff;min-height:100vh;box-shadow:0 0 0 1px rgba(30,25,15,.08)}
+    nav{max-width:760px;margin:0 auto;padding:18px 24px 0}
+    a{color:#285f79;text-decoration:none}a:hover{text-decoration:underline}
+    h1{font-size:30px;line-height:1.15;margin:0 0 22px}
+    h2{font-size:21px;line-height:1.25;margin:30px 0 10px;border-top:1px solid #e7e0d2;padding-top:18px}
+    h3{font-size:17px;margin:22px 0 8px}
+    p{margin:0 0 12px}ul{margin:6px 0 16px 22px;padding:0}li{margin:0 0 7px}
+    strong{font-weight:700}em{font-style:italic}
+    """
+    return (f"<!doctype html><html><head><meta charset='utf-8'>"
+            f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            f"<title>{_h.escape(title)}</title><style>{css}</style></head>"
+            f"<body><nav><a href='/'>Dashboard</a></nav><main>{body}</main></body></html>")
+
+
+def _markdown_body(text: str) -> str:
+    out: list[str] = []
+    para: list[str] = []
+    in_list = False
+
+    def inline(s: str) -> str:
+        s = _h.escape(s)
+        s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+        s = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", s)
+        return s
+
+    def flush_para() -> None:
+        nonlocal para
+        if para:
+            out.append("<p>" + inline(" ".join(para)) + "</p>")
+            para = []
+
+    def close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            flush_para()
+            close_list()
+            continue
+        if line.startswith("#"):
+            flush_para()
+            close_list()
+            level = min(3, len(line) - len(line.lstrip("#")))
+            label = line[level:].strip()
+            if label:
+                out.append(f"<h{level}>{inline(label)}</h{level}>")
+            continue
+        if line.startswith(("- ", "* ")):
+            flush_para()
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            out.append(f"<li>{inline(line[2:].strip())}</li>")
+            continue
+        para.append(line)
+    flush_para()
+    close_list()
+    return "\n".join(out) or "<p>No content.</p>"
+
+
 def _abandon_rank(con, error: str = "") -> None:
     """Put the rank button back, from whatever state a failure left it in.
 
@@ -798,6 +952,9 @@ def _write_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
         "date_range": str(data.get("date_range") or "").strip(),
         "source": str(data.get("source") or "").strip(),
         "status": str(data.get("status") or "proposed").strip(),
+        "pinned": bool(data.get("pinned")),
+        "needs_detail": bool(data.get("needs_detail")),
+        "needs_metric": bool(data.get("needs_metric")),
     }
     tags = data.get("tags") or []
     if isinstance(tags, str):
@@ -825,7 +982,8 @@ def _write_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
                 update = {"status": fields["status"]}
             else:
                 update = {k: v for k, v in fields.items()
-                          if v or k in ("body", "tags", "status")}
+                          if v or k in ("body", "tags", "status", "pinned",
+                                        "needs_detail", "needs_metric")}
             store.update_candidate_evidence(con, eid, **update)
             return True, {"ok": True, "id": eid}
         if not fields["body"]:
@@ -867,6 +1025,39 @@ def _delete_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
         con.close()
 
 
+def _bulk_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
+    if not isinstance(data, dict):
+        return False, "bulk action has to be an object"
+    ids = data.get("ids") or []
+    if not isinstance(ids, list):
+        return False, "choose at least one evidence card"
+    action = str(data.get("action") or "").strip()
+    con = store.connect(db_path)
+    try:
+        if action in {"approve", "reject", "archive"}:
+            status = {"approve": "approved", "reject": "rejected",
+                      "archive": "archived"}[action]
+            n = store.bulk_update_candidate_evidence(con, ids, status=status)
+        elif action in {"pin", "unpin"}:
+            n = store.bulk_update_candidate_evidence(
+                con, ids, pinned=(action == "pin"))
+        elif action in {"needs_detail", "clear_needs_detail"}:
+            n = store.bulk_update_candidate_evidence(
+                con, ids, needs_detail=(action == "needs_detail"))
+        elif action in {"needs_metric", "clear_needs_metric"}:
+            n = store.bulk_update_candidate_evidence(
+                con, ids, needs_metric=(action == "needs_metric"))
+        elif action == "delete_rejected":
+            n = store.delete_rejected_candidate_evidence_many(con, ids)
+        else:
+            return False, "bad bulk action"
+        return True, {"ok": True, "changed": n}
+    except (TypeError, ValueError) as exc:
+        return False, str(exc)
+    finally:
+        con.close()
+
+
 def _write_personal_info(db_path, data: dict) -> tuple[bool, dict | str]:
     if not isinstance(data, dict):
         return False, "personal info has to be an object"
@@ -883,6 +1074,42 @@ def _write_personal_info(db_path, data: dict) -> tuple[bool, dict | str]:
         return True, {"ok": True}
     finally:
         con.close()
+
+
+def _profile_export_json(con) -> str:
+    return json.dumps({
+        "personal_info": store.personal_info(con),
+        "keywords": store.candidate_keywords(con),
+        "evidence": store.candidate_evidence(con),
+        "custom_evidence_categories": store.custom_evidence_categories(con),
+    }, indent=2)
+
+
+def _profile_export_markdown(con) -> str:
+    parts = ["# Candidate Profile"]
+    info = store.personal_info(con)
+    if any(info.values()):
+        parts.append("## Personal Info\n" + "\n".join(
+            f"- {k.replace('_', ' ').title()}: {v}"
+            for k, v in info.items() if v))
+    keywords = store.candidate_keywords(con)
+    if keywords:
+        parts.append("## Core Expertise\n" + "\n".join(
+            f"- {r['title']} ({r['status']}): {', '.join(r['keywords'])}"
+            for r in keywords))
+    evidence = store.candidate_evidence(con)
+    if evidence:
+        lines = []
+        for r in evidence:
+            flags = ", ".join(x for x in (
+                "pinned" if r.get("pinned") else "",
+                "needs detail" if r.get("needs_detail") else "",
+                "needs metric" if r.get("needs_metric") else "") if x)
+            meta = " · ".join(x for x in (
+                r["category"], r["status"], r["employer"], r["date_range"], flags) if x)
+            lines.append(f"### {r['title']}\n{meta}\n\n{r['body']}")
+        parts.append("## Evidence\n" + "\n\n".join(lines))
+    return "\n\n".join(parts) + "\n"
 
 
 def _rebuild_profile_from_cv(db_path, config_path: Path) -> tuple[bool, dict | str]:

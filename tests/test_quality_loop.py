@@ -119,6 +119,40 @@ def test_a_clean_draft_passes_without_a_revision():
     assert scores.get("slop", 99) <= 20
 
 
+def test_generated_documents_record_approved_evidence_used():
+    d = Path(tempfile.mkdtemp())
+    (d / "CV.md").write_text(
+        "Led major incident response for customer-facing services.\n",
+        encoding="utf-8")
+    con = store.connect(":memory:")
+    store.add_candidate_evidence(
+        con, "Incident command",
+        "Led major incident response for customer-facing services.",
+        category="incident_management", status="approved")
+    runner._write_evidence_trace(con, d, "cv")
+    trace = (d / "evidence-used.json").read_text(encoding="utf-8")
+    assert "Incident command" in trace
+    assert "incident_management" in trace
+
+
+def test_generated_documents_do_not_record_search_preferences_as_evidence():
+    d = Path(tempfile.mkdtemp())
+    (d / "cover-letter.md").write_text(
+        "Prefer remote-first employers. Cannot relocate outside the UK.\n",
+        encoding="utf-8")
+    con = store.connect(":memory:")
+    store.add_candidate_evidence(
+        con, "Remote preference", "Prefer remote-first employers.",
+        category="preference", status="approved")
+    store.add_candidate_evidence(
+        con, "Relocation constraint", "Cannot relocate outside the UK.",
+        category="constraint", status="approved")
+    runner._write_evidence_trace(con, d, "cover_letter")
+    trace = (d / "evidence-used.json").read_text(encoding="utf-8")
+    assert "Remote preference" not in trace
+    assert "Relocation constraint" not in trace
+
+
 def test_the_cv_checks_catch_what_the_prose_check_cannot():
     """natural-writing has nothing to say about a missing Education section or
     a date range an applicant tracking system cannot parse. Both were

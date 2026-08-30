@@ -56,6 +56,19 @@ def import_cv(con, path: str | Path) -> int:
     return n
 
 
+def suggest_from_screen_answer(con, uid: str, answer: str) -> int:
+    """Turn a role-specific screening answer into proposed reusable evidence."""
+    text = _clean(answer)
+    if len(text) < 20:
+        return 0
+    title = _title_from_text(text)
+    store.add_candidate_evidence(
+        con, title=title, body=text[:4000], category=_category(title, text),
+        tags=_tags(text), source=f"Screening answer: {uid[:12]}",
+        confidence=0.65, status="proposed")
+    return 1
+
+
 def _import_keyword_groups(con, text: str, source: str) -> int:
     n = 0
     for title, keywords in _keyword_groups(text):
@@ -169,3 +182,11 @@ def _tags(text: str) -> list[str]:
 def _clean(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text.strip())
     return re.sub(r"[ \t]+", " ", text)
+
+
+def _title_from_text(text: str) -> str:
+    first = re.split(r"[.\n]", text.strip(), 1)[0]
+    words = first.split()
+    if len(words) > 10:
+        first = " ".join(words[:10])
+    return first.strip()[:80] or "Screening answer evidence"

@@ -419,7 +419,7 @@ def test_the_screen_prompt_still_refuses_to_screen_an_empty_posting():
     assert _says("screen", "which dealbreakers went unchecked")
     assert _says("screen", "do not invent any others")
     assert _says("screen", "(config body)"), "the dealbreakers are not inlined"
-    assert _says("screen", "Do not assess a gap without reading the CV")
+    assert _says("screen", "Do not assess a gap without reading the candidate evidence")
 
 
 if __name__ == "__main__":

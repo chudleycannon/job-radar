@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS candidate_evidence (
   source TEXT NOT NULL DEFAULT '',
   confidence REAL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'proposed',
+  pinned INTEGER DEFAULT 0,
+  needs_detail INTEGER DEFAULT 0,
+  needs_metric INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -108,6 +111,7 @@ CREATE TABLE IF NOT EXISTS candidate_keywords (
   keywords TEXT NOT NULL DEFAULT '[]',
   source TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'approved',
+  pinned INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -142,6 +146,7 @@ EVIDENCE_GROUPS = [
 ]
 EVIDENCE_CATEGORIES = [c for _, group in EVIDENCE_GROUPS for c in group]
 _CATEGORY_ALIASES = {"personal_statement_style": "personal_statement"}
+APPLICATION_EXCLUDED_EVIDENCE_CATEGORIES = {"preference", "constraint"}
 
 # How far along an application is, for deciding which of two records of the
 # same job to keep. A merge must never trade an interview for an "interested".
@@ -323,6 +328,13 @@ def _ensure_columns(con) -> None:
     acols = {r["name"] for r in con.execute("PRAGMA table_info(artifacts)")}
     if "body" not in acols:
         _try_alter(con, "ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")
+    ecols = {r["name"] for r in con.execute("PRAGMA table_info(candidate_evidence)")}
+    for name in ("pinned", "needs_detail", "needs_metric"):
+        if name not in ecols:
+            _try_alter(con, f"ALTER TABLE candidate_evidence ADD COLUMN {name} INTEGER DEFAULT 0")
+    kcols = {r["name"] for r in con.execute("PRAGMA table_info(candidate_keywords)")}
+    if "pinned" not in kcols:
+        _try_alter(con, "ALTER TABLE candidate_keywords ADD COLUMN pinned INTEGER DEFAULT 0")
     con.execute("UPDATE candidate_evidence SET category='personal_statement' "
                 "WHERE category='personal_statement_style'")
     con.execute("CREATE TABLE IF NOT EXISTS locks ("
@@ -825,6 +837,22 @@ def has_artifact(con, uid, kind) -> bool:
                        (uid, kind)).fetchone() is not None
 
 
+def reset_role_outputs(con, uid: str) -> dict[str, int]:
+    """Forget generated outputs for one role without changing the role itself."""
+    kinds = ("screen", "screen_answer", "cv", "cover_letter",
+             "evidence_used", "jd_snapshot")
+    q = ",".join("?" * len(kinds))
+    before_artifacts = con.execute(
+        f"SELECT COUNT(*) c FROM artifacts WHERE uid=? AND kind IN ({q})",
+        (uid, *kinds)).fetchone()["c"]
+    before_jobs = con.execute(
+        "SELECT COUNT(*) c FROM jobs WHERE uid=?", (uid,)).fetchone()["c"]
+    con.execute(f"DELETE FROM artifacts WHERE uid=? AND kind IN ({q})",
+                (uid, *kinds))
+    con.execute("DELETE FROM jobs WHERE uid=?", (uid,))
+    return {"artifacts": int(before_artifacts), "jobs": int(before_jobs)}
+
+
 # ------------------------------------------------------ candidate evidence
 
 def _slug_category(value: str) -> str:
@@ -885,7 +913,8 @@ def clear_candidate_evidence(con) -> int:
 
 
 def add_candidate_keywords(con, title: str, keywords: Iterable[str], *,
-                           source: str = "", status: str = "approved") -> int:
+                           source: str = "", status: str = "approved",
+                           pinned: bool = False) -> int:
     _ensure_columns(con)
     title = str(title or "").strip()
     kws = [str(k).strip() for k in keywords if str(k).strip()]
@@ -898,9 +927,10 @@ def add_candidate_keywords(con, title: str, keywords: Iterable[str], *,
     now = _now()
     cur = con.execute(
         """INSERT INTO candidate_keywords
-        (title,keywords,source,status,created_at,updated_at)
-        VALUES (?,?,?,?,?,?)""",
-        (title, json.dumps(kws), str(source or "").strip(), status, now, now))
+        (title,keywords,source,status,pinned,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?)""",
+        (title, json.dumps(kws), str(source or "").strip(), status,
+         1 if pinned else 0, now, now))
     return cur.lastrowid
 
 
@@ -930,6 +960,8 @@ def update_candidate_keywords(con, keyword_id: int, **fields) -> None:
         updates["status"] = status
     if "source" in fields:
         updates["source"] = str(fields["source"] or "").strip()
+    if "pinned" in fields:
+        updates["pinned"] = 1 if fields["pinned"] else 0
     if not updates:
         return
     updates["updated_at"] = _now()
@@ -972,6 +1004,49 @@ def delete_rejected_candidate_evidence(con, evidence_id: int) -> bool:
         (int(evidence_id),)).rowcount > 0
 
 
+def bulk_update_candidate_evidence(con, ids: Iterable[int], *,
+                                   status: str | None = None,
+                                   pinned: bool | None = None,
+                                   needs_detail: bool | None = None,
+                                   needs_metric: bool | None = None) -> int:
+    _ensure_columns(con)
+    ids = [int(i) for i in ids]
+    if not ids:
+        return 0
+    sets = []
+    vals: list[Any] = []
+    if status is not None:
+        if status not in EVIDENCE_STATUSES:
+            raise ValueError(f"unknown evidence status {status!r}")
+        sets.append("status=?")
+        vals.append(status)
+    for name, value in (("pinned", pinned), ("needs_detail", needs_detail),
+                        ("needs_metric", needs_metric)):
+        if value is not None:
+            sets.append(f"{name}=?")
+            vals.append(1 if value else 0)
+    if not sets:
+        return 0
+    sets.append("updated_at=?")
+    vals.append(_now())
+    q = ",".join("?" * len(ids))
+    cur = con.execute(
+        f"UPDATE candidate_evidence SET {', '.join(sets)} WHERE id IN ({q})",
+        (*vals, *ids))
+    return cur.rowcount
+
+
+def delete_rejected_candidate_evidence_many(con, ids: Iterable[int]) -> int:
+    _ensure_columns(con)
+    ids = [int(i) for i in ids]
+    if not ids:
+        return 0
+    q = ",".join("?" * len(ids))
+    return con.execute(
+        f"DELETE FROM candidate_evidence WHERE status='rejected' AND id IN ({q})",
+        ids).rowcount
+
+
 def personal_info(con) -> dict:
     raw = get_meta(con, "candidate_personal_info", "{}")
     try:
@@ -995,7 +1070,9 @@ def add_candidate_evidence(con, title: str, body: str, *,
                            employer: str = "", role_title: str = "",
                            date_range: str = "", source: str = "",
                            confidence: float = 0,
-                           status: str = "proposed") -> int:
+                           status: str = "proposed", pinned: bool = False,
+                           needs_detail: bool = False,
+                           needs_metric: bool = False) -> int:
     _ensure_columns(con)
     title = str(title or "").strip()
     body = str(body or "").strip()
@@ -1009,19 +1086,22 @@ def add_candidate_evidence(con, title: str, body: str, *,
     cur = con.execute(
         """INSERT INTO candidate_evidence
         (title,body,category,tags,employer,role_title,date_range,source,
-         confidence,status,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+         confidence,status,pinned,needs_detail,needs_metric,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (title or body.splitlines()[0][:80], body, category,
          json.dumps(tag_list), str(employer or "").strip(),
          str(role_title or "").strip(), str(date_range or "").strip(),
-         str(source or "").strip(), float(confidence or 0), status, now, now))
+         str(source or "").strip(), float(confidence or 0), status,
+         1 if pinned else 0, 1 if needs_detail else 0,
+         1 if needs_metric else 0, now, now))
     return cur.lastrowid
 
 
 def update_candidate_evidence(con, evidence_id: int, **fields) -> None:
     _ensure_columns(con)
     allowed = {"title", "body", "category", "tags", "employer", "role_title",
-               "date_range", "source", "confidence", "status"}
+               "date_range", "source", "confidence", "status", "pinned",
+               "needs_detail", "needs_metric"}
     current = con.execute(
         "SELECT * FROM candidate_evidence WHERE id=?", (int(evidence_id),)
     ).fetchone()
@@ -1039,6 +1119,8 @@ def update_candidate_evidence(con, evidence_id: int, **fields) -> None:
         if k == "tags":
             v = json.dumps([str(t).strip() for t in (v or [])
                             if str(t).strip()])
+        if k in ("pinned", "needs_detail", "needs_metric"):
+            v = 1 if v else 0
         updates[k] = v
     if "body" in updates and not str(updates["body"] or "").strip():
         raise ValueError("evidence body is required")
@@ -1076,7 +1158,22 @@ def candidate_evidence(con, *, statuses: Iterable[str] | None = None) -> list[di
 def approved_candidate_evidence_text(con) -> str:
     rows = candidate_evidence(con, statuses=["approved"])
     chunks = []
+    info = personal_info(con)
+    contact = [info.get(k, "") for k in ("name", "email", "linkedin", "github")
+               if info.get(k, "")]
+    if info.get("links"):
+        contact.append(info["links"])
+    if contact:
+        chunks.append("## Personal info\n" + "\n".join(contact))
+    key_rows = candidate_keywords(con, statuses=["approved"])
+    if key_rows:
+        lines = []
+        for r in key_rows:
+            lines.append(f"- {r['title']}: {', '.join(r['keywords'])}")
+        chunks.append("## Core expertise keywords\n" + "\n".join(lines))
     for r in rows:
+        if r["category"] in APPLICATION_EXCLUDED_EVIDENCE_CATEGORIES:
+            continue
         head = " / ".join(x for x in (
             r["category"], r["employer"], r["role_title"], r["date_range"]) if x)
         tags = ", ".join(r["tags"])

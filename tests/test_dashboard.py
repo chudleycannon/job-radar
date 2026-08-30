@@ -72,11 +72,21 @@ def test_an_unranked_role_sorts_above_a_role_judged_worthless():
 
 
 def test_document_artifact_links_are_not_intercepted_as_json():
-    """The links now point at `/artifact/<id>`, which serves the generated
-    .docx. The old Finder-reveal handler still intercepted those clicks and
-    tried to parse the document response as JSON, so the browser never opened
-    the file and the toast said "could not open it"."""
+    """The links now point at `/artifact/<id>`, which serves a browser page or
+    download. The old Finder-reveal handler still intercepted those clicks and
+    tried to parse the response as JSON, so the browser never opened the file
+    and the toast said "could not open it"."""
     assert "startsWith('/artifact/')) return" in SRC
+
+
+def test_the_dashboard_links_to_generation_evidence_trace():
+    assert "evidence_used" in SRC
+    assert "Evidence used" in SRC
+
+
+def test_the_dashboard_can_reset_saved_generation_outputs():
+    assert "data-reset-outputs" in SRC
+    assert "/api/reset-outputs" in SRC
 
 
 def test_the_dashboard_can_hide_only_applied_roles():
