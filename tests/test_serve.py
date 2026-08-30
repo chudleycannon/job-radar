@@ -1123,6 +1123,8 @@ def test_artifact_link_serves_the_generated_cv_markdown_preview():
             assert code == 200, (code, body)
             assert "<h1>Rowan Ashby</h1>" in body, body
             assert "<li>Led incidents.</li>" in body, body
+            assert "Rewrite selection" in body, body
+            assert "/api/artifact/rewrite" in body, body
             assert "download me" not in body, body
 
             code, body = _req(base, f"/artifact/{aid}/download.md", method="GET")
@@ -1140,6 +1142,70 @@ def test_artifact_link_serves_the_generated_cv_markdown_preview():
             code, body = _req(base, f"/artifact/{lid}/download.docx", method="GET")
             assert code == 200, (code, body)
             assert body == "letter docx", body
+
+
+def test_artifact_preview_can_rewrite_and_apply_selected_text():
+    with _lab() as (root, db, home):
+        cv = root / "source-cv.md"
+        cv.write_text("Rowan Ashby\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n"
+            "ai:\n"
+            "  provider: anthropic\n"
+            "  model: \"claude-sonnet-5\"\n"
+            "  anthropic_api_key: \"sk-ant-api03-test\"\n",
+            encoding="utf-8")
+        made = root / "docs" / "CV.docx"
+        made.parent.mkdir(parents=True, exist_ok=True)
+        made.write_text("old docx", encoding="utf-8")
+        md = made.parent / "CV.md"
+        md.write_text("# Rowan Ashby\n\nLed incidents badly.\n", encoding="utf-8")
+        con = store.connect(db)
+        try:
+            aid = store.add_artifact(con, "uid-one", "cv", str(made),
+                                     body=md.read_text(encoding="utf-8"))
+        finally:
+            con.close()
+
+        seen = {}
+
+        def complete(prompt, *a, **k):
+            seen["prompt"] = prompt
+            return "Led calm incident response with clear ownership."
+
+        with mock.patch("jobradar.ai.complete", complete), \
+                _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/api/artifact/rewrite", {
+                "id": aid,
+                "selected": "Led incidents badly.",
+                "instruction": "Make it more specific and professional.",
+            })
+            assert code == 200, (code, body)
+            assert body["replacement"] == (
+                "Led calm incident response with clear ownership.")
+            assert "Led incidents badly." in seen["prompt"]
+
+            code, body = _req(base, "/api/artifact/apply-rewrite", {
+                "id": aid,
+                "selected": "Led incidents badly.",
+                "replacement": body["replacement"],
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+
+        text = md.read_text(encoding="utf-8")
+        assert "Led calm incident response with clear ownership." in text
+        assert "Led incidents badly." not in text
+        assert made.exists()
+        con = store.connect(db)
+        try:
+            row = con.execute(
+                "SELECT body FROM artifacts WHERE id=?", (aid,)).fetchone()
+            assert "Led calm incident response" in row["body"]
+        finally:
+            con.close()
 
 
 def test_artifact_preview_resolves_paths_relative_to_the_data_folder():

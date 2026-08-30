@@ -22,6 +22,7 @@ import html as _h
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import ai
 from . import profile as candidate_profile
 from . import runner, store
 from .config import resolve as resolve_config
@@ -104,26 +105,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _markdown_page(self, title: str, text: str):
-        html = _markdown_document(title, text)
+    def _markdown_page(self, title: str, text: str, artifact_id: int | None = None):
+        html = _markdown_document(title, text, artifact_id=artifact_id)
         return self._html(html)
 
     def _artifact_path(self, raw: str) -> Path:
-        p = Path(raw or "")
-        if p.is_absolute():
-            return p
-        candidates = [Path.cwd() / p]
-        try:
-            candidates.append(self._data_home() / p)
-        except Exception:
-            pass
-        db = Path(self.db_path or store.DEFAULT_PATH).expanduser()
-        if db.is_absolute():
-            candidates.extend([db.parent / p, db.parent.parent / p])
-        for c in candidates:
-            if c.exists() and c.is_file():
-                return c
-        return p
+        return _resolve_artifact_path(raw, self.db_path, self._data_home())
 
     def _body(self):
         """The posted JSON object, or {} if there is not one.
@@ -380,13 +367,14 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         return self._markdown_page(
                             md.name,
-                            md.read_text(encoding="utf-8", errors="ignore"))
+                            md.read_text(encoding="utf-8", errors="ignore"),
+                            int(row["id"]))
                     except OSError as exc:
                         _log_error(f"could not read artifact markdown {row['id']}: {exc}")
                 if (row["body"] or "").strip():
                     return self._markdown_page(
                         "CV.md" if row["kind"] == "cv" else "cover-letter.md",
-                        row["body"])
+                        row["body"], int(row["id"]))
             if p.exists() and p.is_file():
                 try:
                     return self._file(p)
@@ -612,6 +600,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(result if ok else {"ok": False, "error": result},
                               200 if ok else 400)
 
+        if path == "/api/artifact/rewrite":
+            ok, result = _rewrite_artifact_selection(
+                self.db_path, self._config_path(), data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
+        if path == "/api/artifact/apply-rewrite":
+            ok, result = _apply_artifact_rewrite(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
         if path == "/api/scan":
             ok, result = _start_scan(self.db_path, self._config_path())
             if not ok:
@@ -812,13 +811,32 @@ def _download_name(name: str) -> str:
     return cleaned or "document"
 
 
+def _resolve_artifact_path(raw: str, db_path=None,
+                           data_home: Path | None = None) -> Path:
+    p = Path(raw or "")
+    if p.is_absolute():
+        return p
+    candidates = [Path.cwd() / p]
+    if data_home is not None:
+        candidates.append(data_home / p)
+    db = Path(db_path or store.DEFAULT_PATH).expanduser()
+    if db.is_absolute():
+        candidates.extend([db.parent / p, db.parent.parent / p])
+    for c in candidates:
+        if c.exists() and c.is_file():
+            return c
+    return p
+
+
 def _artifact_markdown_path(kind: str, artifact_path: Path) -> Path:
     name = "CV.md" if kind == "cv" else "cover-letter.md"
     return artifact_path.with_name(name)
 
 
-def _markdown_document(title: str, text: str) -> str:
+def _markdown_document(title: str, text: str, *,
+                       artifact_id: int | None = None) -> str:
     body = _markdown_body(text)
+    panel = _rewrite_panel(artifact_id)
     css = """
     body{margin:0;background:#f7f5ef;color:#25211b;font:16px/1.58 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     main{max-width:760px;margin:0 auto;padding:48px 24px 72px;background:#fff;min-height:100vh;box-shadow:0 0 0 1px rgba(30,25,15,.08)}
@@ -829,11 +847,88 @@ def _markdown_document(title: str, text: str) -> str:
     h3{font-size:17px;margin:22px 0 8px}
     p{margin:0 0 12px}ul{margin:6px 0 16px 22px;padding:0}li{margin:0 0 7px}
     strong{font-weight:700}em{font-style:italic}
+    .review{position:sticky;bottom:0;max-width:760px;margin:0 auto;background:#fffdf8;border-top:1px solid #e7e0d2;box-shadow:0 -8px 20px rgba(35,28,18,.08);padding:14px 24px}
+    .review textarea{width:100%;box-sizing:border-box;border:1px solid #d6cdbd;border-radius:6px;padding:10px;font:14px/1.45 ui-sans-serif,system-ui;margin:7px 0;min-height:54px}
+    .review .selected{font-size:13px;color:#60584d;max-height:68px;overflow:auto;background:#f7f1e5;border-radius:6px;padding:8px}
+    .review .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .review button{border:1px solid #cbbfae;background:#fff;border-radius:6px;padding:8px 11px;cursor:pointer}
+    .review button.primary{background:#285f79;color:white;border-color:#285f79}
+    .review button:disabled{opacity:.55;cursor:not-allowed}
+    .review .msg{font-size:13px;color:#60584d}
     """
+    script = _rewrite_script(artifact_id)
     return (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{_h.escape(title)}</title><style>{css}</style></head>"
-            f"<body><nav><a href='/'>Dashboard</a></nav><main>{body}</main></body></html>")
+            f"<body><nav><a href='/'>Dashboard</a></nav><main>{body}</main>"
+            f"{panel}<script>{script}</script></body></html>")
+
+
+def _rewrite_panel(artifact_id: int | None) -> str:
+    if artifact_id is None:
+        return ""
+    return f"""
+<section class="review" data-artifact="{artifact_id}">
+  <div class="selected" id="selected-text">Select a sentence or paragraph to rewrite.</div>
+  <textarea id="rewrite-instruction" placeholder="Optional: make it punchier, warmer, shorter, less formal..."></textarea>
+  <textarea id="rewrite-replacement" placeholder="Suggested rewrite appears here. You can edit it before applying."></textarea>
+  <div class="actions">
+    <button class="primary" id="rewrite-button" type="button">Rewrite selection</button>
+    <button id="apply-rewrite" type="button">Apply rewrite</button>
+    <span class="msg" id="rewrite-msg"></span>
+  </div>
+</section>"""
+
+
+def _rewrite_script(artifact_id: int | None) -> str:
+    if artifact_id is None:
+        return ""
+    return r"""
+const panel=document.querySelector('.review');
+const selectedBox=document.querySelector('#selected-text');
+const instruction=document.querySelector('#rewrite-instruction');
+const replacement=document.querySelector('#rewrite-replacement');
+const msg=document.querySelector('#rewrite-msg');
+let selected='';
+function setMsg(t){msg.textContent=t||'';}
+async function post(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error||'Request failed');
+  return d;
+}
+document.addEventListener('selectionchange',()=>{
+  const s=window.getSelection();
+  const text=s ? s.toString().trim() : '';
+  if(text && document.querySelector('main').contains(s.anchorNode)){
+    selected=text;
+    selectedBox.textContent=text;
+    setMsg('');
+  }
+});
+document.querySelector('#rewrite-button').addEventListener('click',async ()=>{
+  if(!selected){setMsg('Select text in the document first.');return;}
+  const b=document.querySelector('#rewrite-button');
+  b.disabled=true; setMsg('Rewriting...');
+  try{
+    const d=await post('/api/artifact/rewrite',{id:+panel.dataset.artifact,selected,instruction:instruction.value});
+    replacement.value=d.replacement||'';
+    setMsg('Review the suggestion, then apply it if it works.');
+  }catch(e){setMsg(e.message);}
+  finally{b.disabled=false;}
+});
+document.querySelector('#apply-rewrite').addEventListener('click',async ()=>{
+  if(!selected||!replacement.value.trim()){setMsg('Select text and create or enter a replacement first.');return;}
+  const b=document.querySelector('#apply-rewrite');
+  b.disabled=true; setMsg('Saving...');
+  try{
+    await post('/api/artifact/apply-rewrite',{id:+panel.dataset.artifact,selected,replacement:replacement.value});
+    setMsg('Saved. Reloading preview...');
+    setTimeout(()=>location.reload(),500);
+  }catch(e){setMsg(e.message);}
+  finally{b.disabled=false;}
+});
+"""
 
 
 def _markdown_body(text: str) -> str:
@@ -995,6 +1090,122 @@ def _write_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
         return False, str(exc)
     finally:
         con.close()
+
+
+def _artifact_source(con, artifact_id: int, db_path=None) -> tuple[dict, Path, str] | None:
+    row = con.execute(
+        "SELECT id,uid,kind,path,body FROM artifacts WHERE id=?",
+        (artifact_id,)).fetchone()
+    if not row or row["kind"] not in ("cv", "cover_letter"):
+        return None
+    p = _resolve_artifact_path(row["path"] or "", db_path)
+    md = _artifact_markdown_path(row["kind"], p)
+    if md.exists() and md.is_file():
+        text = md.read_text(encoding="utf-8", errors="ignore")
+    else:
+        text = row["body"] or ""
+    return dict(row), md, text
+
+
+def _rewrite_artifact_selection(db_path, config_path: Path,
+                                data: dict) -> tuple[bool, dict | str]:
+    if not isinstance(data, dict):
+        return False, "rewrite request has to be an object"
+    try:
+        artifact_id = int(data.get("id"))
+    except (TypeError, ValueError):
+        return False, "bad artifact id"
+    selected = str(data.get("selected") or "").strip()
+    instruction = str(data.get("instruction") or "").strip()
+    if len(selected) < 8:
+        return False, "select a sentence or paragraph first"
+    con = store.connect(db_path)
+    try:
+        src = _artifact_source(con, artifact_id, db_path)
+    finally:
+        con.close()
+    if not src:
+        return False, "not a CV or cover letter artifact"
+    row, _md, document = src
+    if selected not in document:
+        return False, "the selected text is no longer in the document"
+    try:
+        from .config import load as load_cfg
+        cfg = load_cfg(config_path)
+        replacement = ai.complete(
+            _rewrite_prompt(row["kind"], document, selected, instruction),
+            cfg, timeout=120, max_tokens=800).strip()
+    except Exception as exc:
+        return False, f"rewrite failed: {exc}"
+    replacement = _strip_rewrite_answer(replacement)
+    if not replacement:
+        return False, "rewrite failed: AI response was blank"
+    return True, {"ok": True, "replacement": replacement}
+
+
+def _apply_artifact_rewrite(db_path, data: dict) -> tuple[bool, dict | str]:
+    if not isinstance(data, dict):
+        return False, "rewrite request has to be an object"
+    try:
+        artifact_id = int(data.get("id"))
+    except (TypeError, ValueError):
+        return False, "bad artifact id"
+    selected = str(data.get("selected") or "")
+    replacement = str(data.get("replacement") or "").strip()
+    if not selected.strip() or not replacement:
+        return False, "selected text and replacement are required"
+    con = store.connect(db_path)
+    try:
+        src = _artifact_source(con, artifact_id, db_path)
+        if not src:
+            return False, "not a CV or cover letter artifact"
+        row, md, document = src
+        if document.count(selected) != 1:
+            return False, "the selected text is no longer unique in the document"
+        updated = document.replace(selected, replacement, 1)
+        md.parent.mkdir(parents=True, exist_ok=True)
+        md.write_text(updated, encoding="utf-8")
+        docx = md.with_suffix(".docx")
+        try:
+            from .docx import markdown_to_docx
+            markdown_to_docx(updated, docx)
+        except Exception as exc:
+            _log_error(f"could not regenerate docx for artifact {artifact_id}: {exc}")
+        con.execute("UPDATE artifacts SET body=? WHERE id=?", (updated, artifact_id))
+        return True, {"ok": True, "id": artifact_id}
+    finally:
+        con.close()
+
+
+def _rewrite_prompt(kind: str, document: str, selected: str,
+                    instruction: str) -> str:
+    label = "CV" if kind == "cv" else "cover letter"
+    extra = instruction or "Make it clearer, sharper and more natural."
+    return f"""Rewrite the selected text from this {label}.
+
+Return only the replacement text. Keep it truthful to the document, preserve
+Markdown list markers if the selected text is a bullet, and do not add facts,
+metrics, employers, tools or qualifications that are not already supported.
+
+Requested change: {extra}
+
+Selected text:
+```
+{selected}
+```
+
+Full document for context:
+```
+{document[:12000]}
+```"""
+
+
+def _strip_rewrite_answer(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip().strip('"')
 
 
 def _write_profile_category(db_path, data: dict) -> tuple[bool, dict | str]:
