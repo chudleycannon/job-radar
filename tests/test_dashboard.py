@@ -71,6 +71,51 @@ def test_an_unranked_role_sorts_above_a_role_judged_worthless():
     assert "v<0 ? -0.5 : v" not in SRC
 
 
+def test_document_artifact_links_are_not_intercepted_as_json():
+    """The links now point at `/artifact/<id>`, which serves the generated
+    .docx. The old Finder-reveal handler still intercepted those clicks and
+    tried to parse the document response as JSON, so the browser never opened
+    the file and the toast said "could not open it"."""
+    assert "startsWith('/artifact/')) return" in SRC
+
+
+def test_the_dashboard_can_hide_only_applied_roles():
+    """Applied roles are still active enough to appear in Open and In flight,
+    but sometimes you want to clear away the ones where the application is
+    already sent while keeping interviews and offers visible."""
+    assert 'data-f="unapplied">Hide applied' in SRC
+    assert "(f==='unapplied' && !SETTLED.has(st) && st!=='applied')" in SRC
+
+
+def test_the_dashboard_can_filter_interested_roles():
+    assert 'data-f="interested">Interested' in SRC
+    assert "(f==='interested' && st==='interested')" in SRC
+
+
+def test_the_dashboard_has_multi_status_filter_chips():
+    assert 'aria-label="Filter by status"' in SRC
+    assert "data-status-filter" in SRC
+    assert "statuses=new Set()" in SRC
+    assert "statuses.size===0 || statuses.has(st)" in SRC
+    assert "b.dataset.sec?secs:(b.dataset.mode?modes:statuses)" in SRC
+
+
+def test_the_dashboard_links_to_the_candidate_profile():
+    assert 'id="profile"' in SRC
+    assert "location.href='/profile'" in SRC
+
+
+def test_screening_results_are_collapsed_by_default():
+    assert 'class="screening" open' not in SRC
+    assert 'class="screening"><summary>' in SRC
+
+
+def test_the_dashboard_can_save_an_answer_to_a_screening_result():
+    assert "data-save-screen-answer" in SRC
+    assert "/api/screen-answer" in SRC
+    assert "Saved answer for this screening" in SRC
+
+
 def test_the_salary_sort_does_not_invent_a_floor_or_cross_currencies():
     """data-payfloor fell back to the top of the range, so "up to 175,000"
     claimed a floor of 175,000 and beat a role guaranteeing 150,000 to
@@ -84,13 +129,24 @@ def test_the_salary_sort_does_not_invent_a_floor_or_cross_currencies():
     assert 'data-paycur=' in SRC, "the currency has to travel with the figure"
 
 
+def test_a_saved_screen_answer_is_rendered_with_the_screening():
+    con = _con()
+    store.add_artifact(con, "u1", "screen", body="APPLY WITH CAVEATS\n\nAsk about ITIL.",
+                       summary="APPLY_WITH_CAVEATS")
+    store.add_artifact(con, "u1", "screen_answer",
+                       body="I have led ITIL-aligned incident reviews.")
+    page = interactive.render(con)
+    assert "Saved answer for this screening" in page
+    assert "I have led ITIL-aligned incident reviews." in page
+
+
 def test_the_facet_counts_are_counted_against_the_tab_you_are_in():
     """They were counted once, in Python, over every row in the database,
     while the page opens on Open and Open hides everything settled. A board
     with one skipped public-sector role rendered "Public sector 1", and
     clicking it emptied the list and said "Nothing matches those filters"."""
     assert "function paintCounts(" in SRC
-    assert "paintCounts(cSec,cMode,cCountry,cCity)" in SRC
+    assert "paintCounts(cSec,cMode,cStatus,cCountry,cCity)" in SRC
 
 
 def test_a_word_with_no_spaces_in_it_cannot_run_off_the_edge():

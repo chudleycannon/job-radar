@@ -55,6 +55,19 @@ _EXTRA_CSS = """
 .docs a:hover{border-bottom-color:var(--accent)}
 .docs .rating{color:var(--pay);font-weight:600;font-variant-numeric:tabular-nums}
 .docs .gatefail{color:var(--flag)}
+.answerbox{grid-column:1/-1;margin-top:var(--s2);border:1px solid var(--line);
+  border-radius:var(--r-md);background:var(--surface)}
+.answerbox>summary{cursor:pointer;list-style:none;padding:8px 12px;
+  color:var(--muted);font-size:.8125rem;font-weight:650;display:flex;gap:8px}
+.answerbox>summary::-webkit-details-marker{display:none}
+.answerbox .inner{padding:0 12px 12px;display:grid;gap:8px}
+.answerbox textarea{width:100%;min-height:92px;resize:vertical;border:1px solid var(--line);
+  border-radius:var(--r-md);background:var(--bg);color:var(--ink);font:inherit;
+  font-size:.875rem;line-height:1.45;padding:9px 10px;box-sizing:border-box}
+.answerbox button{justify-self:start;border:1px solid var(--accent);
+  background:var(--accent);color:var(--surface);font:inherit;font-size:.8125rem;
+  font-weight:650;border-radius:var(--r-md);padding:7px 12px;cursor:pointer}
+.answerbox button:disabled{opacity:.55;cursor:not-allowed}
 .err{grid-column:1/-1;font-size:.8125rem;color:var(--flag);margin-top:var(--s2)}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
   background:var(--ink);color:var(--surface);padding:10px 18px;border-radius:var(--r-pill);
@@ -83,7 +96,7 @@ const $=s=>document.querySelector(s), toast=$('#toast');
 // Opens on Open, not All. All includes skipped and rejected, and they sort by
 // score like everything else, so a skipped role you already dismissed sat at
 // the top of the board every time you refreshed.
-let f='open', secs=new Set(), modes=new Set(), country='', city='';
+let f='open', secs=new Set(), modes=new Set(), statuses=new Set(), country='', city='';
 
 function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
   toast.title='Select this text, or click to copy it.';
@@ -120,10 +133,11 @@ const CLOSED_OUT=new Set(['rejected','withdrawn','closed']);
 // Each dimension is counted with its own filter left off, because that is
 // what clicking would do: sector chips are an OR within sectors, so with Tech
 // selected the number on Finance is what adding Finance would bring in.
-function paintCounts(sec,mode,ctry,city){
+function paintCounts(sec,mode,status,ctry,city){
   for(const b of document.querySelectorAll('.chips button')){
-    const k=b.dataset.sec||b.dataset.mode;
-    const n=(b.dataset.sec?sec:mode)[k]||0;
+    const k=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
+    const counts=b.dataset.sec?sec:(b.dataset.mode?mode:status);
+    const n=counts[k]||0;
     const el=b.querySelector('.n'); if(el) el.textContent=n;
     b.classList.toggle('none',n===0);}
   for(const [q,m] of [['#fcountry',ctry],['#fcity',city]])
@@ -132,27 +146,31 @@ function paintCounts(sec,mode,ctry,city){
       o.textContent=(o.dataset.label||o.value)+' ('+(m[o.value]||0)+')';}}
 
 function apply(){let n=0;
-  const cSec={},cMode={},cCountry={},cCity={};
+  const cSec={},cMode={},cStatus={},cCountry={},cCity={};
   const bump=(m,k)=>{m[k]=(m[k]||0)+1};
   for(const r of document.querySelectorAll('.row')){
     const st=r.dataset.status;
     const viewOk = f==='all' || (f==='open' && !SETTLED.has(st)) ||
+                   (f==='unapplied' && !SETTLED.has(st) && st!=='applied') ||
                    (f==='pay' && r.dataset.pay==='1') ||
                    (f==='new' && r.dataset.new==='1') ||
+                   (f==='interested' && st==='interested') ||
                    (f==='live' && IN_FLIGHT.has(st)) ||
                    (f==='closed' && CLOSED_OUT.has(st)) ||
                    (f==='fit' && (+r.dataset.fit)>=70);
     const okSec  = secs.size===0  || secs.has(r.dataset.sector);
     const okMode = modes.size===0 || modes.has(r.dataset.mode);
+    const okStatus = statuses.size===0 || statuses.has(st);
     const okCtry = !country || r.dataset.country===country;
     const okCity = !city    || r.dataset.city===city;
-    if(viewOk&&okMode&&okCtry&&okCity) bump(cSec,r.dataset.sector);
-    if(viewOk&&okSec &&okCtry&&okCity) bump(cMode,r.dataset.mode);
-    if(viewOk&&okSec &&okMode&&okCity) bump(cCountry,r.dataset.country);
-    if(viewOk&&okSec &&okMode&&okCtry) bump(cCity,r.dataset.city);
-    const ok = viewOk && okSec && okMode && okCtry && okCity;
+    if(viewOk&&okMode&&okStatus&&okCtry&&okCity) bump(cSec,r.dataset.sector);
+    if(viewOk&&okSec &&okStatus&&okCtry&&okCity) bump(cMode,r.dataset.mode);
+    if(viewOk&&okSec &&okMode&&okCtry&&okCity) bump(cStatus,st);
+    if(viewOk&&okSec &&okMode&&okStatus&&okCity) bump(cCountry,r.dataset.country);
+    if(viewOk&&okSec &&okMode&&okStatus&&okCtry) bump(cCity,r.dataset.city);
+    const ok = viewOk && okSec && okMode && okStatus && okCtry && okCity;
     r.hidden=!ok; if(ok)n++;}
-  paintCounts(cSec,cMode,cCountry,cCity);
+  paintCounts(cSec,cMode,cStatus,cCountry,cCity);
   $('#empty').hidden=n>0; $('#list').hidden=n===0;}
 
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
@@ -256,7 +274,8 @@ function resort(){
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
   b.setAttribute('aria-pressed', on?'false':'true');
-  const set=b.dataset.sec?secs:modes, key=b.dataset.sec||b.dataset.mode;
+  const set=b.dataset.sec?secs:(b.dataset.mode?modes:statuses);
+  const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
   on?set.delete(key):set.add(key); apply();});
 // Ranking spends tokens, so the click shows the cost and waits for a yes.
 // Everything else that spends in this tool works the same way.
@@ -364,6 +383,8 @@ const scanInfo=$('#scaninfo'), scanFill=$('#scanfill'), scanBar=$('#scanbar');
 const scanStopBtn=$('#scanstop');
 const settingsBtn=$('#settings');
 if(settingsBtn) settingsBtn.onclick=()=>{ location.href='/settings'; };
+const profileBtn=$('#profile');
+if(profileBtn) profileBtn.onclick=()=>{ location.href='/profile'; };
 async function scanState(){
   const r=await fetch('/api/scan'); if(!r.ok) return null;
   return r.json().catch(()=>null);}
@@ -464,9 +485,13 @@ document.addEventListener('change', async e=>{
 });
 
 document.addEventListener('click', async e=>{
-  // Document links reveal the file in Finder. Without this they navigate the
-  // tab to a raw JSON body and you lose the dashboard.
+  // Artifact links are browser downloads. They used to point at `/open` and
+  // return JSON for a Finder reveal, so this handler still intercepted them
+  // and tried to parse the .docx response as JSON. The download was cancelled
+  // and the page showed "could not open it" even though `/artifact/<id>` was
+  // serving the file correctly.
   const doc=e.target.closest('.docs a');
+  if(doc && doc.getAttribute('href').startsWith('/artifact/')) return;
   if(doc){ e.preventDefault();
     const r=await fetch(doc.getAttribute('href'));
     const d=await r.json().catch(()=>({}));
@@ -514,6 +539,20 @@ document.addEventListener('click', async e=>{
       {uid,status:row.dataset.status,note:note});
     if(!ok){say(data.error||'could not save');return}
     say('Note saved'); location.reload(); return;}
+
+  const saveAnswer=e.target.closest('[data-save-screen-answer]');
+  if(saveAnswer){
+    const box=saveAnswer.closest('.answerbox');
+    const area=box && box.querySelector('textarea');
+    const body=(area && area.value || '').trim();
+    if(!body){ say('Write an answer first'); return; }
+    saveAnswer.disabled=true;
+    const {ok,data}=await post('/api/screen-answer',{uid,body});
+    saveAnswer.disabled=false;
+    if(!ok){ say(data.error||'could not save answer',7000); return; }
+    say('Screen answer saved for this role');
+    setTimeout(()=>location.reload(),500);
+    return;}
 
   const gen=e.target.closest('[data-gen]');
   if(gen && !gen.disabled){
@@ -700,6 +739,9 @@ def render(con, home_currency: str = "") -> str:
     inflight = sum(1 for r in rows if r["status"] in store.IN_FLIGHT)
     _live_count = f'<span class="n">{inflight}</span>' if inflight else ""
 
+    interested = sum(1 for r in rows if r["status"] == "interested")
+    _interested_count = f'<span class="n">{interested}</span>' if interested else ""
+
     # Rejections and withdrawals, which every other view hides. Worth being
     # able to look at on purpose: it is the record of what you actually went
     # for, and it is the only place to notice a pattern in what comes back.
@@ -746,6 +788,11 @@ def render(con, home_currency: str = "") -> str:
         f'<button aria-pressed="false" data-mode="{m}">{_MODES[m]}'
         f'<span class="n">{mc[m]}</span></button>'
         for m in ("remote", "hybrid", "office", "unstated") if mc.get(m))
+    sc = Counter((r["status"] or "new") for r in rows)
+    statuses = "".join(
+        f'<button aria-pressed="false" data-status-filter="{_h.escape(s, quote=True)}">'
+        f'{_h.escape(s)}<span class="n">{sc[s]}</span></button>'
+        for s in store.STATUSES if sc.get(s))
     # data-label so the count can be rewritten in the browser against the rows
     # the current tab actually shows, without losing the name.
     cc = Counter((r["country"] or "unknown") for r in rows)
@@ -799,13 +846,16 @@ def render(con, home_currency: str = "") -> str:
   <button role="tab" aria-selected="false" data-f="all">All</button>
   <button role="tab" aria-selected="false" data-f="new">New{_new_count}</button>
   <button role="tab" aria-selected="false" data-f="fit">Best fit{_fit_count}</button>
+  <button role="tab" aria-selected="false" data-f="interested">Interested{_interested_count}</button>
   <button role="tab" aria-selected="false" data-f="live">In flight{_live_count}</button>
   <button role="tab" aria-selected="false" data-f="closed">Closed{_closed_count}</button>
   <button role="tab" aria-selected="true"  data-f="open">Open</button>
+  <button role="tab" aria-selected="false" data-f="unapplied">Hide applied</button>
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
   <button id="scan" type="button">Scan now</button>
+  <button id="profile" type="button">Profile</button>
   <button id="settings" type="button">Settings</button>
   <button id="scanstop" type="button" hidden>Stop scan</button>
   <button id="rankstop" type="button" hidden>Stop</button>
@@ -814,6 +864,7 @@ def render(con, home_currency: str = "") -> str:
   <span id="scanbar" class="scanbar" aria-hidden="true" hidden><i id="scanfill"></i></span>{_sync}</div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
+<div class="chips" role="group" aria-label="Filter by status">{statuses}</div>
 <div class="selects">
   <label><span>Sort</span><select id="fsort" aria-label="Sort order">
     <option value="rank">Priority</option>
@@ -904,7 +955,7 @@ def _row(r, arts, job, run=0) -> str:
             verdict_class = ("skip" if v.upper().startswith("SKIP")
                              else "apply" if v.upper().startswith("APPLY") else "")
             screening = (
-                f'<details class="screening" open><summary>'
+                f'<details class="screening"><summary>'
                 f'<span class="v {verdict_class}">{_h.escape(v.replace("_", " "))}</span>'
                 f'<span class="lbl">screening</span></summary>'
                 f'<div class="md">{_md(body)}</div></details>')
@@ -912,6 +963,21 @@ def _row(r, arts, job, run=0) -> str:
             docs.append(
                 f'<a href="/open?path={_h.escape(quote(str(arts["screen"]["path"])), quote=True)}">'
                 f'Screening</a> <span class="rating">{_h.escape(v)}</span>')
+
+    screen_answer = ""
+    if "screen" in arts:
+        answer = (arts.get("screen_answer", {}).get("body") or "").strip()
+        label = ("Saved answer for this screening" if answer else
+                 "Answer screening")
+        screen_answer = (
+            f'<details class="answerbox"{" open" if answer else ""}>'
+            f'<summary>{label}</summary><div class="inner">'
+            f'<textarea aria-label="Answer screening gaps" '
+            f'placeholder="Add facts that answer screening gaps or caveats. '
+            f'This is saved for this role and reused in screen, CV and cover-letter generation.">'
+            f'{_h.escape(answer)}</textarea>'
+            f'<button data-save-screen-answer="1">Save answer</button>'
+            f'</div></details>')
 
     # The static page warns when a source gives no description; the served one
     # did not, and that is the page with the money buttons on it.
@@ -970,6 +1036,7 @@ def _row(r, arts, job, run=0) -> str:
         + fitline
         + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
         + screening
+        + screen_answer
         + '<div class="acts">'
         + b("screen", "Screen", "primary")
         + b("cv", "CV")

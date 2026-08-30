@@ -22,9 +22,11 @@ import html as _h
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import profile as candidate_profile
 from . import runner, store
 from .config import resolve as resolve_config
 from .output import interactive
+from .output import profile as profile_page
 from .output import settings as settings_page
 from .output import setup as setup_page
 
@@ -200,6 +202,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._html(setup_page.render(str(self._config_path())))
         if path == "/settings":
             return self._html(settings_page.render(str(self._config_path())))
+        if path == "/profile":
+            con = store.connect(self.db_path)
+            try:
+                note = _ensure_profile_import(con, self._config_path())
+                return self._html(profile_page.render(
+                    store.candidate_evidence(con), note,
+                    store.custom_evidence_categories(con),
+                    store.candidate_keywords(con),
+                    store.personal_info(con)))
+            finally:
+                con.close()
         if path == "/api/settings":
             ok, result = _read_ai_settings(self._config_path())
             return self._json(result if ok else {"ok": False, "error": result},
@@ -231,6 +244,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if _needs_setup(con, self._config_path()):
                     return self._html(setup_page.render(str(self._config_path())))
+                _ensure_profile_import(con, self._config_path())
                 return self._html(
                     interactive.render(con, self.home_currency))
             finally:
@@ -484,13 +498,48 @@ class Handler(BaseHTTPRequestHandler):
                 Handler.home_currency = (_load_cfg(result).salary_currency or "").upper()
             except Exception:
                 Handler.home_currency = ""
-            return self._json({"ok": True, "path": str(result)})
+            con = store.connect(self.db_path)
+            try:
+                note = _ensure_profile_import(con, Path(result))
+            finally:
+                con.close()
+            return self._json({"ok": True, "path": str(result), "profile": note})
 
         if path == "/api/settings":
             ok, result = _write_ai_settings(self._config_path(), data)
             if not ok:
                 return self._json({"ok": False, "error": result}, 400)
             return self._json({"ok": True, "path": str(result)})
+
+        if path == "/api/profile/evidence":
+            ok, result = _write_profile_evidence(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
+        if path == "/api/profile/evidence/delete":
+            ok, result = _delete_profile_evidence(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
+        if path == "/api/profile/personal":
+            ok, result = _write_personal_info(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
+        if path == "/api/profile/category":
+            ok, result = _write_profile_category(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
+        if path == "/api/profile/keywords":
+            ok, result = _write_profile_keywords(self.db_path, data)
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
+
+        if path == "/api/profile/rebuild":
+            ok, result = _rebuild_profile_from_cv(self.db_path, self._config_path())
+            return self._json(result if ok else {"ok": False, "error": result},
+                              200 if ok else 400)
 
         if path == "/api/scan":
             ok, result = _start_scan(self.db_path, self._config_path())
@@ -599,6 +648,23 @@ class Handler(BaseHTTPRequestHandler):
                 store.set_status(con, uid, status, note)
                 return self._json({"ok": True, "uid": uid, "status": status})
 
+            if path == "/api/screen-answer":
+                text = data.get("body")
+                if not isinstance(text, str):
+                    return self._json(
+                        {"ok": False, "error": "an answer has to be text"}, 400)
+                text = text.strip()
+                if not text:
+                    return self._json(
+                        {"ok": False, "error": "write an answer first"}, 400)
+                if len(text) > 20_000:
+                    return self._json(
+                        {"ok": False, "error": "answer is too long"}, 400)
+                aid = store.add_artifact(
+                    con, uid, "screen_answer", body=text,
+                    summary=text.splitlines()[0][:120])
+                return self._json({"ok": True, "uid": uid, "artifact": aid})
+
             if path == "/api/generate":
                 kind = data.get("kind")
                 # `kind not in runner.KINDS` hashes `kind`, so a list or a
@@ -696,6 +762,194 @@ def _needs_setup(con, config_path: Path) -> bool:
     runs = int(store.get_meta(con, "runs", "0") or 0)
     roles = con.execute("SELECT COUNT(*) c FROM roles").fetchone()["c"]
     return runs == 0 and roles == 0
+
+
+def _ensure_profile_import(con, config_path: Path) -> str:
+    """Create proposed candidate evidence from the configured CV once."""
+    if con.execute("SELECT COUNT(*) c FROM candidate_evidence").fetchone()["c"]:
+        return ""
+    if not config_path.exists():
+        return ""
+    try:
+        from .config import load as load_cfg
+        cv = load_cfg(config_path).cv_path
+    except Exception as exc:
+        return f"Candidate profile was not imported because the config could not be read: {exc}"
+    if not cv:
+        return ""
+    try:
+        n = candidate_profile.import_cv(con, cv)
+    except Exception as exc:
+        return f"Candidate profile was not imported from the CV: {exc}"
+    return (f"Imported {n} proposed evidence item{'s' if n != 1 else ''} "
+            "from your CV for review.") if n else ""
+
+
+def _write_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
+    """Create or update editable candidate evidence from the Profile page."""
+    if not isinstance(data, dict):
+        return False, "evidence has to be an object"
+    fields = {
+        "title": str(data.get("title") or "").strip(),
+        "body": str(data.get("body") or "").strip(),
+        "category": str(data.get("category") or "general").strip(),
+        "employer": str(data.get("employer") or "").strip(),
+        "role_title": str(data.get("role_title") or "").strip(),
+        "date_range": str(data.get("date_range") or "").strip(),
+        "source": str(data.get("source") or "").strip(),
+        "status": str(data.get("status") or "proposed").strip(),
+    }
+    tags = data.get("tags") or []
+    if isinstance(tags, str):
+        tags = _list(tags)
+    if not isinstance(tags, list):
+        return False, "tags have to be text"
+    fields["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+    if fields["status"] not in store.EVIDENCE_STATUSES:
+        return False, "bad evidence status"
+    con = store.connect(db_path)
+    try:
+        fields["category"] = store.normalize_evidence_category(
+            fields["category"], con)
+    finally:
+        con.close()
+    con = store.connect(db_path)
+    try:
+        raw_id = data.get("id")
+        if raw_id:
+            try:
+                eid = int(raw_id)
+            except (TypeError, ValueError):
+                return False, "bad evidence id"
+            if set(data.keys()) <= {"id", "status"}:
+                update = {"status": fields["status"]}
+            else:
+                update = {k: v for k, v in fields.items()
+                          if v or k in ("body", "tags", "status")}
+            store.update_candidate_evidence(con, eid, **update)
+            return True, {"ok": True, "id": eid}
+        if not fields["body"]:
+            return False, "evidence body is required"
+        eid = store.add_candidate_evidence(
+            con, confidence=1.0, **fields)
+        return True, {"ok": True, "id": eid}
+    except (KeyError, ValueError) as exc:
+        return False, str(exc)
+    finally:
+        con.close()
+
+
+def _write_profile_category(db_path, data: dict) -> tuple[bool, dict | str]:
+    name = str(data.get("name") or "").strip() if isinstance(data, dict) else ""
+    if not name:
+        return False, "category name is required"
+    con = store.connect(db_path)
+    try:
+        slug = store.add_custom_evidence_category(con, name)
+        return True, {"ok": True, "category": slug}
+    except ValueError as exc:
+        return False, str(exc)
+    finally:
+        con.close()
+
+
+def _delete_profile_evidence(db_path, data: dict) -> tuple[bool, dict | str]:
+    try:
+        eid = int(data.get("id")) if isinstance(data, dict) else 0
+    except (TypeError, ValueError):
+        return False, "bad evidence id"
+    con = store.connect(db_path)
+    try:
+        if not store.delete_rejected_candidate_evidence(con, eid):
+            return False, "only rejected evidence can be deleted"
+        return True, {"ok": True, "id": eid}
+    finally:
+        con.close()
+
+
+def _write_personal_info(db_path, data: dict) -> tuple[bool, dict | str]:
+    if not isinstance(data, dict):
+        return False, "personal info has to be an object"
+    info = {
+        "name": data.get("name", ""),
+        "email": data.get("email", ""),
+        "linkedin": data.get("linkedin", ""),
+        "github": data.get("github", ""),
+        "links": data.get("links", ""),
+    }
+    con = store.connect(db_path)
+    try:
+        store.set_personal_info(con, info)
+        return True, {"ok": True}
+    finally:
+        con.close()
+
+
+def _rebuild_profile_from_cv(db_path, config_path: Path) -> tuple[bool, dict | str]:
+    if not config_path.exists():
+        return False, "Set up your search first."
+    try:
+        from .config import load as load_cfg
+        cv = load_cfg(config_path).cv_path
+    except Exception as exc:
+        return False, f"could not read your config: {exc}"
+    if not cv:
+        return False, "No CV configured."
+    con = store.connect(db_path)
+    try:
+        removed, removed_keywords = store.clear_candidate_profile(con)
+        added = candidate_profile.import_cv(con, cv)
+        return True, {
+            "ok": True,
+            "removed": removed,
+            "removed_keywords": removed_keywords,
+            "added": added,
+            "message": (
+                f"Rebuilt profile from CV: removed {removed} evidence items "
+                f"and {removed_keywords} keyword groups, imported {added} "
+                f"proposed evidence item{'s' if added != 1 else ''}.")
+        }
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        con.close()
+
+
+def _write_profile_keywords(db_path, data: dict) -> tuple[bool, dict | str]:
+    if not isinstance(data, dict):
+        return False, "keyword group has to be an object"
+    title = str(data.get("title") or "").strip()
+    raw = data.get("keywords") or []
+    if isinstance(raw, str):
+        keywords = _list(raw)
+    elif isinstance(raw, list):
+        keywords = [str(k).strip() for k in raw if str(k).strip()]
+    else:
+        return False, "keywords have to be text"
+    status = str(data.get("status") or "approved").strip()
+    if status not in store.EVIDENCE_STATUSES:
+        return False, "bad keyword status"
+    con = store.connect(db_path)
+    try:
+        raw_id = data.get("id")
+        if raw_id:
+            try:
+                kid = int(raw_id)
+            except (TypeError, ValueError):
+                return False, "bad keyword group id"
+            if set(data.keys()) <= {"id", "status"}:
+                store.update_candidate_keywords(con, kid, status=status)
+            else:
+                store.update_candidate_keywords(
+                    con, kid, title=title, keywords=keywords, status=status)
+            return True, {"ok": True, "id": kid}
+        kid = store.add_candidate_keywords(
+            con, title, keywords, status=status, source="Manual")
+        return True, {"ok": True, "id": kid}
+    except (KeyError, ValueError) as exc:
+        return False, str(exc)
+    finally:
+        con.close()
 
 
 def _list(v) -> list[str]:

@@ -164,6 +164,63 @@ def test_a_cv_that_keeps_master_cv_sections_is_sent_back():
     assert any("master-CV section" in p for p in problems), problems
 
 
+def test_local_recovery_rebuilds_a_master_cv_shaped_draft():
+    source = """# Master CV for automated job matching
+Email: dana@example.test | LinkedIn: linkedin.com/in/dana
+
+## Selected achievements and evidence
+- Broad source-only summary that must not be copied.
+
+## Professional experience
+
+## Engineering Manager - Northwind Data
+- January 2022 - Present
+- Acted as incident controller for billing outages, coordinating responders, service restoration, stakeholder updates and post-incident reviews.
+- Hired four engineers and managed twelve across two teams during peak delivery.
+- Supported audited change controls, risk reviews and operational governance for a customer-facing payment platform.
+
+## Senior Engineer - Cassio Systems
+- June 2018 - January 2022
+- Owned the reconciliation service and the on-call runbook that supported it.
+- Reduced duplicate alerts by 9,000 after tracing a misconfigured probe.
+
+## Education
+Degree in Software Engineering
+"""
+    d = _dir(source)
+    (d / "job-description.md").write_text(
+        "Major Incident Manager. Own critical incidents, stakeholder "
+        "communication, root cause review, governance and service restoration.",
+        encoding="utf-8")
+    (d / "cv-rating.txt").write_text("56/100\n", encoding="utf-8")
+
+    assert runner._salvage_cv(d) is True
+    text = (d / "CV.md").read_text(encoding="utf-8")
+    assert text.startswith("# Ryan Begen\n"), text[:80]
+    assert "Selected achievements and evidence" not in text
+    assert "Additional notes for matching systems" not in text
+    assert "without inventing" not in text.lower()
+    assert "not present in the source CV" not in text
+    assert "incident controller" in text
+    assert "2018 - 2022" in text
+    assert "Local recovery rebuilt this CV" in (
+        d / "cv-rating.txt").read_text(encoding="utf-8")
+
+
+def test_a_cv_profile_that_leaks_prompt_instructions_is_sent_back():
+    draft = CLEAN_CV.replace(
+        "I am on the incident rota.",
+        "I am on the incident rota without inventing ServiceNow experience not "
+        "present in the source CV.")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, _ = runner._quality(_dir(draft), "CV.md", "cv")
+    assert ok is False
+    assert any("without inventing" in p for p in problems), problems
+    assert any("candidate-facing CV" in p for p in problems), problems
+
+
 def test_skills_bullets_do_not_count_as_too_many_achievement_bullets():
     draft = CLEAN_CV.replace(
         "Python, Go, SQL, incident command, hiring, capacity planning",
@@ -299,6 +356,73 @@ def test_a_hard_quality_failure_is_not_published_as_a_cv_artifact():
     assert row["state"] == "failed", dict(row)
     assert "hard quality checks" in row["error"], row["error"]
     assert art is None
+
+
+def test_a_master_cv_copy_is_recovered_before_the_job_fails():
+    d = Path(tempfile.mkdtemp())
+    db, docs = d / "j.db", d / "docs"
+    cv = d / "source.md"
+    cv.write_text("Ryan Begen. Acted as Incident Controller.\n", encoding="utf-8")
+    cfg = d / "config.yaml"
+    cfg.write_text(
+        "titles:\n  include: [Major Incident Manager]\n"
+        "locations:\n  countries: [UK]\n"
+        "cv:\n  path: " + repr(str(cv)) + "\n"
+        "ai:\n"
+        "  provider: anthropic\n"
+        "  model: claude-sonnet-5\n"
+        "  anthropic_api_key: sk-ant-api03-test\n",
+        encoding="utf-8")
+    con = store.connect(db)
+    try:
+        con.execute(
+            "INSERT INTO roles (uid,company,title,url,description,first_seen,last_seen) "
+            "VALUES ('u','Standard Life','Major Incident Manager','https://x',?,"
+            "date('now'),date('now'))",
+            ("Major incident management and service restoration. " * 20,))
+        job = store.enqueue(con, "u", "cv")
+    finally:
+        con.close()
+
+    folder = docs / (
+        f"{date.today().isoformat()}-standard-life-major-incident-manager-u")
+
+    def write_draft(*_a, **_k):
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "CV.md").write_text(CLEAN_CV, encoding="utf-8")
+        (folder / "cv-rating.txt").write_text("76/100\n", encoding="utf-8")
+        return "drafted"
+
+    def recover(path):
+        (path / "CV.md").write_text(CLEAN_CV, encoding="utf-8")
+        return True
+
+    checks = iter([
+        (False, ["length: CV.md is 1966 words, needs 550 to 750"],
+         {"words": 1966}),
+        (False, ["length: CV.md is 1966 words, needs 550 to 750"],
+         {"words": 1966}),
+        (False, ["natural-writing: slop score 24, needs 20 or under"],
+         {"words": 620, "slop": 24}),
+    ])
+
+    with mock.patch("jobradar.runner._run_api_prompt", write_draft), \
+            mock.patch("jobradar.runner._run_api_revision", write_draft), \
+            mock.patch("jobradar.runner._salvage_cv", recover), \
+            mock.patch("jobradar.runner._quality", lambda *a, **k: next(checks)):
+        runner.run_job(job, db_path=db, base=docs, config_path=cfg)
+
+    con = store.connect(db)
+    try:
+        row = con.execute("SELECT state,error,log FROM jobs WHERE id=?",
+                          (job,)).fetchone()
+        art = con.execute("SELECT 1 FROM artifacts WHERE uid='u' AND kind='cv'").fetchone()
+    finally:
+        con.close()
+    assert row["state"] == "done", dict(row)
+    assert not row["error"]
+    assert "local recovery" in row["log"]
+    assert art is not None
 
 
 def test_an_uncheckable_document_is_a_failure_not_a_pass():

@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS role_state (
 CREATE TABLE IF NOT EXISTS artifacts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uid TEXT NOT NULL REFERENCES roles(uid) ON DELETE CASCADE,
-  kind TEXT NOT NULL,              -- cv | cover_letter | screen | jd_snapshot
+  kind TEXT NOT NULL,              -- cv | cover_letter | screen | jd_snapshot | screen_answer
   path TEXT DEFAULT '',
   rating REAL,
   summary TEXT DEFAULT '',
@@ -84,6 +84,36 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
 
+CREATE TABLE IF NOT EXISTS candidate_evidence (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'general',
+  tags TEXT NOT NULL DEFAULT '[]',
+  employer TEXT NOT NULL DEFAULT '',
+  role_title TEXT NOT NULL DEFAULT '',
+  date_range TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  confidence REAL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'proposed',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_evidence_status
+  ON candidate_evidence(status, category);
+
+CREATE TABLE IF NOT EXISTS candidate_keywords (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL DEFAULT '',
+  keywords TEXT NOT NULL DEFAULT '[]',
+  source TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'approved',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_keywords_status
+  ON candidate_keywords(status, title);
+
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 """
 
@@ -100,6 +130,18 @@ IN_FLIGHT = {"applied", "submitted", "interviewing", "offer"}
 # Applications that ended. Deliberately excludes "skipped": you never applied
 # to those, so they are noise in a record of what you actually went for.
 CLOSED_OUT = {"rejected", "withdrawn", "closed"}
+
+EVIDENCE_STATUSES = ["proposed", "approved", "rejected", "archived"]
+EVIDENCE_GROUPS = [
+    ("Employment History", ["employment", "gap_explanation"]),
+    ("Achievements", ["achievement", "certification", "education"]),
+    ("Skills", ["tool", "domain", "skill"]),
+    ("Evidence", ["leadership", "incident_management", "delivery", "governance"]),
+    ("General Info", ["personal_statement", "general", "personal_information"]),
+    ("Preferences", ["preference", "constraint"]),
+]
+EVIDENCE_CATEGORIES = [c for _, group in EVIDENCE_GROUPS for c in group]
+_CATEGORY_ALIASES = {"personal_statement_style": "personal_statement"}
 
 # How far along an application is, for deciding which of two records of the
 # same job to keep. A merge must never trade an interview for an "interested".
@@ -281,6 +323,8 @@ def _ensure_columns(con) -> None:
     acols = {r["name"] for r in con.execute("PRAGMA table_info(artifacts)")}
     if "body" not in acols:
         _try_alter(con, "ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")
+    con.execute("UPDATE candidate_evidence SET category='personal_statement' "
+                "WHERE category='personal_statement_style'")
     con.execute("CREATE TABLE IF NOT EXISTS locks ("
                 "name TEXT PRIMARY KEY, taken_at TEXT NOT NULL)")
 
@@ -564,7 +608,7 @@ def settled_uids(con) -> set[str]:
 
 # Text small enough to keep forever. A .docx is a container, so its bytes are
 # not worth storing, but the markdown it was built from is.
-_TEXT_KINDS = {"screen", "jd_snapshot", "cover_letter", "cv"}
+_TEXT_KINDS = {"screen", "screen_answer", "jd_snapshot", "cover_letter", "cv"}
 
 
 def _read_text(path) -> str:
@@ -779,6 +823,270 @@ def artifacts_for(con, uid) -> list[dict]:
 def has_artifact(con, uid, kind) -> bool:
     return con.execute("SELECT 1 FROM artifacts WHERE uid=? AND kind=? LIMIT 1",
                        (uid, kind)).fetchone() is not None
+
+
+# ------------------------------------------------------ candidate evidence
+
+def _slug_category(value: str) -> str:
+    import re as _re
+    s = _re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower())
+    return s.strip("_")[:48]
+
+
+def custom_evidence_categories(con) -> list[str]:
+    raw = get_meta(con, "candidate_custom_evidence_categories", "[]")
+    try:
+        items = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        items = []
+    out = []
+    for item in items if isinstance(items, list) else []:
+        slug = _slug_category(item)
+        if slug and slug not in EVIDENCE_CATEGORIES and slug not in out:
+            out.append(slug)
+    return out
+
+
+def evidence_categories(con=None) -> list[str]:
+    cats = list(EVIDENCE_CATEGORIES)
+    if con is not None:
+        cats.extend(custom_evidence_categories(con))
+    return cats
+
+
+def normalize_evidence_category(category: str, con=None) -> str:
+    raw = _slug_category(category)
+    raw = _CATEGORY_ALIASES.get(raw, raw)
+    return raw if raw in evidence_categories(con) else "general"
+
+
+def add_custom_evidence_category(con, category: str) -> str:
+    _ensure_columns(con)
+    slug = _slug_category(category)
+    if not slug:
+        raise ValueError("category name is required")
+    if slug in EVIDENCE_CATEGORIES:
+        return slug
+    current = custom_evidence_categories(con)
+    if slug not in current:
+        current.append(slug)
+        set_meta(con, "candidate_custom_evidence_categories", json.dumps(current))
+    return slug
+
+
+def clear_candidate_evidence(con) -> int:
+    """Remove profile evidence so the configured CV can be imported again."""
+    _ensure_columns(con)
+    n = con.execute("DELETE FROM candidate_evidence").rowcount
+    con.execute("DELETE FROM meta WHERE k IN ("
+                "'candidate_profile_imported_cv_path',"
+                "'candidate_profile_imported_cv_name')")
+    return n
+
+
+def add_candidate_keywords(con, title: str, keywords: Iterable[str], *,
+                           source: str = "", status: str = "approved") -> int:
+    _ensure_columns(con)
+    title = str(title or "").strip()
+    kws = [str(k).strip() for k in keywords if str(k).strip()]
+    if not title:
+        raise ValueError("keyword group title is required")
+    if not kws:
+        raise ValueError("at least one keyword is required")
+    if status not in EVIDENCE_STATUSES:
+        raise ValueError(f"unknown keyword status {status!r}")
+    now = _now()
+    cur = con.execute(
+        """INSERT INTO candidate_keywords
+        (title,keywords,source,status,created_at,updated_at)
+        VALUES (?,?,?,?,?,?)""",
+        (title, json.dumps(kws), str(source or "").strip(), status, now, now))
+    return cur.lastrowid
+
+
+def update_candidate_keywords(con, keyword_id: int, **fields) -> None:
+    _ensure_columns(con)
+    row = con.execute(
+        "SELECT * FROM candidate_keywords WHERE id=?", (int(keyword_id),)
+    ).fetchone()
+    if not row:
+        raise KeyError("no such keyword group")
+    updates = {}
+    if "title" in fields:
+        title = str(fields["title"] or "").strip()
+        if not title:
+            raise ValueError("keyword group title is required")
+        updates["title"] = title
+    if "keywords" in fields:
+        kws = [str(k).strip() for k in (fields["keywords"] or [])
+               if str(k).strip()]
+        if not kws:
+            raise ValueError("at least one keyword is required")
+        updates["keywords"] = json.dumps(kws)
+    if "status" in fields:
+        status = str(fields["status"] or "").strip()
+        if status not in EVIDENCE_STATUSES:
+            raise ValueError(f"unknown keyword status {status!r}")
+        updates["status"] = status
+    if "source" in fields:
+        updates["source"] = str(fields["source"] or "").strip()
+    if not updates:
+        return
+    updates["updated_at"] = _now()
+    sql = ", ".join(f"{k}=?" for k in updates)
+    con.execute(f"UPDATE candidate_keywords SET {sql} WHERE id=?",
+                (*updates.values(), int(keyword_id)))
+
+
+def candidate_keywords(con, *, statuses: Iterable[str] | None = None) -> list[dict]:
+    _ensure_columns(con)
+    params: list[str] = []
+    where = ""
+    if statuses is not None:
+        wanted = [s for s in statuses if s in EVIDENCE_STATUSES]
+        if not wanted:
+            return []
+        where = "WHERE status IN (" + ",".join("?" * len(wanted)) + ")"
+        params = wanted
+    rows = con.execute(
+        "SELECT * FROM candidate_keywords " + where +
+        " ORDER BY title, id", params).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["keywords"] = _as_list(d.get("keywords"))
+        out.append(d)
+    return out
+
+
+def clear_candidate_profile(con) -> tuple[int, int]:
+    evidence = clear_candidate_evidence(con)
+    keywords = con.execute("DELETE FROM candidate_keywords").rowcount
+    return evidence, keywords
+
+
+def delete_rejected_candidate_evidence(con, evidence_id: int) -> bool:
+    _ensure_columns(con)
+    return con.execute(
+        "DELETE FROM candidate_evidence WHERE id=? AND status='rejected'",
+        (int(evidence_id),)).rowcount > 0
+
+
+def personal_info(con) -> dict:
+    raw = get_meta(con, "candidate_personal_info", "{}")
+    try:
+        info = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        info = {}
+    return info if isinstance(info, dict) else {}
+
+
+def set_personal_info(con, info: dict) -> None:
+    clean = {}
+    for key in ("name", "email", "linkedin", "github", "links"):
+        value = info.get(key, "") if isinstance(info, dict) else ""
+        clean[key] = str(value or "").strip()[:4000]
+    set_meta(con, "candidate_personal_info", json.dumps(clean))
+
+
+def add_candidate_evidence(con, title: str, body: str, *,
+                           category: str = "general",
+                           tags: Iterable[str] | None = None,
+                           employer: str = "", role_title: str = "",
+                           date_range: str = "", source: str = "",
+                           confidence: float = 0,
+                           status: str = "proposed") -> int:
+    _ensure_columns(con)
+    title = str(title or "").strip()
+    body = str(body or "").strip()
+    if not body:
+        raise ValueError("evidence body is required")
+    if status not in EVIDENCE_STATUSES:
+        raise ValueError(f"unknown evidence status {status!r}")
+    category = normalize_evidence_category(category, con)
+    tag_list = [str(t).strip() for t in (tags or []) if str(t).strip()]
+    now = _now()
+    cur = con.execute(
+        """INSERT INTO candidate_evidence
+        (title,body,category,tags,employer,role_title,date_range,source,
+         confidence,status,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (title or body.splitlines()[0][:80], body, category,
+         json.dumps(tag_list), str(employer or "").strip(),
+         str(role_title or "").strip(), str(date_range or "").strip(),
+         str(source or "").strip(), float(confidence or 0), status, now, now))
+    return cur.lastrowid
+
+
+def update_candidate_evidence(con, evidence_id: int, **fields) -> None:
+    _ensure_columns(con)
+    allowed = {"title", "body", "category", "tags", "employer", "role_title",
+               "date_range", "source", "confidence", "status"}
+    current = con.execute(
+        "SELECT * FROM candidate_evidence WHERE id=?", (int(evidence_id),)
+    ).fetchone()
+    if not current:
+        raise KeyError("no such evidence")
+    updates = {}
+    for k, v in fields.items():
+        if k not in allowed:
+            continue
+        if k == "status":
+            if v not in EVIDENCE_STATUSES:
+                raise ValueError(f"unknown evidence status {v!r}")
+        if k == "category":
+            v = normalize_evidence_category(v, con)
+        if k == "tags":
+            v = json.dumps([str(t).strip() for t in (v or [])
+                            if str(t).strip()])
+        updates[k] = v
+    if "body" in updates and not str(updates["body"] or "").strip():
+        raise ValueError("evidence body is required")
+    if not updates:
+        return
+    updates["updated_at"] = _now()
+    sql = ", ".join(f"{k}=?" for k in updates)
+    con.execute(f"UPDATE candidate_evidence SET {sql} WHERE id=?",
+                (*updates.values(), int(evidence_id)))
+
+
+def candidate_evidence(con, *, statuses: Iterable[str] | None = None) -> list[dict]:
+    _ensure_columns(con)
+    params: list[str] = []
+    where = ""
+    if statuses is not None:
+        wanted = [s for s in statuses if s in EVIDENCE_STATUSES]
+        if not wanted:
+            return []
+        where = "WHERE status IN (" + ",".join("?" * len(wanted)) + ")"
+        params = wanted
+    rows = con.execute(
+        "SELECT * FROM candidate_evidence " + where +
+        " ORDER BY CASE status WHEN 'proposed' THEN 0 WHEN 'approved' THEN 1 "
+        "WHEN 'archived' THEN 2 ELSE 3 END, category, employer, id",
+        params).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["tags"] = _as_list(d.get("tags"))
+        out.append(d)
+    return out
+
+
+def approved_candidate_evidence_text(con) -> str:
+    rows = candidate_evidence(con, statuses=["approved"])
+    chunks = []
+    for r in rows:
+        head = " / ".join(x for x in (
+            r["category"], r["employer"], r["role_title"], r["date_range"]) if x)
+        tags = ", ".join(r["tags"])
+        title = r["title"] or r["body"].splitlines()[0]
+        chunks.append(
+            f"## {title}\n"
+            f"{head}\n"
+            f"{'Tags: ' + tags if tags else ''}\n"
+            f"{r['body']}".strip())
+    return "\n\n".join(chunks)
 
 
 # ------------------------------------------------------------------- jobs

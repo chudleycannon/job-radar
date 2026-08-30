@@ -20,6 +20,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -172,6 +173,32 @@ def test_a_note_that_is_not_text_is_answered_not_dropped():
         assert _status(db, "uid-one") == (None, None), "nothing should be written"
 
 
+def test_a_screen_answer_can_be_saved_for_later_generation():
+    with _lab() as (root, db, home), _server(db) as base:
+        code, body = _req(base, "/api/screen-answer",
+                          {"uid": "uid-one",
+                           "body": "I have led ITIL-aligned incident reviews."})
+        assert code == 200 and body["ok"] is True, (code, body)
+        con = store.connect(db)
+        try:
+            row = con.execute(
+                "SELECT kind,summary,body FROM artifacts WHERE uid=?",
+                ("uid-one",)).fetchone()
+        finally:
+            con.close()
+        assert row["kind"] == "screen_answer", dict(row)
+        assert row["summary"] == "I have led ITIL-aligned incident reviews."
+        assert row["body"] == "I have led ITIL-aligned incident reviews."
+
+
+def test_a_blank_screen_answer_is_refused():
+    with _lab() as (root, db, home), _server(db) as base:
+        code, body = _req(base, "/api/screen-answer",
+                          {"uid": "uid-one", "body": "   "})
+        assert code == 400, (code, body)
+        assert "answer" in body["error"], body
+
+
 def test_a_content_length_that_is_not_a_number_is_answered():
     """`int(self.headers.get("Content-Length"))` raised ValueError before any
     routing happened, so every endpoint died on a header a client got wrong."""
@@ -266,6 +293,421 @@ def test_the_browser_setup_route_writes_a_loadable_config():
         assert got.work_modes == ["remote"]
         assert got.salary_floor == 70000
         assert got.dealbreakers[0].name == "take-home test"
+
+
+def test_setup_imports_the_cv_as_proposed_profile_evidence():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "empty.db"
+        cv = root / "cv.md"
+        cv.write_text(
+            "# Profile\n\nEngineering leader.\n\n# Selected achievements\n\n"
+            "Improved deployment frequency from 2 releases per month to daily.\n",
+            encoding="utf-8")
+        store.connect(db).close()
+        cfg = root / "config.yaml"
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/api/setup", {
+                "cv_path": str(cv),
+                "titles_include": ["engineering manager"],
+                "countries": ["UK"],
+                "remote_ok": True,
+                "concurrency": "16",
+            })
+            assert code == 200, (code, body)
+            assert "Imported" in body["profile"], body
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_evidence(con)
+            assert rows, "the CV should become reviewable evidence"
+            assert {r["status"] for r in rows} == {"proposed"}
+            assert "deployment frequency" in "\n".join(r["body"] for r in rows)
+        finally:
+            con.close()
+
+
+def test_setup_imports_core_expertise_as_keyword_groups():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "empty.db"
+        cv = root / "cv.md"
+        cv.write_text(
+            "# Core expertise and keywords\n\n"
+            "- Engineering leadership: people management, coaching, hiring, onboarding.\n"
+            "- Observability and operations: monitoring, alerting, SLOs, incident management.\n"
+            "\n# Profile\n\nEngineering leader.\n",
+            encoding="utf-8")
+        store.connect(db).close()
+        cfg = root / "config.yaml"
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/api/setup", {
+                "cv_path": str(cv),
+                "titles_include": ["engineering manager"],
+                "countries": ["UK"],
+                "remote_ok": True,
+                "concurrency": "16",
+            })
+            assert code == 200, (code, body)
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_keywords(con)
+            assert [r["title"] for r in rows] == [
+                "Engineering leadership", "Observability and operations"]
+            assert rows[0]["status"] == "proposed"
+            assert "people management" in rows[0]["keywords"]
+            assert "incident management" in rows[1]["keywords"]
+        finally:
+            con.close()
+
+
+def test_an_existing_cv_config_is_migrated_on_first_dashboard_load():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "empty.db"
+        cv = root / "cv.md"
+        cv.write_text("# Skills\n\nIncident management and audit controls.\n",
+                      encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n",
+            encoding="utf-8")
+        store.connect(db).close()
+        with _server(db, config_path=cfg) as base:
+            code, body = _req(base, "/")
+            assert code == 200, (code, body)
+            assert "job radar" in body
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_evidence(con)
+            assert len(rows) == 1
+            assert rows[0]["status"] == "proposed"
+            assert rows[0]["category"] in ("incident_management", "governance", "skill")
+        finally:
+            con.close()
+
+
+def test_the_profile_page_can_edit_and_approve_evidence():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            eid = store.add_candidate_evidence(
+                con, "Incident reviews", "Led incident reviews.",
+                category="incident_management", tags=["incident"],
+                source="CV import: cv.md")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/profile")
+            assert code == 200, (code, body)
+            assert "Candidate Profile" in body
+            assert "Led incident reviews." in body
+            assert "cardSay(card,'Saving...')" in body
+            assert "card.classList.add(status)" in body
+            assert 'class="ev-msg" aria-live="polite"' in body
+
+            code, body = _req(base, "/api/profile/evidence", {
+                "id": eid,
+                "status": "approved",
+                "body": "Led ITIL-aligned incident reviews.",
+                "category": "incident_management",
+                "tags": ["ITIL", "incident"],
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_evidence(con, statuses=["approved"])
+            assert len(rows) == 1
+            assert rows[0]["body"] == "Led ITIL-aligned incident reviews."
+            assert rows[0]["tags"] == ["ITIL", "incident"]
+        finally:
+            con.close()
+
+
+def test_the_profile_page_can_store_core_expertise_keywords():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            kid = store.add_candidate_keywords(
+                con, "Cloud and DevOps", ["AWS", "Terraform"],
+                status="proposed", source="CV import: cv.md")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/profile")
+            assert code == 200, (code, body)
+            assert "Core expertise" in body
+            assert "Save keywords" in body
+            assert "/api/profile/keywords" in body
+            assert "Cloud and DevOps" in body
+            assert "AWS, Terraform" in body
+
+            code, body = _req(base, "/api/profile/keywords", {
+                "id": kid,
+                "title": "Cloud platform",
+                "keywords": "AWS, Terraform, Kubernetes",
+                "status": "approved",
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+            code, body = _req(base, "/api/profile/keywords", {
+                "title": "Risk and continuity",
+                "keywords": ["SOX", "audit", "disaster recovery"],
+                "status": "approved",
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_keywords(con, statuses=["approved"])
+            assert [r["title"] for r in rows] == [
+                "Cloud platform", "Risk and continuity"]
+            assert rows[0]["keywords"] == ["AWS", "Terraform", "Kubernetes"]
+            assert rows[1]["keywords"] == ["SOX", "audit", "disaster recovery"]
+        finally:
+            con.close()
+
+
+def test_profile_status_buttons_do_not_require_resending_the_body():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            eid = store.add_candidate_evidence(
+                con, "Incident reviews", "Led incident reviews.",
+                category="incident_management")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/api/profile/evidence", {
+                "id": eid,
+                "status": "approved",
+            })
+            assert code == 200 and body["ok"] is True, (code, body)
+        con = store.connect(db)
+        try:
+            row = store.candidate_evidence(con, statuses=["approved"])[0]
+            assert row["body"] == "Led incident reviews."
+        finally:
+            con.close()
+
+
+def test_the_profile_page_groups_evidence_by_category_type():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.add_candidate_evidence(
+                con, "Career break", "Took a planned career break.",
+                category="gap_explanation")
+            store.add_candidate_evidence(
+                con, "AWS", "AWS Certified Cloud Practitioner.",
+                category="certification")
+            store.add_candidate_evidence(
+                con, "Kubernetes", "Worked with Kubernetes.",
+                category="tool")
+            store.add_candidate_evidence(
+                con, "Incident command", "Led major incident response.",
+                category="incident_management")
+            store.add_candidate_evidence(
+                con, "Bio", "Short personal statement.",
+                category="personal_statement")
+            store.add_candidate_evidence(
+                con, "Remote", "Prefers remote first work.",
+                category="preference")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/profile")
+            assert code == 200, (code, body)
+            for heading in ("Employment History", "Achievements", "Skills",
+                            "Evidence", "General Info", "Preferences"):
+                assert f"<h3>{heading}</h3>" in body
+            assert '<details class="group" open>' in body
+            assert '<span class="count">' in body
+            assert '<optgroup label="Employment History">' in body
+            assert '<option value="education">education</option>' in body
+            assert '<option value="personal_information">personal information</option>' in body
+            assert "personal_statement_style" not in body
+
+
+def test_custom_profile_categories_are_created_under_evidence():
+    with _lab() as (root, db, home), _server(db) as base:
+        code, body = _req(base, "/api/profile/category",
+                          {"name": "Operational Resilience"})
+        assert code == 200 and body["category"] == "operational_resilience", (
+            code, body)
+        code, body = _req(base, "/api/profile/evidence", {
+            "title": "Resilience",
+            "body": "Improved operational resilience.",
+            "category": "operational_resilience",
+            "status": "approved",
+        })
+        assert code == 200 and body["ok"] is True, (code, body)
+
+        code, page = _req(base, "/profile")
+        assert code == 200, (code, page)
+        evidence_group = page[page.index("<h3>Evidence</h3>"):]
+        assert '<option value="operational_resilience" selected>operational resilience</option>' in evidence_group
+        assert "Improved operational resilience." in evidence_group
+
+
+def test_the_profile_can_be_rebuilt_from_the_configured_cv():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "board.db"
+        cv = root / "cv.md"
+        cv.write_text(
+            "# Skills\n\nIncident management.\n\n# Achievements\n\n"
+            "Improved deployment frequency from monthly to daily.\n",
+            encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n",
+            encoding="utf-8")
+        con = store.connect(db)
+        try:
+            store.add_custom_evidence_category(con, "Operational Resilience")
+            store.add_candidate_evidence(
+                con, "Old note", "This should be removed.",
+                category="operational_resilience", status="approved")
+        finally:
+            con.close()
+
+        with _server(db, config_path=cfg) as base:
+            code, page = _req(base, "/profile")
+            assert code == 200, (code, page)
+            assert "Rebuild from CV" in page
+            assert "/api/profile/rebuild" in page
+            code, body = _req(base, "/api/profile/rebuild", {})
+            assert code == 200 and body["ok"] is True, (code, body)
+            assert body["removed"] == 1, body
+            assert body["added"] >= 1, body
+
+        con = store.connect(db)
+        try:
+            rows = store.candidate_evidence(con)
+            text = "\n".join(r["body"] for r in rows)
+            assert "This should be removed." not in text
+            assert "deployment frequency" in text
+            assert {r["status"] for r in rows} == {"proposed"}
+            assert "operational_resilience" in store.custom_evidence_categories(con)
+        finally:
+            con.close()
+
+
+def test_approved_profile_cards_are_collapsed_by_default():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            store.add_candidate_evidence(
+                con, "Approved evidence", "Already checked.",
+                status="approved")
+            store.add_candidate_evidence(
+                con, "Proposed evidence", "Needs review.",
+                status="proposed")
+            store.add_candidate_keywords(
+                con, "Approved keywords", ["AWS", "Terraform"],
+                status="approved")
+            store.add_candidate_keywords(
+                con, "Proposed keywords", ["incident", "audit"],
+                status="proposed")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, body = _req(base, "/profile")
+            assert code == 200, (code, body)
+            assert '<summary class="card-summary"><strong>Approved evidence</strong>' in body
+            assert '<summary class="card-summary"><strong>Approved keywords</strong>' in body
+            assert '<details class="evidence approved" data-id=' in body
+            assert '<details class="keyword-group approved" data-id=' in body
+            assert '<details class="evidence proposed" data-id=' in body
+            assert '<details class="keyword-group proposed" data-id=' in body
+            assert not re.search(
+                r'<details class="evidence approved"[^>]* open>', body)
+            assert not re.search(
+                r'<details class="keyword-group approved"[^>]* open>', body)
+            assert re.search(
+                r'<details class="evidence proposed"[^>]* open>', body)
+            assert re.search(
+                r'<details class="keyword-group proposed"[^>]* open>', body)
+
+
+def test_rejected_profile_evidence_can_be_deleted():
+    with _lab() as (root, db, home):
+        con = store.connect(db)
+        try:
+            keep = store.add_candidate_evidence(
+                con, "Keep", "Approved evidence.", status="approved")
+            reject = store.add_candidate_evidence(
+                con, "Reject", "Rejected evidence.", status="rejected")
+        finally:
+            con.close()
+        with _server(db) as base:
+            code, page = _req(base, "/profile")
+            assert code == 200, (code, page)
+            assert 'data-delete-evidence="1"' in page
+
+            code, body = _req(base, "/api/profile/evidence/delete", {"id": keep})
+            assert code == 400, (code, body)
+            assert "only rejected" in body["error"]
+
+            code, body = _req(base, "/api/profile/evidence/delete", {"id": reject})
+            assert code == 200 and body["ok"] is True, (code, body)
+
+        con = store.connect(db)
+        try:
+            bodies = [r["body"] for r in store.candidate_evidence(con)]
+            assert "Approved evidence." in bodies
+            assert "Rejected evidence." not in bodies
+        finally:
+            con.close()
+
+
+def test_the_profile_page_saves_personal_info():
+    with _lab() as (root, db, home), _server(db) as base:
+        code, page = _req(base, "/profile")
+        assert code == 200, (code, page)
+        assert "Personal info" in page
+        assert "/api/profile/personal" in page
+
+        code, body = _req(base, "/api/profile/personal", {
+            "name": "Ryan Begen",
+            "email": "ryan@example.invalid",
+            "linkedin": "https://linkedin.example/ryan",
+            "github": "https://github.example/ryan",
+            "links": "https://example.invalid",
+        })
+        assert code == 200 and body["ok"] is True, (code, body)
+
+        code, page = _req(base, "/profile")
+        assert "Ryan Begen" in page
+        assert "ryan@example.invalid" in page
+        assert "https://github.example/ryan" in page
+
+
+def test_old_personal_statement_style_categories_are_migrated():
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Path(tmp) / "board.db"
+        con = store.connect(db)
+        try:
+            con.execute(
+                """INSERT INTO candidate_evidence
+                (title,body,category,tags,source,status,created_at,updated_at)
+                VALUES ('Statement','Body','personal_statement_style','[]','old',
+                        'approved','2026-01-01T00:00:00','2026-01-01T00:00:00')""")
+        finally:
+            con.close()
+        con = store.connect(db)
+        try:
+            row = store.candidate_evidence(con)[0]
+            assert row["category"] == "personal_statement"
+        finally:
+            con.close()
 
 
 def test_the_browser_scan_button_says_setup_first_without_a_config():
@@ -840,6 +1282,58 @@ def test_generate_can_use_the_anthropic_api_without_the_claude_cli():
                 assert "No dealbreakers" in art["body"], dict(art)
             finally:
                 con.close()
+
+
+def test_generation_prompt_includes_a_saved_screen_answer():
+    with _lab() as (root, db, home), _env(
+            JOB_RADAR_CLAUDE=str(root / "no-such-claude")):
+        cv = root / "cv.md"
+        cv.write_text("Rowan Ashby\nEngineering leader.\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n"
+            "ai:\n"
+            "  provider: anthropic\n"
+            "  model: \"claude-sonnet-5\"\n"
+            "  anthropic_api_key: \"sk-ant-api03-test\"\n",
+            encoding="utf-8")
+        con = store.connect(db)
+        try:
+            store.add_artifact(
+                con, "uid-one", "screen_answer",
+                body="I have led ITIL-aligned incident reviews.")
+        finally:
+            con.close()
+
+        seen = {}
+        answer = (
+            "===== BEGIN FILE: screening.md =====\n"
+            "APPLY, strong match.\n\nThe added evidence answers the gap.\n"
+            "===== END FILE: screening.md =====\n"
+            "===== BEGIN FILE: verdict.txt =====\n"
+            "APPLY\n"
+            "===== END FILE: verdict.txt =====\n")
+
+        def complete(prompt, *a, **k):
+            seen["prompt"] = prompt
+            return answer
+
+        with mock.patch("jobradar.ai.complete", complete), \
+                _server(db, docs=root / "docs", config_path=cfg) as base:
+            code, body = _req(base, "/api/generate",
+                              {"uid": "uid-one", "kind": "screen"})
+            assert code == 200 and body["ok"] is True, (code, body)
+            con = store.connect(db)
+            try:
+                _settle(lambda: con.execute(
+                    "SELECT state FROM jobs WHERE id=?",
+                    (body["job"],)).fetchone()["state"] == "done")
+            finally:
+                con.close()
+        assert "===== BEGIN LOCAL FILE: role-evidence.txt =====" in seen["prompt"]
+        assert "I have led ITIL-aligned incident reviews." in seen["prompt"]
 
 
 @contextmanager
