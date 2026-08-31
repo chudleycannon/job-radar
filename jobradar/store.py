@@ -342,8 +342,19 @@ def upsert_roles(con, jobs: Iterable, run: int | None = None,
             # touched, the dashboard's sector filter collapsed to "Other",
             # and `seed load` printed "Stored." either way. Empty never
             # overwrites a value that is there.
-            con.execute("""UPDATE roles SET company=?,title=?,url=?,location=?,city=?,
-                country=?,work_mode=?,sector=COALESCE(NULLIF(?,''),sector),platform=?,department=?,
+            # Same guard, extended to place on 2026-08-31. Loading a seed on
+            # top of a scanned database blanked `country` on 53 roles the
+            # scan had just resolved: shard rows carry a country only when
+            # the builder could read one, and an empty one means "this
+            # writer does not know", never "this role has no country". A
+            # role whose country goes blank drops out of every
+            # country-filtered view, which from the reader's side is
+            # indistinguishable from the job being withdrawn.
+            con.execute("""UPDATE roles SET company=?,title=?,url=?,
+                location=COALESCE(NULLIF(?,''),location),
+                city=COALESCE(NULLIF(?,''),city),
+                country=COALESCE(NULLIF(?,''),country),
+                work_mode=?,sector=COALESCE(NULLIF(?,''),sector),platform=?,department=?,
                 salary_min=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_min END,
                 salary_max=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_max END,
                 salary_currency=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_currency END,

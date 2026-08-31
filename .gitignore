@@ -72,3 +72,4 @@ tools/rate_probe_log.jsonl
 seed/
 seed-build/
 seed-build.new/
+.seed-cache/
