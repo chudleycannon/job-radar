@@ -71,3 +71,4 @@ tools/rate_probe_log.jsonl
 # anybody history.
 seed/
 seed-build/
+seed-build.new/

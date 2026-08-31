@@ -47,6 +47,12 @@ MIN_ROLES = 150_000
 # it catches is every role emitted twice, which is 200% and reads as success.
 MAX_FRACTION = 1.50
 
+# The per-shard collapse test. Deliberately far looser than the overall floor:
+# it is looking for a platform that vanished out of one country, not for a
+# country that had a slow week.
+SHARD_FRACTION = 0.35
+SHARD_FLOOR = 1_000
+
 
 class Unknown(Exception):
     """The published index could not be read. Not the same as "none"."""
@@ -120,17 +126,31 @@ def check(new: dict, old: dict | None) -> list[str]:
             f"{100 * fresh / prev:.0f}% of it. Anything over "
             f"{100 * MAX_FRACTION:.0f}% is treated as a bad run too.")
 
-    # A shard that collapsed without disappearing. Only a vanished shard was
-    # caught, so DE going from 6,261 roles to 3 published without a word.
+    # A shard that COLLAPSED without disappearing, which is not the same as
+    # one that shrank.
+    #
+    # This reused the overall 80% floor and refused a perfectly good build on
+    # 2026-08-30: Austria 612 to 447, Belgium 896 to 711, Bulgaria 733 to 511,
+    # Switzerland 1,023 to 744. Those are ordinary weekly churn in small
+    # countries, and the build they blocked was 98.9% of the published one
+    # with every large shard within a point of it. The refusal was silent to
+    # everybody except a log file, so the published seed simply stopped being
+    # rebuilt.
+    #
+    # The failure this is for is a platform vanishing out of one country:
+    # Germany 6,261 to 3. That is 0.05%. A third catches it with room to
+    # spare and cannot fire on a quiet week, and the floor is raised to a
+    # thousand because a fraction of 600 is noise.
     if old:
         for name, was in (old.get("shards") or {}).items():
             now = (new.get("shards") or {}).get(name)
-            if not now or was.get("roles", 0) < 500:
+            if not now or was.get("roles", 0) < SHARD_FLOOR:
                 continue
-            if now.get("roles", 0) < was["roles"] * MIN_FRACTION:
+            if now.get("roles", 0) < was["roles"] * SHARD_FRACTION:
                 problems.append(
                     f"{name} went from {was['roles']:,} roles to "
-                    f"{now.get('roles', 0):,}")
+                    f"{now.get('roles', 0):,}, which is a collapse rather "
+                    f"than a quiet week")
 
     # A platform that vanished entirely. Losing one is the shape of failure a
     # role count alone can hide: Workable is 7% of the roles and 60% of the
