@@ -43,10 +43,13 @@ def _run(stored=0, elapsed=0.0):
 
 
 def test_a_reader_holding_seeded_roles_is_told_they_can_use_them_now():
+    """It used to say "open a second terminal and run `job-radar serve`",
+    which is the tool asking a person to do the tool's job. The dashboard is
+    started for them by `seed_first`, so this only has to say it is there."""
     text = _run(stored=254)
     assert "254 roles from the seed" in text
-    assert "usable right now" in text
-    assert "job-radar serve" in text
+    assert "dashboard that is open now" in text
+    assert "second terminal" not in text
 
 
 def test_it_says_what_the_scan_adds_on_top_of_the_seed():
@@ -103,3 +106,39 @@ def test_counting_the_board_never_raises():
     (d / "data").mkdir()
     (d / "data" / "job-radar.db").write_text("not a database", encoding="utf-8")
     assert w._roles_already_stored(d / "c.yaml") == 0
+
+
+def test_the_seed_opens_the_dashboard_rather_than_asking_for_a_terminal():
+    """The whole point. A seed leaves several hundred usable roles on disk
+    before the scan starts, and the scan's own dashboard does not open for
+    another five minutes."""
+    import inspect
+    src = inspect.getsource(w.seed_first)
+    assert "_open_board(config_path)" in src
+
+
+def test_opening_the_board_never_takes_the_setup_down():
+    """A dashboard that could not be started is not a reason to lose a setup
+    that has just stored several hundred roles."""
+    import io
+    import contextlib
+    from jobradar import serve as serve_mod
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), \
+            mock.patch.object(serve_mod, "open_in_background",
+                              side_effect=OSError("no sockets today")):
+        assert w._open_board(Path(tempfile.mkdtemp()) / "c.yaml") == ""
+    assert "job-radar serve" in out.getvalue()
+
+
+def test_a_dashboard_already_running_is_not_started_twice():
+    """Two servers on one database contend, and the loser prints a SQLite
+    traceback at somebody who did nothing wrong."""
+    import io
+    import contextlib
+    from jobradar import serve as serve_mod
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), \
+            mock.patch.object(serve_mod, "open_in_background",
+                              return_value=None):
+        assert w._open_board(Path(tempfile.mkdtemp()) / "c.yaml") == ""
