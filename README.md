@@ -143,10 +143,12 @@ job-radar seed load https://github.com/maccydee/job-radar/releases/download/seed
 ```
 
 It reads an index of what is published, works out which country files your
-`locations.countries` needs, and downloads only those. A UK reader takes 38MB
-and 41,038 rows, against 242MB and 289,640 for the whole world. Roles whose
-country could not be read, and roles open in several countries at once, come
-with every download, because neither is evidence that a job is somewhere else.
+`locations.countries` needs, and downloads only those. A UK reader takes
+roughly 38MB of about 240MB. The command prints the exact figures for your
+own countries before it fetches anything, and they change every week, which
+is why they are not written down here. Roles whose country could not be read,
+and roles open in several countries at once, come with every download,
+because neither is evidence that a job is somewhere else.
 
 Those are rows rather than distinct adverts. A job open in six towns is
 written once per town, and the database keeps one row per posting, so around

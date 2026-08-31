@@ -37,21 +37,22 @@ your config exactly as a scan does. Nobody else's filters can reach you.
 
 ## Shards
 
-The whole world with adverts attached is 242MB gzipped: 289,640 role rows
-from 8,779 boards, measured on the build of 2026-08-28. Rows rather than
-roles, because a posting open in several towns is written once per town. So it is split by country
-and you take only what you need.
+The whole world with adverts attached is around 240MB gzipped, roughly
+290,000 role rows from 8,779 boards. Rows rather than roles, because a
+posting open in several towns is written once per town.
 
-    UK   16.6 MB  +  21.7 MB  =  38.3 MB
-    DE    6.0 MB  +  21.7 MB  =  27.7 MB
-    IN    7.5 MB  +  21.7 MB  =  29.2 MB
-    US  112.1 MB  +  21.7 MB  = 133.8 MB
+Every figure on this page is approximate on purpose. The set is rebuilt
+weekly and the exact counts move each time: the build of 2026-08-28 held
+289,640 rows and the one two days later held 286,400. `index.json` on the
+release carries the current numbers and `seed load` prints the ones that
+apply to you. So it is split by country and you take only what you need.
 
-(A 180-board sample had projected 267,000 roles and 181MB. The real thing is
-8% more roles and 25% more bytes, which is worth knowing about any figure on
-this page that came from a sample rather than a build.)
+    UK    ~17 MB  +  ~22 MB  =   ~39 MB
+    DE     ~6 MB  +  ~22 MB  =   ~28 MB
+    IN     ~8 MB  +  ~22 MB  =   ~29 MB
+    US   ~112 MB  +  ~22 MB  =  ~134 MB
 
-Two shards go to **every** reader, which is the 21.7MB above:
+Two shards go to **every** reader, which is the ~22MB above:
 
 - `unplaced`, roles whose country could not be read
 - `multiple`, roles open in more than one country
@@ -67,7 +68,8 @@ side, looks exactly like the job not existing.
 
 It reads the index, works out which shards your `locations.countries` needs,
 downloads only those, screens them against your config and stores what
-survives. A UK reader fetches three files and 38MB, not 164 files and 242MB.
+survives. A UK reader fetches three files and about 39MB, not 164 files and
+about 240MB.
 
 The download is kept so a second config or a second machine does not fetch it
 again, and a re-run after a dropped connection resumes rather than starting
@@ -85,8 +87,8 @@ it is not a way to preview the cost of the download.
 
 Two counts, and they are not the same number. A role open in six towns is one
 row per town, and the database keys on the posting, so the roles stored are
-fewer than the roles `seed load` reports as matching. On the build of
-2026-08-28 a UK reader's 41,038 rows were 40,199 distinct postings.
+fewer than the roles `seed load` reports as matching. On one build a UK
+reader's 41,038 rows were 40,199 distinct postings.
 
 A shard whose downloaded size disagrees with the index is refused rather than
 stored. A truncated shard decompresses and parses perfectly well as a shard
@@ -152,8 +154,8 @@ than reading what it can. A half-understood role still looks like a role.
 
 ## Publishing
 
-Shards go to a GitHub **release asset**, never into the repository: 242MB a
-day committed is history every clone pays for forever, while release assets
+Shards go to a GitHub **release asset**, never into the repository: a quarter of a
+gigabyte a day committed is history every clone pays for forever, while release assets
 never enter history and can be replaced in place. `seed load <url>` expects
 the assets to sit under one base URL with `index.json` beside them, which is
 what a release download URL gives you.
@@ -169,7 +171,7 @@ what a release download URL gives you.
 Run weekly by `com.maccydee.jobradar.seed`, Sundays at 11:00 local, after the
 source validation and the crawler so it reads a list those two have already
 had their turn at. Weekly rather than daily because it is 8,779 requests to
-other people's servers and 242MB to a release, and the seed's job is to save
+other people's servers and a quarter of a gigabyte to a release, and the seed's job is to save
 somebody the slow hour rather than to be current.
 
 It is unattended and it writes to a public release, so the failure it is built
