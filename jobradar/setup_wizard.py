@@ -302,12 +302,24 @@ def _open_board(config_path: Path) -> str:
     """
     from . import serve as serve_mod
     home = config_path.expanduser().resolve().parent
-    try:
-        url = serve_mod.open_in_background(
-            db_path=str(home / "data" / "job-radar.db"),
-            config_path=str(config_path))
-    except Exception:
-        url = None
+    db = str(home / "data" / "job-radar.db")
+    # The next free port, rather than a sentence explaining why there is no
+    # dashboard. 8765 is busy whenever another config is already being served,
+    # which on any machine that has run this twice is most of the time, and
+    # the reader has just been handed several hundred roles: they should get a
+    # page, not homework.
+    #
+    # A handful of ports, not a search: if five in a row are taken, something
+    # is wrong that starting a sixth server will not fix.
+    url = None
+    for port in range(8765, 8770):
+        try:
+            url = serve_mod.open_in_background(
+                db_path=db, config_path=str(config_path), port=port)
+        except Exception:
+            url = None
+        if url:
+            break
     if not url:
         # Two different reasons, and telling them apart matters. Nothing
         # started because a dashboard is ALREADY up is not a failure, and
@@ -318,14 +330,9 @@ def _open_board(config_path: Path) -> str:
         # known is that something answers on the port; it may be a dashboard
         # on somebody else's database, which is a mistake this file has made
         # before and will not make by implication.
-        if serve_mod.already_serving():
-            print(f"\nSomething is already serving on "
-                  f"http://127.0.0.1:8765 , so a second one was not started.")
-            print("If that is your dashboard, refresh it. If it belongs to "
-                  "another config,")
-            print("run `job-radar serve --port 8766` for this one.")
-        else:
-            print("\nYour roles are ready. See them with `job-radar serve`.")
+        print("\nYour roles are ready. Could not start a dashboard "
+              "(ports 8765 to 8769 are all busy).")
+        print("See them with `job-radar serve --port <free port>`.")
         return ""
     print(f"\nYour dashboard is open at {url}")
     print("It stays up while the scan runs and fills in underneath you.")
