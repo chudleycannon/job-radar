@@ -357,7 +357,28 @@ function mark(row,status){
     if(!pill){ pill=document.createElement('span');
       const head=row.querySelector('.role'); if(head) head.appendChild(pill); }
     if(pill){ pill.textContent=status; pill.className='status '+status; }}
-  const sel=row.querySelector('select.setstatus'); if(sel) sel.value=status;}
+  const sel=row.querySelector('select.setstatus');
+  if(sel){ sel.dataset.current=status;
+    if(sel.dataset.filled) sel.value=status;
+    else sel.options[0].textContent=(status||'Status')+'\u2026'; }}
+
+// The per-row status options are not in the HTML: see the comment where the
+// select is written. Fill this one the first time it is touched, which is the
+// only moment they can possibly matter.
+const STATUSES=['new','interested','applied','submitted','interviewing','offer','rejected','withdrawn','skipped','closed'];
+function fillStatus(sel){
+  if(sel.dataset.filled) return;
+  const cur=sel.dataset.current||'';
+  for(const s of STATUSES){
+    const o=document.createElement('option');
+    o.value=s; o.textContent=s; if(s===cur) o.selected=true;
+    sel.appendChild(o); }
+  sel.dataset.filled='1';
+  sel.value=cur; }
+document.addEventListener('pointerdown', e=>{
+  const sel=e.target.closest('select.setstatus'); if(sel) fillStatus(sel); }, true);
+document.addEventListener('focusin', e=>{
+  const sel=e.target.closest('select.setstatus'); if(sel) fillStatus(sel); });
 
 // The status select was rendered with all ten statuses and never wired to
 // anything, so picking "rejected" looked like it worked, changed nothing, and
@@ -888,11 +909,17 @@ def _row(r, arts, job, run=0) -> str:
         # The dashboard offered two of the ten statuses and no note, while the
         # CLI had all ten and a note, so the browser could not record an
         # interview date -- the thing a tracker is for.
-        + '<select class="setstatus" aria-label="Set status">'
-        + '<option value="">Status\u2026</option>'
-        + "".join(
-            f'<option value="{s}"{" selected" if s == r["status"] else ""}>{s}</option>'
-            for s in store.STATUSES)
+        # Rendered EMPTY on purpose, and filled on first interaction.
+        #
+        # Ten options per row is 43,600 <option> nodes on a 4,362-role board,
+        # 2.3MB of a 9MB page, and the browser builds every one of them before
+        # it will paint. The dashboard was unresponsive for seconds on load
+        # and the reason was a control nobody had touched yet. The current
+        # status is carried on the element so `mark()` and the fill can both
+        # read it without the options existing.
+        + f'<select class="setstatus" aria-label="Set status" '
+          f'data-current="{_h.escape(r["status"] or "")}">'
+        + f'<option value="">{_h.escape(r["status"] or "Status")}\u2026</option>'
         + '</select>'
         + '<button data-note="1" title="Add or edit a note">Note</button>'
         + '</div>'
