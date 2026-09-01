@@ -47,6 +47,10 @@ def _js() -> str:
 # one row and is why the page is not 60,000 nodes of controls nobody clicked.
 EAGER_ROWS = 60
 
+# Indexed by `eager`, so the marker is a lookup rather than an f-string that
+# has to escape its own quotes. See the comment where it is used.
+_LAZY_ATTR = {True: "", False: ' data-lazyacts="1"'}
+
 
 _EXTRA_CSS = """
 /* Whether anything is running at all, where you can see it without knowing
@@ -1508,7 +1512,13 @@ def _row(r, arts, job, run=0, eager=True) -> str:
             for k in ("screen", "cv", "cover_letter")
             if arts.get(k) and arts[k]["path"])
         + f'data-settled="{1 if settled else 0}"'
-        f'{"" if eager else " data-lazyacts=\"1\""}>'
+        # The attribute is built outside the f-string on purpose. A backslash
+        # inside an f-string expression is a SyntaxError before Python 3.12,
+        # and this file parsed on 3.13 here while failing to import on 3.10
+        # and 3.11 in CI: thirteen red runs whose only symptom was 26 test
+        # files "could not import".
+        + _LAZY_ATTR[bool(eager)]
+        + '>'
         f'<div class="pick"><input type="checkbox" class="sel" '
         f'aria-label="Select for bulk screening"></div>'
         f'<div><div class="role">'
