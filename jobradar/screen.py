@@ -1134,7 +1134,19 @@ _NOT_A_CITY = re.compile(
     r"home[- ]based|work from home|wfh|"
     r"united kingdom|uk|england|scotland|wales|northern ireland|united states|usa?|"
     r"canada|australia|ireland|germany|france|spain|netherlands|india|singapore|"
-    r"various|multiple locations|flexible|tbc|n/?a)$", re.I)
+    r"various|multiple locations|flexible|tbc|n/?a|"
+    # Time zones. Remote-first employers write the zone where a city goes:
+    # Junction advertise "GMT / BST (UK, Portugal, Ireland)", which the
+    # first-comma-part rule reduces to "GMT" and files as a town. It is a
+    # working-hours requirement, not a place, and the country is read from the
+    # rest of the string anyway.
+    # `wet`, `west` and `art` are left out on purpose: they are ordinary
+    # words and "West" is a place name, and this list only has to catch the
+    # zones employers actually advertise hours in.
+    r"gmt|bst|utc|cet|cest|eet|eest|"
+    r"est|edt|cst|cdt|mst|mdt|pst|pdt|akst|hst|"
+    r"ist|jst|kst|sgt|aest|aedt|awst|acst|nzst|brt|msk|"
+    r"gmt\s*[+-]\s*\d{1,2}|utc\s*[+-]\s*\d{1,2})$", re.I)
 
 
 # "Remote" with a country named somewhere in the body. Airbnb's "Senior Data
