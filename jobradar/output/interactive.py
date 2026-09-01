@@ -49,6 +49,30 @@ EAGER_ROWS = 60
 
 
 _EXTRA_CSS = """
+/* Shown while the browser builds the board.
+   The server answers in under a second and the browser then spends most of
+   another one parsing several thousand rows, which reads as a frozen tab
+   rather than as work in progress. Painted before the list because it sits
+   first in the body, and removed the moment the first filter pass finishes.
+
+   `position:fixed` and its own background, so it covers a half-built list
+   rather than sitting above one. */
+.boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:var(--s3);
+  background:var(--bg);color:var(--muted);text-align:center;padding:var(--s4)}
+.boot p{margin:0;font-size:.9375rem}
+.boot .boot-sub{font-size:.8125rem;opacity:.7;max-width:34ch}
+.boot-spin{width:26px;height:26px;border-radius:50%;
+  border:2px solid var(--line);border-top-color:var(--accent);
+  animation:bootspin .7s linear infinite}
+@keyframes bootspin{to{transform:rotate(360deg)}}
+/* A spinner that cannot spin is a still ring, which reads as broken. Pulse
+   the opacity instead, which is motion nobody has asked us not to make. */
+@media (prefers-reduced-motion: reduce){
+  .boot-spin{animation:bootfade 1.4s ease-in-out infinite;border-top-color:var(--line)}
+  @keyframes bootfade{0%,100%{opacity:.35}50%{opacity:1}}
+}
+
 /* Bulk selection. The checkbox is quiet until something is selected, because
    the row is the content and a column of ticked boxes down the left of a
    four thousand row board is noise on every visit. */
@@ -317,7 +341,12 @@ function resort(){
   const sel=$('#fsort');
   if(sel) sel.onchange=()=>{resort(); apply();};
   loadView();
-  resort(); apply();})();
+  resort(); apply();
+  // After the first sort and filter pass, which is the point the board is
+  // actually usable. The inline fallback above clears it on DOMContentLoaded,
+  // which is earlier and would uncover a list still being sorted.
+  const boot=document.getElementById('boot'); if(boot) boot.remove();
+})();
 
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
@@ -928,7 +957,23 @@ def render(con, home_currency: str = "") -> str:
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body><div class="wrap">
+<title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body>
+<div class="boot" id="boot" role="status" aria-live="polite">
+  <div class="boot-spin" aria-hidden="true"></div>
+  <p>Loading {total} roles</p>
+  <p class="boot-sub">The board is built in your browser, so this is the slow bit,
+     not the server.</p>
+</div>
+<script>
+// The overlay must not outlive a script that failed. Both of these clear it
+// even if the main script below never runs: a page that says "Loading" for
+// ever is a worse answer than a page that looks broken, because the reader
+// waits instead of reloading.
+addEventListener('DOMContentLoaded',()=>{{setTimeout(()=>{{
+  const b=document.getElementById('boot'); if(b) b.remove(); }},50);}});
+setTimeout(()=>{{const b=document.getElementById('boot'); if(b) b.remove();}},8000);
+</script>
+<div class="wrap">
 <header>
   <div class="brand">{_MARK}<span>job radar</span></div>
   <h1>{total} roles worth a look</h1>
