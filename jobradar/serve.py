@@ -835,6 +835,36 @@ def open_in_background(db_path=None, host: str = "127.0.0.1", port: int = 8765,
 
 def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
           docs_base=None, config_path=None) -> int:
+    # Take the port FIRST, before touching the database.
+    #
+    # Everything below assumes "I am starting, therefore no other server is
+    # running", and clears interrupted generations, locks and rank state on
+    # the strength of it. A launchd job with KeepAlive breaks that assumption
+    # in the worst possible way: it retries every few seconds, loses the bind
+    # to the server that is already up, and on the way to losing it reaps the
+    # healthy server's work. Seven queued screenings were killed four seconds
+    # after they started, by a process that never served a single request.
+    #
+    # A failed bind is the only reliable way to know another server owns this
+    # database. So bind first, and if the port is taken, leave everything
+    # alone and say so.
+    try:
+        httpd = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        # A second `serve` in another window, or the last one still running,
+        # is the ordinary way to hit this, and it came out as a nine-frame
+        # socketserver traceback ending in "Address already in use", which
+        # reads as a broken tool rather than as a port that is taken.
+        if getattr(exc, "errno", None) in (errno.EADDRINUSE, errno.EACCES):
+            why = ("is already in use, most likely by a `job-radar serve` "
+                   "that is still running"
+                   if exc.errno == errno.EADDRINUSE
+                   else "needs privileges this process does not have")
+            print(f"Port {port} {why}. Either stop that one, or start this "
+                  f"one somewhere else with `--port {port + 1}`.", flush=True)
+            return 1
+        raise
+
     # Gates are recomputed on start, so a fixed check corrects the rows it got
     # wrong rather than only applying to future runs.
     con = store.connect(db_path)
@@ -896,22 +926,6 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
             _load_cfg(config_path).salary_currency or "").upper()
     except Exception:
         Handler.home_currency = ""
-    try:
-        httpd = ThreadingHTTPServer((host, port), Handler)
-    except OSError as exc:
-        # A second `serve` in another window, or the last one still running,
-        # is the ordinary way to hit this, and it came out as a nine-frame
-        # socketserver traceback ending in "Address already in use" -- which
-        # reads as a broken tool rather than as a port that is taken.
-        if getattr(exc, "errno", None) in (errno.EADDRINUSE, errno.EACCES):
-            why = ("is already in use, most likely by a `job-radar serve` "
-                   "that is still running"
-                   if exc.errno == errno.EADDRINUSE
-                   else "needs privileges this process does not have")
-            print(f"Port {port} {why}. Either stop that one, or start this "
-                  f"one somewhere else with `--port {port + 1}`.", flush=True)
-            return 1
-        raise
     url = f"http://{host}:{port}/"
     print(f"job-radar is at {url}", flush=True)
     print("  buttons: screen, CV, cover letter, apply, skip", flush=True)
