@@ -49,6 +49,12 @@ EAGER_ROWS = 60
 
 
 _EXTRA_CSS = """
+/* "There is one already", on the title line where the other states are. */
+.ready{display:inline-block;margin-left:var(--s2);padding:1px 7px;
+  border:1px solid var(--accent);border-radius:999px;
+  font-size:.6875rem;font-weight:600;letter-spacing:.02em;
+  color:var(--accent);vertical-align:middle;white-space:nowrap}
+
 /* The row the reload was for. Fades rather than staying marked, because a
    highlight that never clears becomes part of the furniture. */
 .row.justdone{background:var(--surface-2);
@@ -715,10 +721,24 @@ function fillActs(row){
   const st=row.dataset.status||'';
   const d=document.createElement('div'); d.className='acts';
   const btn=(html)=>{const s=document.createElement('span');s.innerHTML=html;return s.firstChild;};
-  d.appendChild(btn('<button class="primary" data-gen="screen">Screen</button>'));
-  d.appendChild(btn('<button data-gen="cv">CV</button>'));
-  d.appendChild(btn(cv ? '<button data-gen="cover_letter">Cover letter</button>'
-    : '<button disabled title="Draft the CV first: the letter is checked against it for repeated phrasing">Cover letter</button>'));
+  // Whether a document already exists comes from the row's data-open-*
+  // attributes, written from the artifacts table. Not from the rendered docs
+  // line: the screening is shown inline in a <details> and has no link there
+  // at all, so reading the markup decided no screening existed and offered a
+  // button that would pay to run it a second time.
+  const pair=(kind,label,made,cls)=>{
+    const href=row.dataset['open'+kind.replace(/_(.)/g,(m,c)=>c.toUpperCase())
+                                   .replace(/^./,c=>c.toUpperCase())];
+    if(!href) return [btn('<button class="'+(cls||'')+'" data-gen="'+kind+'">'+label+'</button>')];
+    const open=document.createElement('a');
+    open.className='btn '+(cls||''); open.href=href;
+    open.textContent='Open '+made;
+    return [open, btn('<button data-gen="'+kind+'" data-redraft="1" '
+      +'title="Draft it again. This spends tokens.">Redraft</button>')]; };
+  for(const el of pair('screen','Screen','screening','primary')) d.appendChild(el);
+  for(const el of pair('cv','CV','CV')) d.appendChild(el);
+  if(cv){ for(const el of pair('cover_letter','Cover letter','letter')) d.appendChild(el); }
+  else d.appendChild(btn('<button disabled title="Draft the CV first: the letter is checked against it for repeated phrasing">Cover letter</button>'));
   const a=document.createElement('a'); a.className='btn'; a.href=row.dataset.url||'#';
   a.target='_blank'; a.rel='noopener'; a.dataset.apply='1'; a.textContent='Apply';
   d.appendChild(a);
@@ -818,6 +838,13 @@ document.addEventListener('click', async e=>{
   const gen=e.target.closest('[data-gen]');
   if(gen && !gen.disabled){
     const kind=gen.dataset.gen;
+    // Redraft is the only one of these that can throw away work already paid
+    // for, so it is the only one that asks. Everything else here is either
+    // free or is the first time.
+    if(gen.dataset.redraft){
+      const name={screen:'screening',cv:'CV',cover_letter:'cover letter'}[kind]||kind;
+      if(!confirm('Draft this '+name+' again?\n\nThere is one on file already. '
+                  +'This spends tokens and replaces it.')) return; }
     const {ok,data}=await post('/api/generate',{uid,kind});
     const err=row.querySelector('.err');
     if(!ok){ err.hidden=false; err.textContent=data.error||'could not start';
@@ -1196,6 +1223,19 @@ def _row(r, arts, job, run=0, eager=True) -> str:
     status_pill = (f'<span class="status {_h.escape(r["status"], quote=True)}">'
                    f'{_h.escape(r["status"])}</span>' if r["status"] != "new" else "")
 
+    # Said on the title line, not only in the documents row underneath.
+    # Clicking CV on a role whose CV was already written started a second
+    # eight minute run and charged for it, and the reason it was easy to do is
+    # that "there is one already" was one line further down and looked like
+    # part of the metadata. A ready document is a state of the role, so it
+    # belongs where the other states are.
+    ready = "".join(
+        f'<span class="ready" title="Already drafted. Open it from the buttons '
+        f'below.">{name} ready</span>'
+        for kind, name in (("screen", "screening"), ("cv", "CV"),
+                           ("cover_letter", "letter"))
+        if kind in arts)
+
     docs = []
     if "cv" in arts:
         a = arts["cv"]
@@ -1283,12 +1323,29 @@ def _row(r, arts, job, run=0, eager=True) -> str:
     busy = job["kind"] if job else ""
     has_cv = "cv" in arts
 
-    def b(kind, label, cls=""):
-        on = busy == kind
-        return (f'<button class="{cls}{" busy" if on else ""}" data-gen="{kind}" '
-                f'{"disabled" if on else ""}>{label}</button>')
+    def b(kind, label, cls="", made=""):
+        """The button for one kind, which is Open once the thing exists.
 
-    letter_btn = (b("cover_letter", "Cover letter") if has_cv else
+        It used to be Draft either way, so clicking CV on a role whose CV was
+        already written started a second eight minute agent run and charged
+        for it. The document was right there in the row, one line below, as a
+        link. A control that spends money has to be the one that says it will:
+        the default action on something already made is to look at it.
+        """
+        on = busy == kind
+        if on:
+            return f'<button class="{cls} busy" data-gen="{kind}" disabled>{label}</button>'
+        art = arts.get(kind)
+        if art and art["path"]:
+            href = _h.escape(quote(str(art["path"])), quote=True)
+            return (f'<a class="btn {cls}" href="/open?path={href}">Open {made or label}</a>'
+                    # Redrafting is still one click, it just is not the same
+                    # click. It confirms, because it spends.
+                    f'<button data-gen="{kind}" data-redraft="1" '
+                    f'title="Draft it again. This spends tokens.">Redraft</button>')
+        return f'<button class="{cls}" data-gen="{kind}">{label}</button>'
+
+    letter_btn = (b("cover_letter", "Cover letter", made="letter") if has_cv else
                   '<button disabled title="Draft the CV first: the letter is '
                   'checked against it for repeated phrasing">Cover letter</button>')
 
@@ -1305,8 +1362,8 @@ def _row(r, arts, job, run=0, eager=True) -> str:
     # the row already carries.
     acts = (
         '<div class="acts">'
-        + b("screen", "Screen", "primary")
-        + b("cv", "CV")
+        + b("screen", "Screen", "primary", made="screening")
+        + b("cv", "CV", made="CV")
         + letter_btn
         + f'<a class="btn" href="{_h.escape(safe_url(r["url"]))}" target="_blank" '
           f'rel="noopener" data-apply="1">Apply</a>'
@@ -1353,13 +1410,24 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         # hovered or focused. Cheap attributes, against ~14 elements each.
         f'data-url="{_h.escape(safe_url(r["url"]), quote=True)}" '
         f'data-hascv="{1 if has_cv else 0}" '
-        f'data-settled="{1 if settled else 0}"'
+        # The address of anything already generated for this role, so a lazy
+        # row can offer Open rather than a button that would pay to make a
+        # second one. Read off `arts` rather than off the rendered docs line:
+        # the screening is shown inline in a <details> and has no link there
+        # at all, so a reader of the markup would have decided no screening
+        # existed and offered to run it again.
+        + "".join(
+            f'data-open-{k}="/open?path='
+            f'{_h.escape(quote(str(arts[k]["path"])), quote=True)}" '
+            for k in ("screen", "cv", "cover_letter")
+            if arts.get(k) and arts[k]["path"])
+        + f'data-settled="{1 if settled else 0}"'
         f'{"" if eager else " data-lazyacts=\"1\""}>'
         f'<div class="pick"><input type="checkbox" class="sel" '
         f'aria-label="Select for bulk screening"></div>'
         f'<div><div class="role">'
         f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
-        f'{status_pill}</div>'
+        f'{status_pill}{ready}</div>'
         f'<div class="meta">{_h.escape(meta)}</div></div>'
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
         f'{_h.escape(r["salary_label"] or "unconfirmed salary")}</span></div>'

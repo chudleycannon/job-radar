@@ -49,10 +49,13 @@ class LazyActions(unittest.TestCase):
         py, js = _acts_python(), _fill_acts_js()
         # The Python side names the kind through the `b()` helper, which is
         # what writes the data-gen attribute; the JS writes it literally.
+        # Both sides name the kind; only the eager one writes the attribute
+        # as a literal, since the lazy side builds it from the kind at
+        # runtime. What has to match is the set of kinds offered.
         for kind in ("screen", "cv", "cover_letter"):
             self.assertIn(f'"{kind}"', py, f"the eager rows offer no {kind}")
-            self.assertIn(f'data-gen="{kind}"', js,
-                          f"the lazy rows offer no {kind}")
+            self.assertIn(f"'{kind}'", js, f"the lazy rows offer no {kind}")
+        self.assertIn('data-gen="', js)
         for attr in ('data-status="skipped"', 'data-status="interested"',
                      'data-note="1"'):
             self.assertIn(attr, py)
