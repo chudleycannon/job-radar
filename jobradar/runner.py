@@ -860,6 +860,37 @@ def _record(con, job, d: Path, log: str) -> None:
         store.add_artifact(con, uid, "cover_letter", path, summary=summary, gates=gates)
 
 
+# Words that carry no phrasing on their own. A run made of these plus a
+# number is a shared fact, not a shared sentence.
+_FILLER = frozenset("""
+a an and are as at be been but by for from has have in into is it its of on
+or that the their there this to was were which with within will would can
+could over under between across per year years month months week weeks day
+days about around up down out off than then so if not no all any each both
+""".split())
+
+
+def _is_prose(gram) -> bool:
+    """Whether a shared run is repeated writing rather than a repeated fact.
+
+    The gate exists to stop the letter re-reading the CV in the same words. It
+    was firing on "1 325 engineer hours a year", which is one figure: the
+    tokeniser drops the comma in "1,325" and the hyphen in "engineer-hours",
+    so a single statistic and three ordinary words reach six tokens.
+
+    Worse than a false positive, it put two gates in direct conflict.
+    `unsourced_specifics` requires every figure in a document to appear in the
+    real CV, and then this one reported the figure appearing in both as
+    overlap. A draft could not satisfy both, and the honest one failed.
+
+    So a run has to carry enough words that are neither numbers nor filler
+    before it counts. Real repeated prose clears this easily; a shared
+    statistic does not.
+    """
+    content = [w for w in gram if w not in _FILLER and not w.isdigit()]
+    return len(content) >= 4
+
+
 def shared_ngram(a: str, b: str, n: int = 6) -> str:
     """The longest shared sequence of n or more words, or "" if there is none.
 
@@ -877,7 +908,7 @@ def shared_ngram(a: str, b: str, n: int = 6) -> str:
     grams_b = {tuple(tb[i:i + n]) for i in range(len(tb) - n + 1)}
     best = ""
     for i in range(len(ta) - n + 1):
-        if tuple(ta[i:i + n]) in grams_b:
+        if tuple(ta[i:i + n]) in grams_b and _is_prose(ta[i:i + n]):
             # extend the match as far as it goes, to report something useful
             k = n
             while (i + k < len(ta)
