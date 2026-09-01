@@ -49,6 +49,13 @@ EAGER_ROWS = 60
 
 
 _EXTRA_CSS = """
+/* Whether anything is running at all, where you can see it without knowing
+   which row to look at. A queue of nine screens is invisible if the only
+   sign of it is a line on nine separate rows. */
+#jobsinfo{margin-left:var(--s3);color:var(--accent);font-size:.8125rem;
+  font-variant-numeric:tabular-nums}
+#jobsinfo:empty{display:none}
+
 /* "There is one already", on the title line where the other states are. */
 .ready{display:inline-block;margin-left:var(--s2);padding:1px 7px;
   border:1px solid var(--accent);border-radius:999px;
@@ -591,6 +598,32 @@ function fillStatus(sel){
   announce();
 })();
 
+// One line saying what the queue is doing, at the top of the page.
+//
+// The per-row note only helps if you already know which row to look at, and
+// a bulk screen of nine roles puts a note on nine rows you cannot all see at
+// once. So the count lives beside the rank line, where "is anything still
+// happening" is answered without scrolling.
+function paintJobs(d){
+  const el=$('#jobsinfo'); if(!el) return;
+  const live=(d.jobs||[]).filter(j=>j.state==='running'||j.state==='pending');
+  if(!live.length){ el.textContent=''; return; }
+  const running=live.filter(j=>j.state==='running').length;
+  const queued=live.length-running;
+  const kinds=[...new Set(live.map(j=>j.kind))];
+  const name=kinds.length===1
+    ? ({screen:'screening',cv:'CV',cover_letter:'cover letter'}[kinds[0]]||kinds[0])
+    : 'jobs';
+  let s=running+' '+name+(running===1?'':'s')+' running';
+  if(queued) s+=', '+queued+' queued';
+  // The typical is per kind and only useful when there is one kind in flight.
+  const usual=(d.typical||{})[kinds[0]];
+  if(kinds.length===1 && usual && live.length>1){
+    const rounds=Math.ceil(live.length/Math.max(running,1));
+    s+=', roughly '+hhmm(usual*rounds)+' left';
+  }
+  el.textContent=s; }
+
 // ------------------------------------------------------- job progress
 // A drafting run is a draft, a set of quality gates and up to two revisions,
 // which on this machine is a median of about eight minutes. The row showed a
@@ -618,7 +651,8 @@ function progressOn(row, j, typical, now){
            const acts=row.querySelector('.acts');
            row.insertBefore(el, acts || row.querySelector('.err') || null); }
   if(j.state==='pending'){
-    el.textContent=(KINDNAME[j.kind]||j.kind)+' queued'; return; }
+    el.textContent=(KINDNAME[j.kind]||j.kind)+' queued, waiting for a free slot';
+    return; }
   const t0=Date.parse((j.started_at||'').replace(' ','T'));
   const t1=Date.parse((now||'').replace(' ','T'));
   const secs=(isNaN(t0)||isNaN(t1)) ? null : (t1-t0)/1000;
@@ -685,10 +719,11 @@ async function bulkGenerate(kind){
       +'At most %MAX_RUNNING% run at once and the rest queue.')) return;
   const {ok,data}=await post('/api/generate/bulk',{kind,uids});
   if(!ok){ say(data.error||'could not start'); return; }
-  const started=(data.started||[]).length, skipped=(data.skipped||[]);
+  const started=(data.queued||data.started||[]).length, skipped=(data.skipped||[]);
   // Names, not a count. "3 skipped" on a shortlist means opening every row to
   // find out which three and why.
-  let msg=started+' started';
+  let msg=started+' queued'
+    + (data.running ? ', '+data.running+' running now' : '');
   if(skipped.length){
     const why=skipped[0].why||'refused';
     msg += ', '+skipped.length+' skipped ('+why
@@ -907,6 +942,7 @@ async function poll(){
         progressOn(row, j, d.typical||{}, d.now);
       }else if(j){
         e.hidden=true; e.textContent=''; progressOff(row);}}
+    paintJobs(d);
     const finished=d.jobs.filter(j=>j.state==='done');
     if(finished.length){ clearInterval(polling); polling=null;
       // Remember WHICH role finished across the reload. Without this the
@@ -1178,7 +1214,7 @@ setTimeout(()=>{{const b=document.getElementById('boot'); if(b) b.remove();}},80
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
   <button id="rankstop" type="button" hidden>Stop</button>
-  <span id="rankinfo"></span>{_sync}</div>
+  <span id="rankinfo"></span><span id="jobsinfo"></span>{_sync}</div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="selects">
@@ -1284,8 +1320,13 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">Cover letter</a> {warn}')
     # The screening is the thing you asked for, so it goes in the row rather
     # than behind a link to a file. <details> gives the minimise for free and
-    # keeps working with JavaScript off. Open by default: you clicked Screen
-    # to read it, and a collapsed answer is one more click for no reason.
+    # keeps working with JavaScript off.
+    #
+    # Closed by default. It was open, on the reasoning that you clicked Screen
+    # to read it. That holds for the first one and stops holding immediately
+    # after: screen nine roles and the board is nine walls of analysis you
+    # have already read, with the rows you were comparing pushed pages apart.
+    # The summary line carries the verdict, which is the part you re-read.
     # The fit score, where it can be read next to the role rather than only
     # in a sort order.
     fitline = ""
@@ -1311,7 +1352,7 @@ def _row(r, arts, job, run=0, eager=True) -> str:
             verdict_class = ("skip" if v.upper().startswith("SKIP")
                              else "apply" if v.upper().startswith("APPLY") else "")
             screening = (
-                f'<details class="screening" open><summary>'
+                f'<details class="screening"><summary>'
                 f'<span class="v {verdict_class}">{_h.escape(v.replace("_", " "))}</span>'
                 f'<span class="lbl">screening</span></summary>'
                 f'<div class="md">{_md(body)}</div></details>')

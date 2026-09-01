@@ -1320,6 +1320,40 @@ def regate(con) -> int:
     return n
 
 
+def pump(db_path=None, base=None, config_path=None) -> int:
+    """Start queued jobs until `MAX_RUNNING` of them are going. Returns how
+    many it started.
+
+    The cap used to be applied at the door: ask for nine screens and three
+    started and six were refused, while the dialog that took the click said
+    "the rest queue". They did not queue. Selecting nine roles and getting
+    three is worse than useless, because the six that bounced look identical
+    to six that were never asked for.
+
+    So the cap now limits what RUNS, and everything asked for is accepted and
+    waits its turn. Called after enqueueing and again as each job ends, so the
+    queue drains itself without anything polling.
+    """
+    con = store.connect(db_path)
+    try:
+        started = 0
+        while True:
+            busy = store.busy_uids(con)
+            if len(busy) >= MAX_RUNNING:
+                return started
+            row = store.next_pending(con, exclude_uids=busy)
+            if row is None:
+                return started
+            # The lock decides, not the count read a moment ago: two pumps can
+            # run at once, one from a click and one from a job finishing.
+            if not store.claim(con, f"generate:{row['uid']}"):
+                continue
+            spawn(row["id"], db_path=db_path, base=base, config_path=config_path)
+            started += 1
+    finally:
+        con.close()
+
+
 def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
     """Run a job on a daemon thread so the click returns immediately."""
     def work():
@@ -1358,5 +1392,12 @@ def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
                         store.release(con, f"generate:{row['uid']}")
                 finally:
                     con.close()
+            # A slot just came free, so take the next thing off the queue.
+            # Nothing polls: the queue drains on the back of the job that
+            # freed the space.
+            try:
+                pump(db_path=db_path, base=base, config_path=config_path)
+            except Exception:
+                pass
 
     threading.Thread(target=work, daemon=True).start()

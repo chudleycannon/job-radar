@@ -857,9 +857,33 @@ def enqueue(con, uid, kind) -> int:
     return cur.lastrowid
 
 
-def next_pending(con):
-    return con.execute("SELECT * FROM jobs WHERE state='pending' "
-                       "ORDER BY id LIMIT 1").fetchone()
+def next_pending(con, exclude_uids=()):
+    """The oldest queued job, oldest first, skipping roles already busy.
+
+    `exclude_uids` is how the pump avoids handing out a second job for a role
+    that already has one running: two runs write the same folder, which is the
+    collision the per-role lock exists to stop, and taking the lock only to
+    release it again would let one busy role block the whole queue behind it.
+    """
+    if not exclude_uids:
+        return con.execute("SELECT * FROM jobs WHERE state='pending' "
+                           "ORDER BY id LIMIT 1").fetchone()
+    marks = ",".join("?" * len(exclude_uids))
+    return con.execute(
+        f"SELECT * FROM jobs WHERE state='pending' AND uid NOT IN ({marks}) "
+        f"ORDER BY id LIMIT 1", tuple(exclude_uids)).fetchone()
+
+
+def pending_count(con) -> int:
+    return con.execute(
+        "SELECT COUNT(*) c FROM jobs WHERE state='pending'").fetchone()["c"]
+
+
+def busy_uids(con, prefix: str = "generate") -> list[str]:
+    """The roles holding a run lock right now."""
+    n = len(prefix) + 1
+    return [r["name"][n:] for r in con.execute(
+        "SELECT name FROM locks WHERE name LIKE ?", (f"{prefix}:%",))]
 
 
 def mark_job(con, job_id, state, error="", log="") -> None:
@@ -883,9 +907,11 @@ def reap_orphans(con, timeout_s: int = 900, restarted: bool = True) -> int:
     `running_count >= 1`, every later generation is refused too. One
     interrupted click silently disabled the whole feature.
 
-    Anything still marked running or pending when the server starts belongs to
-    a process that no longer exists. Anything older than the generation
-    timeout is dead whatever started it.
+    Anything still marked RUNNING when the server starts belongs to a process
+    that no longer exists. Anything older than the generation timeout is dead
+    whatever started it. Pending rows are left alone: nothing is running them
+    yet, so there is nothing to orphan, and `runner.pump` starts them when a
+    slot frees.
 
     The two sweeps have to run in that order, and did not. The blanket one
     went first and matched every running and pending row unconditionally, so
@@ -909,9 +935,16 @@ def reap_orphans(con, timeout_s: int = 900, restarted: bool = True) -> int:
     ).rowcount
     if not restarted:
         return stale
+    # Running only. A pending row is a job that has NOT started: no thread,
+    # no subprocess, nothing to orphan, and `runner.pump` will pick it up as
+    # soon as a slot frees. Failing those was right when a click ran
+    # immediately and there was no queue behind it; with a queue it destroys
+    # exactly what the queue is for. Nine screens were asked for, three ran
+    # and six sat pending, and a restart failed all nine with "the server
+    # restarted while this was running" on six that never had.
     n = con.execute(
         "UPDATE jobs SET state='failed', finished_at=?, error=? "
-        "WHERE state IN ('running','pending')",
+        "WHERE state='running'",
         (_now(), "interrupted: the server restarted while this was running. "
                  "Nothing was charged for the unfinished part; click again."),
     ).rowcount

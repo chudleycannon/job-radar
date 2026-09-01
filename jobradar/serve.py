@@ -443,19 +443,17 @@ class Handler(BaseHTTPRequestHandler):
             if len((row["description"] or "").strip()) < 200:
                 return None, ("this posting has no description, so there is "
                               "nothing to screen. Open the advert instead.")
-        # Nothing here reads a count and then decides. The old count-then-act
-        # lost to a double-click: two job rows for one role, two subprocesses
-        # in one directory, four artifact rows.
-        ok, why = store.claim_slot(con, "generate", uid, runner.MAX_RUNNING)
-        if not ok:
-            return None, why
-        try:
-            job_id = store.enqueue(con, uid, kind)
-        except Exception:
-            store.release(con, f"generate:{uid}")
-            raise
-        runner.spawn(job_id, db_path=self.db_path, base=self.docs_base,
-                     config_path=self.config_path)
+        # Queue it, then let the pump decide what runs. The cap belongs on
+        # what is RUNNING, not on what may be asked for: it used to sit here,
+        # so nine selected roles became three started and six refused while
+        # the dialog that took the click promised the rest would queue.
+        #
+        # `enqueue` is idempotent per role and kind, so a double-click returns
+        # the same job rather than a second one writing the same folder.
+        job_id = store.enqueue(con, uid, kind)
+        con.commit()
+        runner.pump(db_path=self.db_path, base=self.docs_base,
+                    config_path=self.config_path)
         return job_id, ""
 
     def do_POST(self):
@@ -594,15 +592,20 @@ class Handler(BaseHTTPRequestHandler):
                          "error": f"{len(uids)} roles asked for at once; "
                                   f"{BULK_LIMIT} is the most this will take "
                                   f"in one go"}, 400)
-                started, skipped = [], []
+                accepted, skipped = [], []
                 for one in uids:
                     if not isinstance(one, str):
                         continue
-                    ok, why = self._start_generation(con, one, kind)
-                    (started if ok else skipped).append(
-                        {"uid": one, "why": why} if not ok else one)
+                    job, why = self._start_generation(con, one, kind)
+                    if job:
+                        accepted.append(one)
+                    else:
+                        skipped.append({"uid": one, "why": why})
+                running = len(store.busy_uids(con))
                 return self._json({"ok": True, "kind": kind,
-                                   "started": started, "skipped": skipped})
+                                   "queued": accepted, "started": accepted,
+                                   "running": running,
+                                   "skipped": skipped})
             finally:
                 con.close()
 
