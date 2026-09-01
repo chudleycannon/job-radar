@@ -47,6 +47,17 @@ def _js() -> str:
 # one row and is why the page is not 60,000 nodes of controls nobody clicked.
 EAGER_ROWS = 60
 
+# The data attribute suffix for each kind of document, named explicitly rather
+# than derived from the kind.
+#
+# `cover_letter` became `data-open-cover_letter`, which the browser exposes as
+# `dataset.openCover_letter`, while the script asked for `openCoverLetter`.
+# The two never met, so on every lazy row the cover letter showed a plain
+# draft button instead of Download and Open, and clicking it would have paid
+# to write a second one. The suffixes have no underscores now, so the mapping
+# from attribute to dataset key is the identity.
+DOC_ATTR = {"screen": "screen", "cv": "cv", "cover_letter": "letter"}
+
 # Indexed by `eager`, so the marker is a lookup rather than an f-string that
 # has to escape its own quotes. See the comment where it is used.
 _LAZY_ATTR = {True: "", False: ' data-lazyacts="1"'}
@@ -772,9 +783,10 @@ function fillActs(row){
   // line: the screening is shown inline in a <details> and has no link there
   // at all, so reading the markup decided no screening existed and offered a
   // button that would pay to run it a second time.
-  const pair=(kind,label,made,cls)=>{
-    const href=row.dataset['open'+kind.replace(/_(.)/g,(m,c)=>c.toUpperCase())
-                                   .replace(/^./,c=>c.toUpperCase())];
+  const pair=(kind,label,made,attr,cls)=>{
+    // `attr` is the suffix from DOC_ATTR, capitalised. Not derived from the
+    // kind: deriving it is what silently lost the cover letter's buttons.
+    const href=row.dataset['open'+attr[0].toUpperCase()+attr.slice(1)];
     if(!href) return [btn('<button class="'+(cls||'')+'" data-gen="'+kind+'">'+label+'</button>')];
     const dl=document.createElement('a');
     dl.className='btn '+(cls||''); dl.href=href.replace('/open?','/download?');
@@ -791,9 +803,9 @@ function fillActs(row){
     if(kind!=='screen') out.push(btn('<button data-gen="'+kind+'" data-redraft="1" '
       +'title="Draft it again. This spends tokens.">Redraft</button>'));
     return out; };
-  for(const el of pair('screen','Screen','screening','primary')) d.appendChild(el);
-  for(const el of pair('cv','CV','CV')) d.appendChild(el);
-  if(cv){ for(const el of pair('cover_letter','Cover letter','letter')) d.appendChild(el); }
+  for(const el of pair('screen','Screen','screening','screen','primary')) d.appendChild(el);
+  for(const el of pair('cv','CV','CV','cv')) d.appendChild(el);
+  if(cv){ for(const el of pair('cover_letter','Cover letter','letter','letter')) d.appendChild(el); }
   else d.appendChild(btn('<button disabled title="Draft the CV first: the letter is checked against it for repeated phrasing">Cover letter</button>'));
   const a=document.createElement('a'); a.className='btn'; a.href=row.dataset.url||'#';
   a.target='_blank'; a.rel='noopener'; a.dataset.apply='1'; a.textContent='Apply';
@@ -1507,9 +1519,9 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         # at all, so a reader of the markup would have decided no screening
         # existed and offered to run it again.
         + "".join(
-            f'data-open-{k}="/open?path='
+            f'data-open-{suffix}="/open?path='
             f'{_h.escape(quote(str(arts[k]["path"])), quote=True)}" '
-            for k in ("screen", "cv", "cover_letter")
+            for k, suffix in DOC_ATTR.items()
             if arts.get(k) and arts[k]["path"])
         + f'data-settled="{1 if settled else 0}"'
         # The attribute is built outside the f-string on purpose. A backslash
