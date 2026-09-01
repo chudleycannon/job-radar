@@ -19,7 +19,6 @@ it looks for one mistake it can find reliably rather than pretending to be a
 
 import re
 import sys
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -47,8 +46,15 @@ def _offences(text: str):
 class SyntaxStaysInsideTheFloor(unittest.TestCase):
     def test_the_floor_is_still_what_this_test_assumes(self):
         # If the package ever requires 3.12, this whole test can go.
-        meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(meta["project"]["requires-python"], ">=3.10")
+        #
+        # Read with a regex, not `tomllib`, which is stdlib only from 3.11.
+        # The first version of this test imported it and failed to import on
+        # the very interpreter it exists to protect. The suite has to run on
+        # the floor, which is the whole point.
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        m = re.search(r'^requires-python\s*=\s*"([^"]+)"', text, re.M)
+        self.assertIsNotNone(m, "pyproject.toml declares no requires-python")
+        self.assertEqual(m.group(1), ">=3.10")
 
     def test_no_f_string_expression_contains_a_backslash(self):
         bad = []
