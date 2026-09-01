@@ -4,7 +4,7 @@
   "version": 6,
   "validated": "2026-08-25",
   "checked": "2026-08-25",
-  "boards": 17807
+  "boards": 17808
  },
  "sources": [
   {
@@ -24459,12 +24459,6 @@
    "country": "multi"
   },
   {
-   "company": "Nextdoor",
-   "url": "https://boards-api.greenhouse.io/v1/boards/nextdoor/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "country": "US"
-  },
-  {
    "company": "Abricare, Inc.",
    "url": "https://boards-api.greenhouse.io/v1/boards/abricareinc/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -25737,13 +25731,6 @@
    "country": "UK"
   },
   {
-   "company": "Lyft",
-   "url": "https://boards-api.greenhouse.io/v1/boards/lyft/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "sector": "healthcare",
-   "country": "US"
-  },
-  {
    "company": "Apparatus",
    "url": "https://boards-api.greenhouse.io/v1/boards/apparatus/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -26297,12 +26284,6 @@
   {
    "company": "Atrium Campus",
    "url": "https://boards-api.greenhouse.io/v1/boards/atriumcampus/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "country": "US"
-  },
-  {
-   "company": "Contentstack",
-   "url": "https://boards-api.greenhouse.io/v1/boards/contentstack/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "country": "US"
   },
@@ -29922,6 +29903,12 @@
    "platform": "greenhouse",
    "sector": "technology",
    "country": "multi"
+  },
+  {
+   "company": "Contentstack",
+   "url": "https://boards-api.greenhouse.io/v1/boards/contentstack/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "country": "US"
   },
   {
    "company": "Convene Hospitality Group",
@@ -33744,16 +33731,16 @@
    "country": "US"
   },
   {
-   "company": "Ghost Story Games",
-   "url": "https://boards-api.greenhouse.io/v1/boards/gsgcareers/jobs?content=true&pay_transparency=true",
-   "platform": "greenhouse",
-   "country": "US"
-  },
-  {
    "company": "Ghost",
    "url": "https://boards-api.greenhouse.io/v1/boards/ghost/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "finance",
+   "country": "US"
+  },
+  {
+   "company": "Ghost Story Games",
+   "url": "https://boards-api.greenhouse.io/v1/boards/gsgcareers/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
    "country": "US"
   },
   {
@@ -37907,6 +37894,13 @@
    "country": "US"
   },
   {
+   "company": "Lyft",
+   "url": "https://boards-api.greenhouse.io/v1/boards/lyft/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
+   "sector": "healthcare",
+   "country": "US"
+  },
+  {
    "company": "Lyft AV Depot",
    "url": "https://boards-api.greenhouse.io/v1/boards/lyft-av-depot/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -39813,6 +39807,12 @@
    "url": "https://boards-api.greenhouse.io/v1/boards/nextinsurance66/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
    "sector": "finance",
+   "country": "US"
+  },
+  {
+   "company": "Nextdoor",
+   "url": "https://boards-api.greenhouse.io/v1/boards/nextdoor/jobs?content=true&pay_transparency=true",
+   "platform": "greenhouse",
    "country": "US"
   },
   {
@@ -67424,6 +67424,12 @@
    "platform": "oracle",
    "sector": "media",
    "country": "US"
+  },
+  {
+   "company": "Microsoft",
+   "url": "https://apply.careers.microsoft.com/api/pcsx/search?domain=microsoft.com&query=&location=&start=0",
+   "platform": "pcsx",
+   "sector": "technology"
   },
   {
    "company": "1Komma5Grad",

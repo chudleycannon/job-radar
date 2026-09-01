@@ -345,6 +345,7 @@ def test_every_url_pattern_has_a_matching_sql_like():
         "https://acme.applytojob.com/apply/abc/engineering-manager",
         "https://jobs.jobvite.com/savers/job/oJVFAfwD",
         "https://fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1",
+        "https://apply.careers.microsoft.com/careers/job/1970393556981844",
     ]
     assert len(live) == len(enrich.URL_FETCHERS), \
         "a pattern was added without a real URL to check it against"

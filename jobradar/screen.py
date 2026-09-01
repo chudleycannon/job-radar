@@ -1208,7 +1208,12 @@ def city_of(location: str) -> str:
     """The town, where a posting names one. Empty when it does not."""
     if not location:
         return ""
-    first = re.split(r"[|/]", location)[0]
+    # `;` as well as `|` and `/`. A posting open in several places is written
+    # as a list by several boards, and PCSX writes "United Kingdom; Ireland".
+    # Without the semicolon the whole list survived the comma split and landed
+    # in the city column, where a list of countries sits exactly where a town
+    # would and reads as one. Same failure as Workday's "2 Locations".
+    first = re.split(r"[|/;]", location)[0]
     first = re.sub(r"^\s*(?:remote|hybrid|on[- ]?site)\s*[-–—:,]\s*", "", first, flags=re.I)
     part = first.split(",")[0].strip(" -–—")
     # Snowflake ship "US-CA-Menlo Park"; LinkedIn ship "London Area". Both are

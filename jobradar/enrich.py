@@ -593,6 +593,34 @@ def _from_rmk(url: str, session=None, timeout: int = 20) -> str:
 
 # Which fetcher handles which platform. A platform absent from here is one
 # whose list endpoint already carries the description.
+# Phenom PCSX. The search endpoint carries no advert at all, so every role off
+# a PCSX board arrives unscreened and this is the only thing that fixes that.
+# The tenant is a `domain` query parameter rather than part of the path, and
+# it is the registrable domain, not the host: apply.careers.microsoft.com asks
+# as microsoft.com.
+_PCSX_URL = re.compile(r"//([^/]*)/careers/job/(\d+)", re.I)
+
+
+def _from_pcsx(url: str, session=None, timeout: int = 20) -> str:
+    m = _PCSX_URL.search(url or "")
+    if not m:
+        return ""
+    host, position = m.groups()
+    domain = ".".join(host.split(".")[-2:])
+    get = (session or requests).get
+    try:
+        r = get(f"https://{host}/api/pcsx/position_details"
+                f"?position_id={position}&domain={domain}&hl=en",
+                timeout=timeout)
+        if r.status_code != 200:
+            return ""
+        body = r.json() or {}
+    except (requests.RequestException, ValueError):
+        return ""
+    data = body.get("data") or body
+    return _strip(data.get("jobDescription") or "")
+
+
 FETCHERS = {
     "linkedin": lambda u, s: fetch(u, session=s),
     "workday": _from_workday,
@@ -606,6 +634,7 @@ FETCHERS = {
     "oracle": _from_oracle,
     "avature": _from_avature,
     "rmk": _from_rmk,
+    "pcsx": _from_pcsx,
 }
 
 
@@ -657,6 +686,8 @@ URL_FETCHERS = (
      "%jobs.jobvite.com/%", _from_jobvite),
     (re.compile(r"/hcmUI/CandidateExperience/", re.I),
      "%/hcmUI/CandidateExperience/%", _from_oracle),
+    (re.compile(r"//[^/]*/careers/job/\d+", re.I),
+     "%/careers/job/%", _from_pcsx),
 )
 
 

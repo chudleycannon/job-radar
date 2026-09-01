@@ -591,6 +591,32 @@ REGISTRY: list[Platform] = [
              "`host|locale`, because Phenom has no tenant id at all",
     ),
     Platform(
+        "pcsx",
+        r"/api/pcsx/search",
+        platforms.parse_pcsx,
+        # The token is the host. PCSX keys the tenant off a `domain` query
+        # parameter rather than the path, and it is not derivable from the
+        # host: Microsoft serve from apply.careers.microsoft.com and identify
+        # themselves as microsoft.com.
+        build=lambda tok: (
+            lambda host, domain: (
+                f"https://{host}/api/pcsx/search"
+                f"?domain={domain}&query=&location=&start=0"
+            )
+        )(*(tok.split("|")
+            # Falling back to the last two labels, not to everything after the
+            # first: apply.careers.microsoft.com is microsoft.com, and
+            # `split(".", 1)[-1]` answers careers.microsoft.com, which the
+            # endpoint accepts and answers with an empty board.
+            + [".".join(tok.split("|")[0].split(".")[-2:])])[:2]),
+        verified=True,
+        note="Phenom's newer product and a different system from `phenom`: a "
+             "plain GET returning data.positions, no phApp.ddo and no "
+             "/widgets. Ten rows a page whatever `num` asks for, so a whole "
+             "board is count/10 requests; Microsoft is 212. The list carries "
+             "no advert text at all, so every role needs enrich",
+    ),
+    Platform(
         "rmk",
         r"jobs2web\.com/.*/search|/search/\?q=",
         platforms.parse_rmk,

@@ -7,8 +7,8 @@
 Watch employers' job boards directly, and only hear about the roles that pass
 your own filters.
 
-It reads 17,807 employer job boards straight from the applicant tracking
-systems companies run, normalises 21 board platforms into one shape, and drops
+It reads 17,808 employer job boards straight from the applicant tracking
+systems companies run, normalises 22 board platforms into one shape, and drops
 anything that fails rules you wrote down once. It is for one person running
 their own search on their own machine, and it is built to show you fewer
 things rather than more.
@@ -179,21 +179,21 @@ prints them again afterwards: one role to two lines, the score, the title, the
 company and either the stated salary or `unconfirmed`, with the role's id and
 location underneath. `job-radar serve` is that same list with buttons.
 
-**17,807 employer boards across 21 platforms**, plus four cross-employer
+**17,808 employer boards across 22 platforms**, plus four cross-employer
 feeds: LinkedIn, NHS Jobs and Workable's own search, which are keyword
 templates expanded against your titles, and Workable's recently-posted feed,
-which takes no keyword. That is what takes `sources/sources.json` to 17,811
+which takes no keyword. That is what takes `sources/sources.json` to 17,812
 entries. Roughly 4,100 of the boards are Greenhouse and 2,600 Ashby, then
 Workable, iCIMS, Workday, Personio, Breezy, Recruitee, SmartRecruiters and
 Oracle in the four figures or high hundreds, down to Pinpoint and
 SuccessFactors in the tens. Names you would recognise are on it: Barclays,
 Lloyds, Santander, BP, Shell, Unilever, Tesco, Marks & Spencer, John Lewis,
 Sky, Skyscanner, Accenture, Linklaters, Transport for London, Ofcom and the
-FCA among them. The code carries 29 adapters, five more than the bundled
+FCA among them. The code carries 30 adapters, five more than the bundled
 list uses.
 
 `job-radar coverage` counts the file rather than trusting that paragraph, and
-prints rather more than 17,811, because each of the three keyword templates
+prints rather more than 17,812, because each of the three keyword templates
 becomes one source per title, and per country for the one that takes a
 country. Where the list came from, and the two keyed aggregators you can add
 yourself, are in [docs/SOURCES.md](docs/SOURCES.md).
@@ -417,11 +417,11 @@ working arrangement anybody chooses.
 
 `sources.countries` narrows the list far less than the name suggests, and
 deliberately. It only drops a board whose country tag names somewhere else.
-Of the 17,811 sources, 5,214 carry no country tag at all and 1,597 are tagged
+Of the 17,812 sources, 5,215 carry no country tag at all and 1,597 are tagged
 `multi`, and both kinds survive whatever you set: "we could not tell" and
 "this employer is in several countries" are not evidence that the employer has
 nothing where you are, and a multinational is one of the likelier places to
-find a vacancy in your country. So `sources.countries: [UK]` leaves 7,745
+find a vacancy in your country. So `sources.countries: [UK]` leaves 7,746
 sources, not the 934 that carry a `UK` tag. It is a way to skip the boards you
 can prove are somewhere else, not a way to get a UK-only list, and the
 `locations` filters above are what actually decide where a role is. Run
@@ -475,7 +475,7 @@ so these are stated rather than left for you to find.
   flagged, read from the description. Most state nothing, and nothing here is
   filtered on it, so treat an unflagged role as unknown rather than as
   available.
-- **Sector filtering is only as good as the tags.** Of 17,811 sources, 6,089
+- **Sector filtering is only as good as the tags.** Of 17,812 sources, 6,090
   carry a sector tag and 11,722 carry none, because an address harvested from
   a crawl index does not say what industry the employer is in. A `sectors:`
   filter keeps every untagged source as well as the ones you asked for, so it

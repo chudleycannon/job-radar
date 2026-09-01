@@ -61,6 +61,46 @@ Three corollaries the codebase already applies:
   floor as though it shared one. The unknown case needs its own branch, and
   usually that branch is "show it and label it".
 
+## Adding or changing an adapter
+
+Two things are part of the change, not follow-up work.
+
+**1. Prove every field, not the row count.** A parser that returns the right
+number of rows with an empty column is this repo's signature failure and it
+has shipped repeatedly: `parse_workable` read a key the API has never sent, so
+2,094 boards stored postings with no location and no error, for months;
+iCIMS wrote locations in a second markup shape the pattern did not match, and
+Avature in three. A row count would have passed every time.
+
+So a new adapter arrives with a trimmed real payload in `tests/fixtures/` and
+a test asserting each field it claims to fill: **title, location, per-posting
+URL, posted date, department, salary where the platform states one**, and that
+the platform and company are carried. Assert distinct URLs and distinct uids
+too: a link two postings share is not the address of either, and uid derives
+from it. Where a field is deliberately left empty, as PCSX's description is,
+say so in a test rather than leaving the reader to wonder whether it broke.
+`tests/test_pcsx_adapter.py` is the shape to copy.
+
+Also add a `PAGE_SIZES` entry for any platform that caps a page. A board whose
+whole result is exactly one page is the signature of a paging bug, and that
+table is what makes it visible.
+
+**2. Rebuild the seed.** The published seed is built from the source list, so
+a new adapter reaches new users only when the seed is rebuilt. Two separate
+things have to be true:
+
+- The weekly `tools/refresh_seed.py` picks up new *sources* on platforms it
+  already reads, without anyone doing anything.
+- It does **not** pick up a new *platform*. The seed covers the slow phases
+  only, and a platform outside them is never in it however many employers use
+  it. Decide explicitly whether the new one belongs there, and say which in
+  the commit. Microsoft on PCSX is 212 requests for one employer, which is why
+  it is a scan-only source and not a seed one.
+
+After either, run `python3 tools/refresh_seed.py --dry-run` before the
+schedule does, because the freshness gate refuses a build under 80% of what is
+published and a new platform is exactly the kind of change that moves counts.
+
 ## Tests
 
 `tests/run_all.py` is what CI runs. It discovers every `tests/test_*.py` and
@@ -103,7 +143,7 @@ one function rather than the module.
   each place the code relies on that.
 - **Never run `generate` or `rank` to test something.** They call a paid model.
   Stub `runner.claude_bin` or `rank._call` and say so.
-- **Be polite to third parties.** There are 17,807 boards here and every one of
+- **Be polite to third parties.** There are 17,808 boards here and every one of
   them belongs to somebody. When you are probing or experimenting by hand, one
   request a second per host and stop after two failures. The scan itself is
   paced by `fetch.PER_HOST_RPS`, which is higher and is measured: see
@@ -140,8 +180,8 @@ while none of them was true. Derive it, or leave it in the run's own output.
 `meta.boards` in `sources/sources.json` is computed by `sources.save()` for
 exactly this reason.
 
-Current, if you need them for a comment: 17,807 employer boards, 17,811
-entries, 3 keyword templates, 21 board platforms in the data, 29 adapters
+Current, if you need them for a comment: 17,808 employer boards, 17,812
+entries, 3 keyword templates, 22 board platforms in the data, 30 adapters
 written.
 
 ## Style
