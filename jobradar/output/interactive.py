@@ -22,6 +22,15 @@ _MARK = _favicon_mark()
 
 from .html import _CSS, _cap_location, _SECTORS, _MODES, safe_url
 
+# How many rows are written with their action buttons already in them.
+#
+# Enough to cover the first screenful several times over, so a reader who
+# never scrolls never sees a button appear. Everything past this gets them
+# from `fillActs` on hover or focus, which is a fraction of a millisecond for
+# one row and is why the page is not 60,000 nodes of controls nobody clicked.
+EAGER_ROWS = 60
+
+
 _EXTRA_CSS = """
 /* Actions. Kept quiet: the row is the content, these are what you do to it. */
 .acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
@@ -72,6 +81,53 @@ const $=s=>document.querySelector(s), toast=$('#toast');
 // score like everything else, so a skipped role you already dismissed sat at
 // the top of the board every time you refreshed.
 let f='open', secs=new Set(), modes=new Set(), country='', city='';
+
+// The board reloads itself when a screen or a CV finishes, to show the new
+// document. Every reload threw the reader back to Open with no sector, no
+// country and no city: you filtered down to eleven roles, paid to screen one,
+// and landed back on four thousand. The reload is the right behaviour; losing
+// where you were is not.
+//
+// sessionStorage rather than the URL: this is where one reader is looking,
+// not a view worth sharing, and a link that carries somebody else's filters
+// is a different kind of surprise. Wrapped, because a browser told to block
+// site data throws on the accessor itself rather than returning nothing.
+const VIEW_KEY='job-radar:view';
+function saveView(){
+  try{ sessionStorage.setItem(VIEW_KEY, JSON.stringify({
+    f, secs:[...secs], modes:[...modes], country, city,
+    sort:(document.querySelector('#fsort')||{}).value||''})); }catch(e){}}
+function loadView(){
+  let v=null;
+  try{ v=JSON.parse(sessionStorage.getItem(VIEW_KEY)||'null'); }catch(e){}
+  if(!v) return;
+  // Each one guarded on its own. A filter for a city that no longer has a
+  // role in it would otherwise restore an empty board and read as a scan
+  // that found nothing.
+  const has=(sel,val)=>!!document.querySelector(sel+' [value="'+CSS.escape(val)+'"]');
+  if(v.f) { const b=document.querySelector('.seg button[data-f="'+CSS.escape(v.f)+'"]');
+            if(b){ document.querySelectorAll('.seg button').forEach(o=>o.setAttribute('aria-selected','false'));
+                   b.setAttribute('aria-selected','true'); f=v.f; } }
+  if(v.country && has('#fcountry', v.country)){ country=v.country;
+    const s=document.querySelector('#fcountry'); if(s) s.value=country; }
+  if(v.city && has('#fcity', v.city)){ city=v.city;
+    const s=document.querySelector('#fcity'); if(s) s.value=city; }
+  for(const x of (v.secs||[])) secs.add(x);
+  for(const x of (v.modes||[])) modes.add(x);
+  // Only chips that are still on the page. A sector whose last role went
+  // settled has no chip this time round, and a set holding a key nothing can
+  // clear is a filter the reader cannot see or switch off.
+  const live=new Set(), liveModes=new Set();
+  for(const b of document.querySelectorAll('.chips button')){
+    const key=b.dataset.sec||b.dataset.mode;
+    const set=b.dataset.sec?live:liveModes;
+    set.add(key);
+    if((b.dataset.sec?secs:modes).has(key)) b.setAttribute('aria-pressed','true'); }
+  for(const x of [...secs]) if(!live.has(x)) secs.delete(x);
+  for(const x of [...modes]) if(!liveModes.has(x)) modes.delete(x);
+  const sort=document.querySelector('#fsort');
+  if(sort && v.sort){ const ok=[...sort.options].some(o=>o.value===v.sort);
+                      if(ok) sort.value=v.sort; }}
 
 function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
   clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove('show'),ms);}
@@ -126,6 +182,7 @@ function apply(){let n=0;
     const ok = viewOk && okSec && okMode && okCtry && okCity;
     r.hidden=!ok; if(ok)n++;}
   paintCounts(cSec,cMode,cCountry,cCity);
+  saveView();
   $('#empty').hidden=n>0; $('#list').hidden=n===0;}
 
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
@@ -224,6 +281,7 @@ function resort(){
 (function(){
   const sel=$('#fsort');
   if(sel) sel.onchange=()=>{resort(); apply();};
+  loadView();
   resort(); apply();})();
 
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
@@ -375,6 +433,45 @@ function fillStatus(sel){
     sel.appendChild(o); }
   sel.dataset.filled='1';
   sel.value=cur; }
+// The same argument as fillStatus, one level up: the whole action bar is
+// absent from every row past EAGER_ROWS and built here the moment the row is
+// touched. Kept in step with the Python that writes the eager ones by
+// tests/test_dashboard_lazy_actions.py, because two renderers of one control
+// is a drift that has already cost this dashboard a working status menu.
+function fillActs(row){
+  if(!row || !row.dataset.lazyacts) return;
+  delete row.dataset.lazyacts;
+  const cv=row.dataset.hascv==='1', settled=row.dataset.settled==='1';
+  const st=row.dataset.status||'';
+  const d=document.createElement('div'); d.className='acts';
+  const btn=(html)=>{const s=document.createElement('span');s.innerHTML=html;return s.firstChild;};
+  d.appendChild(btn('<button class="primary" data-gen="screen">Screen</button>'));
+  d.appendChild(btn('<button data-gen="cv">CV</button>'));
+  d.appendChild(btn(cv ? '<button data-gen="cover_letter">Cover letter</button>'
+    : '<button disabled title="Draft the CV first: the letter is checked against it for repeated phrasing">Cover letter</button>'));
+  const a=document.createElement('a'); a.className='btn'; a.href=row.dataset.url||'#';
+  a.target='_blank'; a.rel='noopener'; a.dataset.apply='1'; a.textContent='Apply';
+  d.appendChild(a);
+  d.appendChild(btn('<button data-status="skipped">Skip</button>'));
+  if(settled) d.appendChild(btn('<button data-status="interested">Unskip</button>'));
+  const sel=document.createElement('select');
+  sel.className='setstatus'; sel.setAttribute('aria-label','Set status');
+  sel.dataset.current=st;
+  const ph=document.createElement('option'); ph.value=''; ph.textContent=(st||'Status')+'\u2026';
+  sel.appendChild(ph); d.appendChild(sel);
+  d.appendChild(btn('<button data-note="1" title="Add or edit a note">Note</button>'));
+  const err=row.querySelector('.err');
+  row.insertBefore(d, err || null); }
+document.addEventListener('pointerover', e=>{
+  const row=e.target.closest && e.target.closest('.row'); if(row) fillActs(row); }, true);
+document.addEventListener('focusin', e=>{
+  const row=e.target.closest && e.target.closest('.row'); if(row) fillActs(row); });
+// A click that lands before the hover handler has run still has to work: a
+// touch screen has no hover at all, and a row whose buttons were never built
+// would swallow the tap in silence.
+document.addEventListener('pointerdown', e=>{
+  const row=e.target.closest && e.target.closest('.row'); if(row) fillActs(row); }, true);
+
 document.addEventListener('pointerdown', e=>{
   const sel=e.target.closest('select.setstatus'); if(sel) fillStatus(sel); }, true);
 document.addEventListener('focusin', e=>{
@@ -752,7 +849,7 @@ def render(con, home_currency: str = "") -> str:
   <label><span>Country</span><select id="fcountry" aria-label="Country">{countries}</select></label>
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
-<div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run) for r in rows)}</div>
+<div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run, eager=i < EAGER_ROWS) for i, r in enumerate(rows))}</div>
 {_empty}
 <footer>{_floor}Nothing is generated
 unless you click for it.</footer>
@@ -778,7 +875,7 @@ def _flags(row) -> list:
     return out if isinstance(out, list) else []
 
 
-def _row(r, arts, job, run=0) -> str:
+def _row(r, arts, job, run=0, eager=True) -> str:
     settled = r["status"] in store.SETTLED
     paid = bool(r["salary_confirmed"])
     meta = " \u00b7 ".join(x for x in [r["company"], _cap_location(r["location"] or "")] if x)
@@ -863,6 +960,42 @@ def _row(r, arts, job, run=0) -> str:
                   '<button disabled title="Draft the CV first: the letter is '
                   'checked against it for repeated phrasing">Cover letter</button>')
 
+    # The action buttons are the page. Nine controls a row over 4,191 rows is
+    # ~60,000 nodes and most of a 7.2MB document, all of it built before the
+    # browser will paint, for rows nobody has scrolled to. So they are written
+    # for the rows that open on screen and built by `fillActs` for the rest,
+    # on hover or focus, from the data attributes below.
+    # The action buttons are the page's weight. Nine controls a row across
+    # 4,191 rows is most of a 7.2MB document and ~60,000 nodes, every one of
+    # them built before the browser will paint, for rows nobody has scrolled
+    # to. So they are written for the rows that open on screen and built by
+    # `fillActs` for the rest, on hover or focus, out of the data attributes
+    # the row already carries.
+    acts = (
+        '<div class="acts">'
+        + b("screen", "Screen", "primary")
+        + b("cv", "CV")
+        + letter_btn
+        + f'<a class="btn" href="{_h.escape(safe_url(r["url"]))}" target="_blank" '
+          f'rel="noopener" data-apply="1">Apply</a>'
+        + '<button data-status="skipped">Skip</button>'
+        + ('<button data-status="interested">Unskip</button>' if settled else '')
+        # The dashboard offered two of the ten statuses and no note, while the
+        # CLI had all ten and a note, so the browser could not record an
+        # interview date, the thing a tracker is for.
+        #
+        # The options are not here either: ten a row was 43,600 <option> nodes
+        # and 2.3MB on its own. `fillStatus` adds them on first interaction,
+        # and the current status rides on the element so `mark()` can read it
+        # without them existing.
+        + f'<select class="setstatus" aria-label="Set status" '
+          f'data-current="{_h.escape(r["status"] or "")}">'
+        + f'<option value="">{_h.escape(r["status"] or "Status")}\u2026</option>'
+        + '</select>'
+        + '<button data-note="1" title="Add or edit a note">Note</button>'
+        + '</div>'
+    )
+
     return (
         f'<div class="row{" settled" if settled else ""}" data-uid="{_h.escape(r["uid"], quote=True)}" '
         f'data-status="{_h.escape(r["status"], quote=True)}" '
@@ -883,7 +1016,13 @@ def _row(r, arts, job, run=0) -> str:
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
         f'data-mode="{_h.escape(r["work_mode"] or "unstated", quote=True)}" '
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '
-        f'data-city="{_h.escape(r["city"] or "", quote=True)}">'
+        f'data-city="{_h.escape(r["city"] or "", quote=True)}" '
+        # Read by `fillActs` to build this row's buttons when it is first
+        # hovered or focused. Cheap attributes, against ~14 elements each.
+        f'data-url="{_h.escape(safe_url(r["url"]), quote=True)}" '
+        f'data-hascv="{1 if has_cv else 0}" '
+        f'data-settled="{1 if settled else 0}"'
+        f'{"" if eager else " data-lazyacts=\"1\""}>'
         f'<div><div class="role">'
         f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
         f'{status_pill}</div>'
@@ -898,30 +1037,6 @@ def _row(r, arts, job, run=0) -> str:
         + fitline
         + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
         + screening
-        + '<div class="acts">'
-        + b("screen", "Screen", "primary")
-        + b("cv", "CV")
-        + letter_btn
-        + f'<a class="btn" href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener" '
-          f'data-apply="1">Apply</a>'
-        + '<button data-status="skipped">Skip</button>'
-        + ('<button data-status="interested">Unskip</button>' if settled else '')
-        # The dashboard offered two of the ten statuses and no note, while the
-        # CLI had all ten and a note, so the browser could not record an
-        # interview date -- the thing a tracker is for.
-        # Rendered EMPTY on purpose, and filled on first interaction.
-        #
-        # Ten options per row is 43,600 <option> nodes on a 4,362-role board,
-        # 2.3MB of a 9MB page, and the browser builds every one of them before
-        # it will paint. The dashboard was unresponsive for seconds on load
-        # and the reason was a control nobody had touched yet. The current
-        # status is carried on the element so `mark()` and the fill can both
-        # read it without the options existing.
-        + f'<select class="setstatus" aria-label="Set status" '
-          f'data-current="{_h.escape(r["status"] or "")}">'
-        + f'<option value="">{_h.escape(r["status"] or "Status")}\u2026</option>'
-        + '</select>'
-        + '<button data-note="1" title="Add or edit a note">Note</button>'
-        + '</div>'
+        + (acts if eager else "")
         + (f'<div class="err" hidden></div>')
         + '</div>')
