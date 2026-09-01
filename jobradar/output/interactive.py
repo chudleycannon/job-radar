@@ -739,8 +739,12 @@ function fillActs(row){
     const open=document.createElement('a');
     open.className='btn'; open.href=href; open.title='Show it in Finder';
     open.textContent='Open';
-    return [dl, open, btn('<button data-gen="'+kind+'" data-redraft="1" '
-      +'title="Draft it again. This spends tokens.">Redraft</button>')]; };
+    const out=[dl, open];
+    // See the Python beside this: a screening reads an advert that has not
+    // changed, so there is nothing to gain from a second one.
+    if(kind!=='screen') out.push(btn('<button data-gen="'+kind+'" data-redraft="1" '
+      +'title="Draft it again. This spends tokens.">Redraft</button>'));
+    return out; };
   for(const el of pair('screen','Screen','screening','primary')) d.appendChild(el);
   for(const el of pair('cv','CV','CV')) d.appendChild(el);
   if(cv){ for(const el of pair('cover_letter','Cover letter','letter')) d.appendChild(el); }
@@ -1349,10 +1353,14 @@ def _row(r, arts, job, run=0, eager=True) -> str:
                     f'the browser\'s upload dialog opens">Download {made or label}</a>'
                     f'<a class="btn" href="/open?path={href}" '
                     f'title="Show it in Finder">Open</a>'
-                    # Redrafting is still one click, it just is not the same
-                    # click. It confirms, because it spends.
-                    f'<button data-gen="{kind}" data-redraft="1" '
-                    f'title="Draft it again. This spends tokens.">Redraft</button>')
+                    # Only where redoing it could give a different answer. A
+                    # screening is a reading of an advert that has not
+                    # changed, so a second one costs money to reach the same
+                    # conclusion; a CV or a letter is a draft, and a draft is
+                    # a thing you might want another go at.
+                    + (f'<button data-gen="{kind}" data-redraft="1" '
+                       f'title="Draft it again. This spends tokens.">Redraft</button>'
+                       if kind in ("cv", "cover_letter") else ""))
         return f'<button class="{cls}" data-gen="{kind}">{label}</button>'
 
     letter_btn = (b("cover_letter", "Cover letter", made="letter") if has_cv else

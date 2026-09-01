@@ -42,6 +42,14 @@ class ExistingDocumentsOpen(unittest.TestCase):
         for kind in ("screen", "cv", "cover_letter"):
             self.assertIn(f"pair('{kind}'", js, f"{kind} can still be redone by accident")
 
+    def test_a_screening_is_not_offered_a_redraft(self):
+        # It reads an advert that has not changed, so a second one costs money
+        # to reach the same conclusion. A CV is a draft, and a draft is a thing
+        # you might want another go at.
+        self.assertIn("if(kind!=='screen')", _fill_acts())
+        b = SRC[SRC.index("    def b(kind, label"):SRC.index("    letter_btn = ")]
+        self.assertIn('kind in ("cv", "cover_letter")', b)
+
     def test_a_lazy_row_decides_from_the_artifacts_not_the_markup(self):
         # The screening has no link in the documents row, so reading the
         # markup would have offered to run it a second time.

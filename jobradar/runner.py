@@ -710,6 +710,16 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
 
         expected = {"cv": "CV.md", "cover_letter": "cover-letter.md",
                     "screen": "screening.md"}[job["kind"]]
+        # Before the gates read it, so what is checked is what is filed.
+        if job["kind"] in ("cv", "cover_letter") and (d / expected).exists():
+            f = d / expected
+            try:
+                raw = f.read_text(encoding="utf-8")
+                fixed = tidy_case(raw)
+                if fixed != raw:
+                    f.write_text(fixed, encoding="utf-8")
+            except OSError:
+                pass
         if not (d / expected).exists():
             store.mark_job(
                 con, job_id, "failed",
@@ -921,6 +931,46 @@ _QUALIFIERS = re.compile(
     r"cross.?functional|end.?to.?end)\b", re.I)
 
 _NUMBER = re.compile(r"(?<![\w.])\d[\d,.]*\s?[%kKmMbB]?(?![\w])")
+
+
+# Words that are lower case on purpose, and stay that way at the start of a
+# line. The list is short because the rule below only fires on a run of plain
+# letters: anything with a digit or an internal capital (n8n, iOS, macOS,
+# eBay, gRPC) is skipped without needing an entry here.
+_KEEPS_LOWER = frozenset({"npm", "pip", "sudo", "curl", "ssh", "git", "vim",
+                          "bash", "zsh", "ffmpeg", "jq", "kubectl", "systemd"})
+
+
+def tidy_case(text: str) -> str:
+    """Capitalise the first word of a line, and of a `**Label:**` list.
+
+    A CV whose skills read "**Leadership:** managing team leads" looks like
+    somebody stopped mid-sentence. The source CV had it and the drafts
+    faithfully reproduced it, which is the point: the model copies the shape
+    of what it is given, so this is not something to ask it for politely. Do
+    it after the draft and it is right every time and costs nothing.
+
+    Deliberately narrow. Only a first word of plain lower-case letters is
+    touched, and the run has to END the word: "n8n" and "macOS" are skipped
+    because a digit or a capital follows the letters, so they are left alone
+    by the shape of the token rather than by a list, and `_KEEPS_LOWER` covers the few
+    real words that are conventionally lower case. Nothing inside a line
+    moves: the last hand-pass over this CV title-cased things that were not
+    titles, and over-capitalising is the more embarrassing failure of the two.
+    """
+    def up(m):
+        word = m.group("w")
+        if word.lower() in _KEEPS_LOWER:
+            return m.group(0)
+        return m.group("pre") + word[0].upper() + word[1:]
+
+    # After a bold label: "**Leadership:** managing" -> "Managing".
+    text = re.sub(r"(?P<pre>\*\*[^*\n]+:\*\*\s+)(?P<w>[a-z]+)(?![A-Za-z0-9])",
+                  up, text)
+    # Start of a line, including a bullet or a numbered item.
+    text = re.sub(r"(?P<pre>^(?:[-*+]\s+|\d+\.\s+)?)(?P<w>[a-z]+)(?![A-Za-z0-9])",
+                  up, text, flags=re.M)
+    return text
 
 
 def _invented(doc: str, source: str) -> list[str]:
