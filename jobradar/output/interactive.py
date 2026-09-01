@@ -49,6 +49,16 @@ EAGER_ROWS = 60
 
 
 _EXTRA_CSS = """
+/* The row the reload was for. Fades rather than staying marked, because a
+   highlight that never clears becomes part of the furniture. */
+.row.justdone{background:var(--surface-2);
+  box-shadow:inset 3px 0 0 0 var(--accent);
+  animation:justdone 12s ease-out forwards}
+@keyframes justdone{0%,85%{background:var(--surface-2)}100%{background:transparent}}
+@media (prefers-reduced-motion: reduce){.row.justdone{animation:none}}
+
+.gateok{color:var(--muted);font-size:.75rem}
+
 .jobprog{grid-column:1/-1;margin-top:var(--s2);font-size:.8125rem;
   color:var(--accent);font-variant-numeric:tabular-nums}
 
@@ -500,6 +510,81 @@ function fillStatus(sel){
     sel.appendChild(o); }
   sel.dataset.filled='1';
   sel.value=cur; }
+// What finished, after the reload that shows it.
+//
+// The board reloads to pick the new document up, and the reload threw away
+// the only sign anything had happened. "It finished" is not the answer the
+// reader wants either: they want to know whether it WORKED, which is the
+// rating and the gates, and both are already rendered on the row. So the row
+// is found, scrolled to, marked, and its own docs line is read back.
+(function(){
+  let done=null;
+  try{ done=JSON.parse(sessionStorage.getItem('job-radar:finished')||'null');
+       sessionStorage.removeItem('job-radar:finished'); }catch(e){}
+  if(!done || !done.length) return;
+  // Runs here, at the bottom of the script, and that position is the fix.
+  // On DOMContentLoaded it fired before `resort()` had reordered the rows,
+  // and reordering the DOM resets the scroll: the reader was put back at the
+  // top with the row unmarked, which looks exactly like nothing happening.
+  // Calling it from the init block above does not work either, because that
+  // block runs before this one has defined anything.
+  let pending=null;
+  const announce=()=>{
+    const first=done[0];
+    const row=document.querySelector('.row[data-uid="'+CSS.escape(first.uid)+'"]');
+    if(!row){ say('Finished, but that role is not on this view.', 6000); return; }
+    // The row may be hidden by the current filter, which is its own answer:
+    // scrolling to something display:none does nothing and looks like the
+    // click was ignored.
+    if(row.hidden){ say('Finished. The role is hidden by your current filter.', 7000); return; }
+    row.classList.add('justdone');
+    // The browser restores the previous scroll position on a reload, and it
+    // does it AFTER this script runs, so scrolling here was undone a frame
+    // later and the reader stayed at the top. Told not to restore, and the
+    // scroll deferred a frame so it lands after the last layout of the load.
+    try{ history.scrollRestoration='manual'; }catch(e){}
+    // No automatic scroll. It was tried and it does not survive this page:
+    // the browser restores the old scroll position after the script runs, and
+    // `content-visibility` means the rows above have never been laid out, so
+    // the document reflows under the jump as their real heights resolve and
+    // the row drifts off screen again. Measured at 883px above the viewport a
+    // moment after landing on it.
+    //
+    // So the toast carries the jump instead. A scroll the reader asks for
+    // happens after layout has settled and lands every time, and it does not
+    // yank the page out from under someone who was already reading something
+    // else. Same reasoning as the boot overlay: better to say plainly what
+    // happened than to move things and hope.
+    pending=row;
+    const docs=row.querySelector('.docs');
+    const title=(row.querySelector('.role a')||{}).textContent||'the role';
+    const name={screen:'Screening',cv:'CV',cover_letter:'Cover letter'}[first.kind]||first.kind;
+    // Read back what the row itself says, rather than a second copy of the
+    // outcome that could disagree with it.
+    const detail=docs ? docs.textContent.replace(/\s+/g,' ').trim() : '';
+    say(name+' done for '+title.slice(0,48)+(detail?' \u2014 '+detail:'')
+        +'  \u2014  click to show it', 14000);
+  };
+  // The toast is the control. It stays up long enough to be clicked and
+  // clears itself either way.
+  const toast=$('#toast');
+  if(toast){ toast.style.cursor='pointer'; toast.title='Jump to the role';
+    toast.addEventListener('click', ()=>{
+      if(!pending) return;
+      // Filtered to, not scrolled to. `scrollIntoView` on a board this tall
+      // computes against `content-visibility` estimates for every row above
+      // and lands in the wrong place; hiding the rest puts the role at the
+      // top of the list with no arithmetic at all. Any tab or chip puts the
+      // board back, because `apply()` owns `hidden` and will overwrite this
+      // on its next pass.
+      for(const r of document.querySelectorAll('.row')) r.hidden = r!==pending;
+      $('#empty').hidden=true; $('#list').hidden=false;
+      window.scrollTo(0,0);
+      toast.classList.remove('show');
+      say('Showing that one role. Pick a tab to go back to the board.', 8000); }); }
+  announce();
+})();
+
 // ------------------------------------------------------- job progress
 // A drafting run is a draft, a set of quality gates and up to two revisions,
 // which on this machine is a median of about eight minutes. The row showed a
@@ -785,10 +870,16 @@ async function poll(){
         progressOn(row, j, d.typical||{}, d.now);
       }else if(j){
         e.hidden=true; e.textContent=''; progressOff(row);}}
-    const done=d.jobs.some(j=>j.state==='done');
-    if(done){ clearInterval(polling); polling=null;
-              say('Done. Reloading to show the documents.');
-              setTimeout(()=>location.reload(),900); return;}
+    const finished=d.jobs.filter(j=>j.state==='done');
+    if(finished.length){ clearInterval(polling); polling=null;
+      // Remember WHICH role finished across the reload. Without this the
+      // page came back with a toast already gone, no scroll position, and the
+      // result sitting somewhere in four thousand rows: the job had worked
+      // and there was no way to tell without hunting for the row.
+      try{ sessionStorage.setItem('job-radar:finished',
+             JSON.stringify(finished.map(j=>({uid:j.uid,kind:j.kind})))); }catch(e){}
+      say('Done. Reloading to show the documents.');
+      setTimeout(()=>location.reload(),900); return;}
     if(!anyBusy && d.jobs.length===0){clearInterval(polling);polling=null;}
   },2500);}
 
@@ -1110,9 +1201,27 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         a = arts["cv"]
         rating = (f'<span class="rating">{a["rating"]:.0f}/100</span>'
                   if a["rating"] else "")
-        fails = [k for k, v in json.loads(a["gates"] or "{}").items() if v is False]
-        gate = (f'<span class="gatefail">{len(fails)} gate(s) failed</span>'
-                if fails else "")
+        gates_j = json.loads(a["gates"] or "{}")
+        fails = [k for k, v in gates_j.items() if v is False]
+        # Name them. "1 gate(s) failed" is a number the reader cannot act on:
+        # it does not say which rule, so the only way to find out was to open
+        # the rating file. The failing gate is usually the reason to look at
+        # the document at all.
+        _GATE_NAMES = {
+            "written": "nothing was written",
+            "no_em_dash": "contains an em-dash",
+            "unsourced_specifics": "figures not in your CV",
+            "natural_writing": "reads as AI-written",
+            "no_overlap_with_cv": "repeats the CV",
+        }
+        if fails:
+            label = ", ".join(_GATE_NAMES.get(k, k.replace("_", " ")) for k in fails)
+            found = gates_j.get("unsourced_found") or []
+            tip = ("not in your CV: " + ", ".join(map(str, found))) if found else label
+            gate = (f'<span class="gatefail" '
+                    f'title="{_h.escape(tip, quote=True)}">{_h.escape(label)}</span>')
+        else:
+            gate = '<span class="gateok">all gates passed</span>' 
         docs.append(f'<a href="/open?path={_h.escape(quote(str(a["path"])), quote=True)}">CV</a> {rating} {gate}')
     if "cover_letter" in arts:
         a = arts["cover_letter"]

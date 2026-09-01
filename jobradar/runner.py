@@ -938,7 +938,15 @@ def _invented(doc: str, source: str) -> list[str]:
     and from dates. So this reports rather than blocks, and it is deliberately
     narrow: only tokens with no counterpart anywhere in the source.
     """
-    def norm(x): return x.lower().replace(",", "").rstrip(".")
+    # `.strip()` on both sides, and that is the whole of a bug worth naming.
+    # `_NUMBER` ends `\s?[%kKmMbB]?`, so a figure followed by a space keeps
+    # that space in the match: the source held "241441 " while the draft side
+    # stripped its token to "241441", the two never compared equal, and the
+    # gate reported Callum's own phone number as a figure his CV had invented.
+    # Every number in a source CV that happens to be followed by a space was
+    # unmatchable the same way. A gate that cries wolf is worse than no gate,
+    # because the next real invention is read as more noise.
+    def norm(x): return x.strip().lower().replace(",", "").rstrip(".")
     have = {norm(m.group(0)) for m in _NUMBER.finditer(source)}
     have |= {m.group(0).lower() for m in _QUALIFIERS.finditer(source)}
     out = []
