@@ -90,6 +90,16 @@ class ViewSurvivesAReload(unittest.TestCase):
         self.assertIn("try{", save)
         self.assertIn("catch", save)
 
+    def test_the_view_outlives_the_tab(self):
+        # sessionStorage was the first attempt. It survived the board's own
+        # reloads and lost the view every time the browser closed, which is
+        # most of when remembering it matters.
+        save = JS[JS.index("function saveView("):JS.index("function loadView(")]
+        load = JS[JS.index("function loadView("):JS.index("const VIEW", JS.index("function loadView(")) if False else JS.index("function loadView(")+900]
+        self.assertIn("localStorage", save)
+        self.assertIn("localStorage", load)
+        self.assertNotIn("sessionStorage", save)
+
     def test_a_restored_filter_must_still_exist_on_the_page(self):
         # A sector whose last role went settled has no chip this time. A set
         # holding a key nothing can clear is a filter that cannot be seen or

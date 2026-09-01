@@ -173,18 +173,21 @@ let f='open', secs=new Set(), modes=new Set(), country='', city='';
 // and landed back on four thousand. The reload is the right behaviour; losing
 // where you were is not.
 //
-// sessionStorage rather than the URL: this is where one reader is looking,
-// not a view worth sharing, and a link that carries somebody else's filters
-// is a different kind of surprise. Wrapped, because a browser told to block
+// localStorage, not the URL and not sessionStorage. Not the URL because this
+// is where one reader is looking rather than a view worth sharing, and a link
+// carrying somebody else's filters is its own surprise. Not sessionStorage,
+// which was the first attempt: it dies with the tab, so it survived the
+// board's own reloads and lost the view every time the browser was closed,
+// which is most of when it matters. Wrapped, because a browser told to block
 // site data throws on the accessor itself rather than returning nothing.
 const VIEW_KEY='job-radar:view';
 function saveView(){
-  try{ sessionStorage.setItem(VIEW_KEY, JSON.stringify({
+  try{ localStorage.setItem(VIEW_KEY, JSON.stringify({
     f, secs:[...secs], modes:[...modes], country, city,
     sort:(document.querySelector('#fsort')||{}).value||''})); }catch(e){}}
 function loadView(){
   let v=null;
-  try{ v=JSON.parse(sessionStorage.getItem(VIEW_KEY)||'null'); }catch(e){}
+  try{ v=JSON.parse(localStorage.getItem(VIEW_KEY)||'null'); }catch(e){}
   if(!v) return;
   // Each one guarded on its own. A filter for a city that no longer has a
   // role in it would otherwise restore an empty board and read as a scan
@@ -531,6 +534,10 @@ function fillStatus(sel){
 // rating and the gates, and both are already rendered on the row. So the row
 // is found, scrolled to, marked, and its own docs line is read back.
 (function(){
+  // sessionStorage here on purpose, unlike the view above. This is a
+  // one-shot handoff across a single reload in one tab; in localStorage it
+  // would announce a job that finished days ago the next time the board was
+  // opened anywhere.
   let done=null;
   try{ done=JSON.parse(sessionStorage.getItem('job-radar:finished')||'null');
        sessionStorage.removeItem('job-radar:finished'); }catch(e){}
