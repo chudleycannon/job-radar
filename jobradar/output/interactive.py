@@ -730,10 +730,16 @@ function fillActs(row){
     const href=row.dataset['open'+kind.replace(/_(.)/g,(m,c)=>c.toUpperCase())
                                    .replace(/^./,c=>c.toUpperCase())];
     if(!href) return [btn('<button class="'+(cls||'')+'" data-gen="'+kind+'">'+label+'</button>')];
+    const dl=document.createElement('a');
+    dl.className='btn '+(cls||''); dl.href=href.replace('/open?','/download?');
+    dl.setAttribute('download','');
+    dl.title='Save it to your Downloads folder, where the browser\'s upload '
+            +'dialog opens';
+    dl.textContent='Download '+made;
     const open=document.createElement('a');
-    open.className='btn '+(cls||''); open.href=href;
-    open.textContent='Open '+made;
-    return [open, btn('<button data-gen="'+kind+'" data-redraft="1" '
+    open.className='btn'; open.href=href; open.title='Show it in Finder';
+    open.textContent='Open';
+    return [dl, open, btn('<button data-gen="'+kind+'" data-redraft="1" '
       +'title="Draft it again. This spends tokens.">Redraft</button>')]; };
   for(const el of pair('screen','Screen','screening','primary')) d.appendChild(el);
   for(const el of pair('cv','CV','CV')) d.appendChild(el);
@@ -1338,7 +1344,11 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         art = arts.get(kind)
         if art and art["path"]:
             href = _h.escape(quote(str(art["path"])), quote=True)
-            return (f'<a class="btn {cls}" href="/open?path={href}">Open {made or label}</a>'
+            return (f'<a class="btn {cls}" href="/download?path={href}" '
+                    f'download title="Save it to your Downloads folder, where '
+                    f'the browser\'s upload dialog opens">Download {made or label}</a>'
+                    f'<a class="btn" href="/open?path={href}" '
+                    f'title="Show it in Finder">Open</a>'
                     # Redrafting is still one click, it just is not the same
                     # click. It confirms, because it spends.
                     f'<button data-gen="{kind}" data-redraft="1" '

@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import errno
 import json
+import re
 import sqlite3
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import html as _h
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from . import rank, runner, store
 from .output import interactive
@@ -33,6 +34,30 @@ MAX_BODY = 1 << 20
 # Not a technical limit: `MAX_RUNNING` is what bounds what actually runs, and
 # the rest queue. This is a guard against a mis-click on "select all" over a
 # four thousand row board turning into four thousand paid agent runs.
+_MIME = {".pdf": "application/pdf", ".md": "text/markdown; charset=utf-8",
+         ".txt": "text/plain; charset=utf-8",
+         ".docx": ("application/vnd.openxmlformats-officedocument"
+                   ".wordprocessingml.document")}
+
+
+def _download_name(company: str, title: str, kind: str, suffix: str) -> str:
+    """A filename you can find in a folder of downloads.
+
+    Every generated CV is called CV.pdf on disk, which is fine in a directory
+    named after the role and useless in ~/Downloads, where three of them
+    become CV.pdf, CV (1).pdf and CV (2).pdf. The employer and the role go in
+    front so the picker's own list is enough.
+    """
+    what = {"cv": "CV", "cover_letter": "Cover-letter",
+            "screen": "Screening"}.get(kind, kind)
+    def slug(s, n):
+        s = re.sub(r"[^\w\s-]", "", s or "").strip()
+        s = re.sub(r"[\s_]+", "-", s)
+        return s[:n].strip("-")
+    parts = [p for p in (slug(company, 28), slug(title, 40), what) if p]
+    return "-".join(parts) + suffix
+
+
 BULK_LIMIT = 40
 
 
@@ -232,6 +257,66 @@ class Handler(BaseHTTPRequestHandler):
                 })
             finally:
                 con.close()
+        if path.startswith("/download"):
+            # Serve the document as a download rather than revealing it in
+            # Finder.
+            #
+            # `open -R` puts a Finder window in front of you, which is the
+            # right answer when you want to look at the file and the wrong one
+            # when you are about to attach it: Chrome's upload dialog does not
+            # know about that window, so you are hunting through ninety
+            # `2026-09-01-company-role-hash` folders for `CV.pdf`. A download
+            # lands in ~/Downloads, which is where the picker already opens.
+            #
+            # The name matters as much as the route. Every generated CV is
+            # called CV.pdf, so downloading three of them gives you CV.pdf,
+            # CV (1).pdf and CV (2).pdf, and the picker's most useful column
+            # tells you nothing. The employer and the role go in the filename.
+            if not self._same_origin():
+                return self._json(
+                    {"ok": False, "error": "cross-origin request refused"}, 403)
+            from urllib.parse import parse_qs, unquote
+            q = parse_qs(urlparse(self.path).query)
+            p = Path(unquote((q.get("path") or [""])[0] or ""))
+            con = store.connect(self.db_path)
+            try:
+                row = con.execute(
+                    "SELECT a.kind, r.company, r.title FROM artifacts a "
+                    "JOIN roles r ON r.uid = a.uid WHERE a.path=? LIMIT 1",
+                    (str(p),)).fetchone()
+            finally:
+                con.close()
+            # The same allowlist by construction as /open: the path has to be
+            # one already recorded in `artifacts`, so no amount of traversal
+            # in the query string reaches anything else on the disk.
+            if not row:
+                return self._json(
+                    {"ok": False,
+                     "error": "that is not a document this tool made"}, 403)
+            if not p.exists():
+                return self._json({"ok": False, "error": "not found"}, 404)
+            try:
+                blob = p.read_bytes()
+            except OSError as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+            name = _download_name(row["company"], row["title"], row["kind"],
+                                  p.suffix)
+            self.send_response(200)
+            self.send_header("Content-Type", _MIME.get(p.suffix.lower(),
+                                                       "application/octet-stream"))
+            # ASCII only in the quoted form: a header is latin-1 and an
+            # employer called "Nestlé" would raise inside the handler and drop
+            # the connection. RFC 5987 carries the real one beside it.
+            ascii_name = name.encode("ascii", "ignore").decode() or "document"
+            self.send_header(
+                "Content-Disposition",
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{quote(name)}")
+            self.send_header("Content-Length", str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+            return
+
         if path.startswith("/open"):
             # Checked like a POST. It is a GET, but it runs `open -R` on a
             # path from the query string, so any page in the browser could
