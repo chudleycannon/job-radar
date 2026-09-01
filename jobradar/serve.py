@@ -19,13 +19,21 @@ import html as _h
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import runner, store
+from . import rank, runner, store
 from .output import interactive
 
 # Nothing this dashboard posts is large: the biggest body is a status plus a
 # note. A Content-Length beyond this is a mistake, and reading it would be
 # blocking on bytes that are not coming.
 MAX_BODY = 1 << 20
+
+
+# The most roles one bulk click will take.
+#
+# Not a technical limit: `MAX_RUNNING` is what bounds what actually runs, and
+# the rest queue. This is a guard against a mis-click on "select all" over a
+# four thousand row board turning into four thousand paid agent runs.
+BULK_LIMIT = 40
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -166,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
                 batches, tokens = rank_mod.estimate(rows)
                 return self._json({
                     "pending": len(rows), "batches": batches, "tokens": tokens,
-                    "screen_tokens": len(rows) * 60_000,
+                    "screen_tokens": len(rows) * rank.SCREEN_TOKENS,
                     "state": store.get_meta(con, "rank_state", "idle"),
                     "done": max(
                         int(store.get_meta(con, "rank_done", "0") or 0),
@@ -319,6 +327,42 @@ class Handler(BaseHTTPRequestHandler):
             return True                      # curl and same-origin form posts
         return origin.split("//")[-1] in allowed
 
+    def _start_generation(self, con, uid, kind):
+        """Queue one role. Returns (job_id, "") or (None, reason).
+
+        Shared by the single button and the bulk one so a role cannot be
+        accepted by one path and refused by the other. Every check here is a
+        refusal that costs nothing; the thing being guarded costs money.
+        """
+        if kind == "cover_letter" and not store.has_artifact(con, uid, "cv"):
+            return None, ("draft the CV first: the letter is checked against "
+                          "it for repeated phrasing")
+        if kind in ("screen", "cv", "cover_letter"):
+            # Not screen alone. A CV drafted against "_No description
+            # available from this source._" is a full agent run, a rating, and
+            # a document tailored to nothing.
+            row = con.execute("SELECT description FROM roles WHERE uid=?",
+                              (uid,)).fetchone()
+            if row is None:
+                return None, "no such role"
+            if len((row["description"] or "").strip()) < 200:
+                return None, ("this posting has no description, so there is "
+                              "nothing to screen. Open the advert instead.")
+        # Nothing here reads a count and then decides. The old count-then-act
+        # lost to a double-click: two job rows for one role, two subprocesses
+        # in one directory, four artifact rows.
+        ok, why = store.claim_slot(con, "generate", uid, runner.MAX_RUNNING)
+        if not ok:
+            return None, why
+        try:
+            job_id = store.enqueue(con, uid, kind)
+        except Exception:
+            store.release(con, f"generate:{uid}")
+            raise
+        runner.spawn(job_id, db_path=self.db_path, base=self.docs_base,
+                     config_path=self.config_path)
+        return job_id, ""
+
     def do_POST(self):
         if not self._same_origin():
             return self._json({"ok": False, "error": "cross-origin request refused"}, 403)
@@ -434,6 +478,39 @@ class Handler(BaseHTTPRequestHandler):
                         refresh=bool(data.get("refresh")))
             return self._json({"ok": True, "roles": len(rows)})
 
+        if path == "/api/generate/bulk":
+            con = store.connect(self.db_path)
+            try:
+                # One request, many roles, and a per-role answer. A bulk
+                # button that returns a single ok/failed is unusable: a
+                # shortlist where two roles have no description and one is
+                # already running has to say WHICH, or the reader has to open
+                # forty rows to find out what actually started.
+                kind = data.get("kind")
+                if not isinstance(kind, str) or kind not in runner.KINDS:
+                    return self._json({"ok": False, "error": "bad kind"}, 400)
+                uids = data.get("uids")
+                if not isinstance(uids, list) or not uids:
+                    return self._json(
+                        {"ok": False, "error": "no roles selected"}, 400)
+                if len(uids) > BULK_LIMIT:
+                    return self._json(
+                        {"ok": False,
+                         "error": f"{len(uids)} roles asked for at once; "
+                                  f"{BULK_LIMIT} is the most this will take "
+                                  f"in one go"}, 400)
+                started, skipped = [], []
+                for one in uids:
+                    if not isinstance(one, str):
+                        continue
+                    ok, why = self._start_generation(con, one, kind)
+                    (started if ok else skipped).append(
+                        {"uid": one, "why": why} if not ok else one)
+                return self._json({"ok": True, "kind": kind,
+                                   "started": started, "skipped": skipped})
+            finally:
+                con.close()
+
         uid = data.get("uid")
         # An unknown uid used to raise inside the handler and drop the
         # connection, so the browser's fetch rejected and the click silently
@@ -467,38 +544,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(kind, str) or kind not in runner.KINDS:
                     return self._json({"ok": False, "error": "bad kind"}, 400)
                 # The cover letter needs the CV to check itself against.
-                if kind == "cover_letter" and not store.has_artifact(con, uid, "cv"):
-                    return self._json(
-                        {"ok": False,
-                         "error": "draft the CV first: the letter is checked "
-                                  "against it for repeated phrasing"}, 409)
-                if kind in ("screen", "cv", "cover_letter"):
-                    # Not screen alone. A CV drafted against "_No description
-                    # available from this source._" is a full agent run, a
-                    # rating, and a document tailored to nothing.
-                    row = con.execute("SELECT description FROM roles WHERE uid=?",
-                                      (uid,)).fetchone()
-                    if len((row["description"] or "").strip()) < 200:
-                        return self._json(
-                            {"ok": False,
-                             "error": "this posting has no description, so there "
-                                      "is nothing to screen. Open the advert "
-                                      "instead."}, 409)
-                # Same reasoning. The old count-then-insert lost to a
-                # double-click: two job rows for one role, two subprocesses in
-                # one directory, four artifact rows. The button only disables
-                # after the first response comes back, so the window is real.
-                if not store.claim(con, "generate"):
-                    return self._json(
-                        {"ok": False, "error": "one generation at a time"}, 429)
-                try:
-                    job_id = store.enqueue(con, uid, kind)
-                except Exception:
-                    store.release(con, "generate")
-                    raise
-                runner.spawn(job_id, db_path=self.db_path, base=self.docs_base,
-                             config_path=self.config_path)
-                return self._json({"ok": True, "job": job_id, "kind": kind})
+                ok, why = self._start_generation(con, uid, kind)
+                if not ok:
+                    return self._json({"ok": False, "error": why},
+                                      429 if "running" in why else 409)
+                return self._json({"ok": True, "job": ok, "kind": kind})
         finally:
             con.close()
         self.send_error(404)

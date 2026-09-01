@@ -2055,7 +2055,7 @@ def cmd_rank(args) -> int:
         _say(f"{len(rows)} roles to rank, in {batches} call(s), roughly "
              f"{tokens:,} input tokens.")
         _say(f"Screening these one at a time would be about "
-             f"{len(rows) * 60_000:,}.")
+             f"{len(rows) * rank_mod.SCREEN_TOKENS:,}.")
         if args.dry_run:
             _say("dry run: nothing sent")
             return 0

@@ -22,6 +22,23 @@ _MARK = _favicon_mark()
 
 from .html import _CSS, _cap_location, _SECTORS, _MODES, safe_url
 
+
+def _js() -> str:
+    """The dashboard script with the three costs filled in.
+
+    Derived, never typed twice. `60_000` lived as a literal in three files
+    until one of them was wrong, and a page quoting a token cost the tool no
+    longer charges is worse than one quoting none: the reader budgets against
+    it. `tests/test_dashboard_bulk.py` fails if a placeholder survives.
+    """
+    from .. import rank
+    from ..runner import MAX_RUNNING
+    from ..serve import BULK_LIMIT
+    return (_JS.replace("%SCREEN_TOKENS%", str(rank.SCREEN_TOKENS))
+               .replace("%BULK_LIMIT%", str(BULK_LIMIT))
+               .replace("%MAX_RUNNING%", str(MAX_RUNNING)))
+
+
 # How many rows are written with their action buttons already in them.
 #
 # Enough to cover the first screenful several times over, so a reader who
@@ -32,6 +49,24 @@ EAGER_ROWS = 60
 
 
 _EXTRA_CSS = """
+/* Bulk selection. The checkbox is quiet until something is selected, because
+   the row is the content and a column of ticked boxes down the left of a
+   four thousand row board is noise on every visit. */
+.pick{display:flex;align-items:center}
+.pick input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;
+  opacity:.35;transition:opacity var(--dur) var(--ease)}
+.row:hover .pick input,.pick input:checked,.pick input:focus-visible{opacity:1}
+/* The bar only exists while something is picked, so it never takes space it
+   is not using. */
+.bulk{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:var(--s3);
+  align-items:center;justify-content:space-between;
+  padding:var(--s3) var(--s4);margin-top:var(--s4);
+  background:var(--surface);border:1px solid var(--accent);
+  border-radius:var(--r-lg);box-shadow:var(--shadow)}
+.bulk[hidden]{display:none}
+.bulk .cost{color:var(--muted);font-size:.8125rem}
+.bulk .warn{color:var(--accent);font-weight:600}
+
 /* Actions. Kept quiet: the row is the content, these are what you do to it. */
 .acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
 .acts button,.acts a.btn{border:1px solid var(--line);background:var(--surface);
@@ -433,6 +468,81 @@ function fillStatus(sel){
     sel.appendChild(o); }
   sel.dataset.filled='1';
   sel.value=cur; }
+// ---------------------------------------------------------------- bulk
+// Screening reads one advert properly and costs about SCREEN_TOKENS input
+// tokens a role, which is why this tool ranks a whole board for roughly the
+// price of screening twenty of it. A bulk button is therefore the one control
+// here that can spend real money on a mis-click, so it says the number and
+// the cost and asks, every time, however many are picked.
+const SCREEN_TOKENS=%SCREEN_TOKENS%, BULK_LIMIT=%BULK_LIMIT%;
+const picked=new Set();
+function fmt(n){return n.toLocaleString();}
+function paintBulk(){
+  const bar=$('#bulk'); if(!bar) return;
+  const n=picked.size;
+  bar.hidden = n===0;
+  if(!n) return;
+  $('#bulkn').textContent = n+' selected';
+  const over = n>BULK_LIMIT;
+  $('#bulkcost').innerHTML = over
+    ? '<span class="warn">more than '+BULK_LIMIT+' at once is refused</span>'
+    : 'about '+fmt(n*SCREEN_TOKENS)+' input tokens to screen, '
+      +fmt(n*SCREEN_TOKENS)+' more if you draft CVs too';
+  $('#bulkscreen').disabled = over;
+  $('#bulkcv').disabled = over; }
+document.addEventListener('change', e=>{
+  const box=e.target.closest && e.target.closest('input.sel'); if(!box) return;
+  const row=box.closest('.row'); if(!row) return;
+  box.checked ? picked.add(row.dataset.uid) : picked.delete(row.dataset.uid);
+  paintBulk(); });
+function clearPicked(){
+  picked.clear();
+  document.querySelectorAll('input.sel:checked').forEach(b=>b.checked=false);
+  paintBulk(); }
+// Only the rows the reader can actually see. "Select all" over a filtered
+// board that quietly took the four thousand hidden ones with it is the
+// expensive version of the mistake this whole file is written against.
+function pickVisible(){
+  let n=0;
+  for(const r of document.querySelectorAll('.row')){
+    if(r.hidden) continue;
+    const b=r.querySelector('input.sel'); if(!b) continue;
+    b.checked=true; picked.add(r.dataset.uid); n++; }
+  paintBulk(); return n; }
+async function bulkGenerate(kind){
+  const uids=[...picked];
+  if(!uids.length) return;
+  const cost=fmt(uids.length*SCREEN_TOKENS);
+  const what = kind==='screen' ? 'Screen' : 'Draft a CV for';
+  if(!confirm(what+' '+uids.length+' role'+(uids.length===1?'':'s')+'?\n\n'
+      +'Roughly '+cost+' input tokens, spent through your Claude subscription. '
+      +'At most %MAX_RUNNING% run at once and the rest queue.')) return;
+  const {ok,data}=await post('/api/generate/bulk',{kind,uids});
+  if(!ok){ say(data.error||'could not start'); return; }
+  const started=(data.started||[]).length, skipped=(data.skipped||[]);
+  // Names, not a count. "3 skipped" on a shortlist means opening every row to
+  // find out which three and why.
+  let msg=started+' started';
+  if(skipped.length){
+    const why=skipped[0].why||'refused';
+    msg += ', '+skipped.length+' skipped ('+why
+        +(skipped.length>1?' and others':'')+')'; }
+  say(msg, 6000);
+  clearPicked();
+  if(started) poll(); }
+(function(){
+  const s=$('#bulkscreen'), c=$('#bulkcv'), x=$('#bulkclear');
+  if(s) s.onclick=()=>bulkGenerate('screen');
+  if(c) c.onclick=()=>bulkGenerate('cv');
+  if(x) x.onclick=clearPicked; })();
+// A keyboard route, because ticking forty boxes by hand is the thing this is
+// meant to replace. Not Ctrl-A: that is select-the-text and taking it would
+// break copying a title out of the board.
+document.addEventListener('keydown', e=>{
+  if(e.key==='a' && (e.metaKey||e.ctrlKey) && e.shiftKey){
+    e.preventDefault(); say(pickVisible()+' selected'); }
+  if(e.key==='Escape' && picked.size) clearPicked(); });
+
 // The same argument as fillStatus, one level up: the whole action bar is
 // absent from every row past EAGER_ROWS and built here the moment the row is
 // touched. Kept in step with the Python that writes the eager ones by
@@ -850,11 +960,20 @@ def render(con, home_currency: str = "") -> str:
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
 <div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run, eager=i < EAGER_ROWS) for i, r in enumerate(rows))}</div>
+<div class="bulk" id="bulk" hidden>
+  <div><b id="bulkn">0 selected</b>
+    <span class="cost" id="bulkcost"></span></div>
+  <div class="acts" style="margin:0">
+    <button id="bulkscreen" class="primary" type="button">Screen selected</button>
+    <button id="bulkcv" type="button">Draft CVs</button>
+    <button id="bulkclear" type="button">Clear</button>
+  </div>
+</div>
 {_empty}
 <footer>{_floor}Nothing is generated
 unless you click for it.</footer>
 </div><div class="toast" id="toast"></div>
-<script>{prelude}{_JS}</script></body></html>"""
+<script>{prelude}{_js()}</script></body></html>"""
 
 
 def _flags(row) -> list:
@@ -1023,6 +1142,8 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         f'data-hascv="{1 if has_cv else 0}" '
         f'data-settled="{1 if settled else 0}"'
         f'{"" if eager else " data-lazyacts=\"1\""}>'
+        f'<div class="pick"><input type="checkbox" class="sel" '
+        f'aria-label="Select for bulk screening"></div>'
         f'<div><div class="role">'
         f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
         f'{status_pill}</div>'

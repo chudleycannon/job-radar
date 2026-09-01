@@ -27,6 +27,19 @@ DEFAULT_BASE = Path.home() / "job-applications"
 TIMEOUT = 900          # 15 minutes; a pack that takes longer has gone wrong
 MAX_ATTEMPTS = 2
 
+# How many generations may run at once.
+#
+# There used to be one lock called "generate" and the answer was one, which
+# was the right guard for the wrong reason: the collision it stopped is two
+# runs writing the SAME role's folder, and that is now a per-role lock. Two
+# different roles were never in each other's way, so bulk screening a
+# shortlist ran them one at a time for no reason.
+#
+# Three, because each one is a `claude` subprocess that spends money and the
+# machine also has a scan on it. Raise it with JOB_RADAR_MAX_RUNNING if you
+# know what your quota and your laptop will take.
+MAX_RUNNING = max(1, int(os.environ.get("JOB_RADAR_MAX_RUNNING", "3")))
+
 KINDS = {
     "screen": "Screen this role against my dealbreakers",
     "cv": "Draft a tailored CV",
@@ -1273,14 +1286,18 @@ def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
                 con = None
             if con is not None:
                 try:
-                    if failure:
-                        row = con.execute("SELECT state FROM jobs WHERE id=?",
-                                          (job_id,)).fetchone()
-                        if row and row["state"] in ("pending", "running"):
-                            store.mark_job(con, job_id, "failed",
-                                           error=f"the generation stopped "
-                                                 f"before it started: {failure}")
-                    store.release(con, "generate")
+                    row = con.execute("SELECT uid, state FROM jobs WHERE id=?",
+                                      (job_id,)).fetchone()
+                    if failure and row and row["state"] in ("pending", "running"):
+                        store.mark_job(con, job_id, "failed",
+                                       error=f"the generation stopped "
+                                             f"before it started: {failure}")
+                    # The lock is per role now, so the row is read for its uid
+                    # rather than only when something failed. A lock left
+                    # behind refuses every later run on that role until the
+                    # server restarts.
+                    if row:
+                        store.release(con, f"generate:{row['uid']}")
                 finally:
                     con.close()
 

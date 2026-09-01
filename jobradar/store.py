@@ -249,6 +249,31 @@ def claim(con, name: str) -> bool:
         return False
 
 
+def claim_slot(con, prefix: str, key: str, limit: int) -> tuple[bool, str]:
+    """Take one of `limit` slots named `prefix:key`, or say why not.
+
+    Two different guards in one call, because they answer two different
+    questions and the old single `generate` lock conflated them. `prefix:key`
+    is exclusivity: two runs for the same role write the same folder, which is
+    the collision the original lock existed to stop. `limit` is capacity: each
+    run is a `claude` subprocess that spends money, so the number in flight is
+    bounded whatever the browser asks for.
+
+    Nothing here reads a count and then decides. The INSERT decides, and the
+    count is taken after it so a loser of the race releases rather than
+    proceeding on a number that was true a moment ago.
+    """
+    if not claim(con, f"{prefix}:{key}"):
+        return False, "already running for this role"
+    running = con.execute(
+        "SELECT COUNT(*) c FROM locks WHERE name LIKE ?", (f"{prefix}:%",)
+    ).fetchone()["c"]
+    if running > limit:
+        release(con, f"{prefix}:{key}")
+        return False, f"{limit} generations already running"
+    return True, ""
+
+
 def release(con, name: str) -> None:
     con.execute("DELETE FROM locks WHERE name=?", (name,))
 

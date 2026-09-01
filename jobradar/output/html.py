@@ -211,7 +211,7 @@ h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 
 .list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
   overflow:hidden;box-shadow:var(--shadow)}
-.row{display:grid;grid-template-columns:1fr auto;gap:var(--s2) var(--s4);align-items:center;
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:var(--s2) var(--s4);align-items:center;
   padding:var(--s4) var(--s5);border-bottom:1px solid var(--line);
   transition:background var(--dur) var(--ease);
   /* Skip layout and paint for rows nobody is looking at.
@@ -285,7 +285,7 @@ footer{margin-top:var(--s5);color:var(--muted);font-size:.8125rem;line-height:1.
 @media (max-width:640px){
   body{padding:var(--s5) var(--s3) var(--s7);font-size:16px}
   h1{font-size:1.9375rem}
-  .row{grid-template-columns:1fr;padding:var(--s4)}
+  .row{grid-template-columns:auto 1fr;padding:var(--s4)}
   .right{flex-direction:row;align-items:baseline;gap:var(--s3);
     justify-content:flex-start;text-align:left}
   .seg{width:100%}
