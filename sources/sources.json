@@ -4,9 +4,16 @@
   "version": 6,
   "validated": "2026-08-25",
   "checked": "2026-08-25",
-  "boards": 17808
+  "boards": 17809
  },
  "sources": [
+  {
+   "company": "Amazon",
+   "url": "https://www.amazon.jobs/en/search.json?base_query=&sort=recent&result_limit=100&offset=0&country=GBR",
+   "platform": "amazon",
+   "sector": "technology",
+   "country": "UK"
+  },
   {
    "company": "0G",
    "url": "https://api.ashbyhq.com/posting-api/job-board/0g?includeCompensation=true",

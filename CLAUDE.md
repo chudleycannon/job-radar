@@ -95,7 +95,10 @@ things have to be true:
   only, and a platform outside them is never in it however many employers use
   it. Decide explicitly whether the new one belongs there, and say which in
   the commit. Microsoft on PCSX is 212 requests for one employer, which is why
-  it is a scan-only source and not a seed one.
+  it is a scan-only source and not a seed one. amazon.jobs is the same call
+  for a different reason: its `hits` caps at 10,000 whatever the board holds,
+  so any unscoped read is truncated by the API and a seed built on one would
+  publish a knowably short list as if it were whole.
 
 After either, run `python3 tools/refresh_seed.py --dry-run` before the
 schedule does, because the freshness gate refuses a build under 80% of what is
@@ -143,7 +146,7 @@ one function rather than the module.
   each place the code relies on that.
 - **Never run `generate` or `rank` to test something.** They call a paid model.
   Stub `runner.claude_bin` or `rank._call` and say so.
-- **Be polite to third parties.** There are 17,808 boards here and every one of
+- **Be polite to third parties.** There are 17,809 boards here and every one of
   them belongs to somebody. When you are probing or experimenting by hand, one
   request a second per host and stop after two failures. The scan itself is
   paced by `fetch.PER_HOST_RPS`, which is higher and is measured: see
@@ -180,8 +183,8 @@ while none of them was true. Derive it, or leave it in the run's own output.
 `meta.boards` in `sources/sources.json` is computed by `sources.save()` for
 exactly this reason.
 
-Current, if you need them for a comment: 17,808 employer boards, 17,812
-entries, 3 keyword templates, 22 board platforms in the data, 30 adapters
+Current, if you need them for a comment: 17,809 employer boards, 17,813
+entries, 3 keyword templates, 23 board platforms in the data, 31 adapters
 written.
 
 ## Style

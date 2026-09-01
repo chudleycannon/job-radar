@@ -1963,6 +1963,121 @@ def parse_phenom(payload: Any, src: Source) -> Iterator[Job]:
 
 
 # --------------------------------------------------------------------------
+# amazon.jobs (`/en/search.json`)
+# --------------------------------------------------------------------------
+# Amazon run their own board and their own API. Nothing else here reads it,
+# which is why the largest employer on this list was absent from it.
+#
+# Country codes come back as ISO alpha-3 ("GBR"), which is not what anything
+# downstream filters on, and `normalized_location` ends with the same alpha-3
+# rather than a country name. So the country is set here from the code rather
+# than left for the shared reader to infer from "Cambridge, England, GBR".
+_A3 = {
+    "GBR": "UK", "USA": "US", "CAN": "CA", "IRL": "IE", "DEU": "DE",
+    "FRA": "FR", "ESP": "ES", "ITA": "IT", "NLD": "NL", "POL": "PL",
+    "IND": "IN", "AUS": "AU", "NZL": "NZ", "JPN": "JP", "SGP": "SG",
+    "ARE": "AE", "ZAF": "ZA", "BRA": "BR", "MEX": "MX", "SWE": "SE",
+    "CHE": "CH", "AUT": "AT", "BEL": "BE", "DNK": "DK", "FIN": "FI",
+    "NOR": "NO", "PRT": "PT", "CZE": "CZ", "ROU": "RO", "TUR": "TR",
+    "ISR": "IL", "SAU": "SA", "EGY": "EG", "KOR": "KR", "CHN": "CN",
+    "MYS": "MY", "PHL": "PH", "IDN": "ID", "THA": "TH", "VNM": "VN",
+    "LUX": "LU", "GRC": "GR", "HUN": "HU", "SVK": "SK", "BGR": "BG",
+    "HRV": "HR", "SVN": "SI", "EST": "EE", "LVA": "LV", "LTU": "LT",
+    "COL": "CO", "CHL": "CL", "ARG": "AR", "PER": "PE", "CRI": "CR",
+    "JOR": "JO", "NGA": "NG", "KEN": "KE", "TWN": "TW", "HKG": "HK",
+}
+
+
+def _strip_tags(v: Any) -> str:
+    """Advert text with the markup taken out and the line breaks kept.
+
+    `_text` collapses all whitespace, which turns a qualifications list into
+    one unreadable paragraph and loses the bullet structure a reader and a
+    dealbreaker regex both use. `<br/>` and `</li>` become newlines first.
+    """
+    if not isinstance(v, str) or not v:
+        return ""
+    s = re.sub(r"<br\s*/?>|</li>|</p>|</div>", "\n", v, flags=re.I)
+    s = _TAGS.sub("", s)
+    s = html.unescape(s)
+    s = re.sub(r"[ \t]+", " ", s)
+    return re.sub(r"\n{3,}", "\n\n", s).strip()
+
+
+def parse_amazon(payload: Any, src: Source) -> Iterator[Job]:
+    """Rows from `jobs`.
+
+    The advert is spread over three fields and all three matter. `description`
+    alone is the pitch; `basic_qualifications` is where the must-haves live,
+    which is what dealbreakers and fit are actually judged on, and it is the
+    field that says "5+ years" or "prior experience as a software engineer".
+    Joining them is the difference between screening the advert and screening
+    the marketing.
+
+    `company_name` is the legal entity that employs you, and it varies by
+    country and business: "Amazon Web Services Malaysia SDN. BHD.",
+    "Amazon France Logistique SAS". Stored as the source's name instead, so a
+    board does not fragment into two hundred employers on the dashboard, with
+    the entity kept in the advert text where it belongs.
+    """
+    rows = (payload or {}).get("jobs") if isinstance(payload, dict) else None
+    for j in rows or []:
+        if not isinstance(j, dict):
+            continue
+        title = _text(j.get("title"))
+        path = _text(j.get("job_path"))
+        if not (title and path):
+            continue
+        parts = [_strip_tags(j.get(k)) for k in
+                 ("description", "basic_qualifications", "preferred_qualifications")]
+        desc = "\n\n".join(p for p in parts if p)
+        code = (j.get("country_code") or "").upper()
+        # "Virtual" is Amazon's word for a home-based role. It is not a town,
+        # and stored as one it lands in the dashboard's city filter looking
+        # exactly like a place you could commute to. Same failure as Workday's
+        # "2 Locations", in a different costume.
+        city = _text(j.get("city"))
+        virtual = city.lower() in ("virtual", "remote")
+        if virtual:
+            city = ""
+        loc = _text(j.get("normalized_location"))
+        # Drop the trailing alpha-3. It is already carried as `country`, and
+        # left in it the city filter lists "GBR" as a town.
+        if code and loc.upper().endswith(code):
+            loc = loc[: -len(code)].rstrip(" ,")
+        if not loc:
+            # `normalized_location` is bare "GBR" on virtual roles and on some
+            # ordinary ones, so stripping the code empties it. Two of the
+            # first three hundred rows read this way. Rebuild from the parts,
+            # and fall back to `location`, which is "GB, East London": the
+            # leading alpha-2 goes for the same reason the alpha-3 did.
+            loc = ", ".join(x for x in (city, _text(j.get("state"))) if x)
+        if not loc:
+            raw = _text(j.get("location"))
+            bits = [b.strip() for b in raw.split(",")]
+            if bits and len(bits[0]) == 2 and bits[0].isupper():
+                bits = bits[1:]
+            loc = ", ".join(b for b in bits if b and b.lower() != "virtual")
+        yield Job(
+            company=src.company,
+            title=title,
+            url=urljoin("https://www.amazon.jobs/", path),
+            platform="amazon",
+            location=loc,
+            city=city,
+            country=_A3.get(code) or None,
+            # The row says so outright, which beats reading the words in a
+            # title. `type: VIRTUAL` in `locations` says the same thing.
+            remote=True if virtual else _remote(loc, title),
+            department=_text(j.get("job_category")) or None,
+            posted_at=_iso(_text(j.get("posted_date"))),
+            description=desc,
+            source_id=src.key,
+        )
+
+
+
+# --------------------------------------------------------------------------
 # Phenom PCSX (`/api/pcsx/search`)
 # --------------------------------------------------------------------------
 # Phenom's newer product, and a different system from `parse_phenom` above

@@ -1420,6 +1420,65 @@ def fetch_phenom(
                                                  "totalHits": total}}, truncated=truncated)
 
 
+def fetch_amazon(
+    src: Source,
+    terms: list[str] | None = None,
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 100,
+) -> Result:
+    """Walk `amazon.jobs/en/search.json` on `offset`, a hundred rows a time.
+
+    A hundred is the ceiling and it is enforced by silence: ask for 500 and
+    the response is `{"hits": 0, "jobs": null}`, a clean 200 saying the board
+    is empty. Measured, not read in a document. So the page size is fixed here
+    rather than raised hopefully, and `PAGE_SIZES` carries it so a board whose
+    whole result is exactly a hundred is visibly a paging bug.
+
+    `hits` caps at 10000 and `offset` past it returns nothing, whatever the
+    board really holds. That is a truncation the API performs on us and it
+    cannot be paged around, so a run that reaches it is reported truncated
+    rather than passed off as the whole board: the alternative is a source
+    that silently forgets everything after ten thousand and looks complete
+    doing it. Country-scoped sources stay well under it, which is why the
+    bundled entry is scoped.
+    """
+    session = _thread_session()
+    seen: dict[Any, dict] = {}
+    total = 0
+    truncated = False
+    for page in range(max_pages):
+        probe = Source(
+            company=src.company,
+            url=_with_query(src.url, offset=str(page * AMAZON_PAGE)),
+            platform="amazon", sector=src.sector, country=src.country,
+        )
+        res = fetch_one(probe, timeout=timeout, retries=retries,
+                        user_agent=user_agent, session=session)
+        if not res.ok or not isinstance(res.payload, dict):
+            truncated = bool(seen)
+            if not seen:
+                return res
+            break
+        rows = res.payload.get("jobs") or []
+        total = max(total, int(res.payload.get("hits") or 0))
+        for j in rows:
+            if isinstance(j, dict) and j.get("id_icims") is not None:
+                seen.setdefault(j["id_icims"], j)
+        # Stop on an empty page or once the board's own count is held. Never
+        # on a short one: a short page here is the ordinary last page.
+        if not rows or (total and len(seen) >= total):
+            break
+    else:
+        truncated = True
+    if total >= AMAZON_HIT_CAP:
+        truncated = True
+    return Result(src, payload={"jobs": list(seen.values()), "hits": total},
+                  truncated=truncated)
+
+
 def fetch_pcsx(
     src: Source,
     terms: list[str] | None = None,
@@ -1866,11 +1925,19 @@ def fetch_taleo(
 # board answered, the parser worked, and everything past row N was silently
 # dropped. Tesco returning exactly 10 of "999+" looked healthy for as long as
 # nobody counted.
+# amazon.jobs refuses a larger page by answering `{"hits": 0, "jobs": null}`,
+# a clean 200 that reads as an empty board rather than as "too many".
+AMAZON_PAGE = 100
+# `hits` never exceeds this and `offset` past it returns nothing, however many
+# roles the board really holds.
+AMAZON_HIT_CAP = 10000
+
 PAGE_SIZES = {
     "avature": 10, "rmk": RMK_PAGE, "phenom": 50, "workday": 20,
     # PCSX answers ten however many are asked for, so a whole-board read
     # landing on exactly ten means the walk stopped after page one.
     "pcsx": 10,
+    "amazon": AMAZON_PAGE,
     "nhs": 10, "reed": REED_PAGE, "adzuna": ADZUNA_PAGE,
     "taleo": TALEO_PAGE,
     # The Teamtailor builder asks for per_page=200; the feed's own default is
@@ -2049,6 +2116,9 @@ def _fetch_dispatch(src, limiter, timeout, retries, ua, terms, keys=None) -> Res
                                      user_agent=ua, max_pages=2000)
     if src.platform == "phenom":
         return fetch_phenom(src, terms, timeout=timeout, retries=retries,
+                            user_agent=ua)
+    if src.platform == "amazon":
+        return fetch_amazon(src, terms, timeout=timeout, retries=retries,
                             user_agent=ua)
     if src.platform == "pcsx":
         return fetch_pcsx(src, terms, timeout=timeout, retries=retries,

@@ -591,6 +591,27 @@ REGISTRY: list[Platform] = [
              "`host|locale`, because Phenom has no tenant id at all",
     ),
     Platform(
+        "amazon",
+        r"amazon\.jobs/.*search\.json",
+        platforms.parse_amazon,
+        # The token is the ISO alpha-3 country, because the board is scoped by
+        # one. A worldwide read is capped at ten thousand by the API and is
+        # therefore knowably incomplete; the UK is 785 and complete.
+        build=lambda tok: (
+            "https://www.amazon.jobs/en/search.json?base_query=&sort=recent"
+            f"&result_limit=100&offset=0"
+            + (f"&country={tok.upper()}" if tok else "")
+        ),
+        verified=True,
+        note="their own board and their own API. A page is 100 and asking for "
+             "more answers {\"hits\": 0, \"jobs\": null}, a clean 200 that "
+             "reads as an empty board. `hits` caps at 10000 whatever the board "
+             "holds, so an unscoped read is truncated by the API itself. "
+             "Country is ISO alpha-3, which nothing downstream filters on, and "
+             "the advert is split across description, basic_qualifications and "
+             "preferred_qualifications: the must-haves are in the second one",
+    ),
+    Platform(
         "pcsx",
         r"/api/pcsx/search",
         platforms.parse_pcsx,
