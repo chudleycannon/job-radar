@@ -902,6 +902,11 @@ document.addEventListener('click', async e=>{
 });
 
 let polling=null;
+// Anything that finished during THIS polling session. `/api/jobs` only
+// reports completions from the last two minutes, so a long queue can empty
+// with its last success already outside that window, and the reload that
+// shows the documents would never fire.
+let sawFinished=[];
 async function poll(){
   if(polling) return;
   polling=setInterval(async ()=>{
@@ -944,13 +949,28 @@ async function poll(){
         e.hidden=true; e.textContent=''; progressOff(row);}}
     paintJobs(d);
     const finished=d.jobs.filter(j=>j.state==='done');
-    if(finished.length){ clearInterval(polling); polling=null;
+    // Only once the queue is EMPTY. Reloading on every completion was fine
+    // when one click meant one job and is unusable with a queue behind it:
+    // ten screens is ten reloads, each one throwing away the scroll position
+    // and re-closing the screening you had just opened to read. Which is
+    // exactly how this was found.
+    for(const j of finished){
+      if(!sawFinished.some(x=>x.uid===j.uid && x.kind===j.kind))
+        sawFinished.push({uid:j.uid, kind:j.kind}); }
+    const busyStill=d.jobs.some(j=>j.state==='running'||j.state==='pending');
+    if(busyStill && sawFinished.length){
+      // Say what landed, so the wait is legible without a reload.
+      say(sawFinished.length+' finished, '
+          +d.jobs.filter(j=>j.state!=='done').length
+          +' to go. The board refreshes when the queue is empty.', 4000);
+    }
+    if(sawFinished.length && !busyStill){ clearInterval(polling); polling=null;
       // Remember WHICH role finished across the reload. Without this the
       // page came back with a toast already gone, no scroll position, and the
       // result sitting somewhere in four thousand rows: the job had worked
       // and there was no way to tell without hunting for the row.
       try{ sessionStorage.setItem('job-radar:finished',
-             JSON.stringify(finished.map(j=>({uid:j.uid,kind:j.kind})))); }catch(e){}
+             JSON.stringify(sawFinished)); }catch(e){}
       say('Done. Reloading to show the documents.');
       setTimeout(()=>location.reload(),900); return;}
     if(!anyBusy && d.jobs.length===0){clearInterval(polling);polling=null;}
