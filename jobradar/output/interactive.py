@@ -49,6 +49,9 @@ EAGER_ROWS = 60
 
 
 _EXTRA_CSS = """
+.jobprog{grid-column:1/-1;margin-top:var(--s2);font-size:.8125rem;
+  color:var(--accent);font-variant-numeric:tabular-nums}
+
 /* Shown while the browser builds the board.
    The server answers in under a second and the browser then spends most of
    another one parsing several thousand rows, which reads as a frozen tab
@@ -497,6 +500,49 @@ function fillStatus(sel){
     sel.appendChild(o); }
   sel.dataset.filled='1';
   sel.value=cur; }
+// ------------------------------------------------------- job progress
+// A drafting run is a draft, a set of quality gates and up to two revisions,
+// which on this machine is a median of about eight minutes. The row showed a
+// disabled button and nothing else for all of it, so the only way to tell a
+// working job from a dead one was to read the process table. That is the same
+// failure as a page that paints nothing for a second, except eight minutes of
+// it, and the reader's remedy is worse: they kill a job that was fine.
+//
+// The typical is the median of the last ten completed runs of that kind on
+// THIS machine, computed server-side, and it is absent until there are at
+// least two to go on. A number in the source would be wrong within a release
+// and wrong in the expensive direction: told to expect two minutes at minute
+// six, you conclude it has hung.
+const KINDNAME={screen:'Screening',cv:'Drafting CV',cover_letter:'Drafting cover letter'};
+function hhmm(s){
+  s=Math.max(0,Math.round(s));
+  const m=Math.floor(s/60), r=s%60;
+  return m ? m+'m '+String(r).padStart(2,'0')+'s' : r+'s';}
+// Server clock against server timestamps. The browser's clock is not the
+// server's, and on a laptop that has slept they can be minutes apart, which
+// would show a job that started in the future.
+function progressOn(row, j, typical, now){
+  let el=row.querySelector('.jobprog');
+  if(!el){ el=document.createElement('div'); el.className='jobprog';
+           const acts=row.querySelector('.acts');
+           row.insertBefore(el, acts || row.querySelector('.err') || null); }
+  if(j.state==='pending'){
+    el.textContent=(KINDNAME[j.kind]||j.kind)+' queued'; return; }
+  const t0=Date.parse((j.started_at||'').replace(' ','T'));
+  const t1=Date.parse((now||'').replace(' ','T'));
+  const secs=(isNaN(t0)||isNaN(t1)) ? null : (t1-t0)/1000;
+  const usual=typical[j.kind]||0;
+  let s=(KINDNAME[j.kind]||j.kind);
+  if(secs!==null) s+=', '+hhmm(secs);
+  if(usual) s+=', usually about '+hhmm(usual);
+  // Only once it is genuinely over, and said plainly rather than as a
+  // warning: a long run is not a broken one, and the point of the line is
+  // that the reader can tell the difference themselves.
+  if(usual && secs!==null && secs > usual*1.5) s+=' (running long, still going)';
+  el.textContent=s; }
+function progressOff(row){
+  const el=row.querySelector('.jobprog'); if(el) el.remove(); }
+
 // ---------------------------------------------------------------- bulk
 // Screening reads one advert properly and costs about SCREEN_TOKENS input
 // tokens a role, which is why this tool ranks a whole board for roughly the
@@ -733,8 +779,12 @@ async function poll(){
       const j=newest.get(row.dataset.uid);
       if(j && j.state==='failed'){
         e.hidden=false; e.textContent='Generation failed: '+(j.error||'unknown');
+        progressOff(row);
+      }else if(j && (j.state==='running'||j.state==='pending')){
+        e.hidden=true; e.textContent='';
+        progressOn(row, j, d.typical||{}, d.now);
       }else if(j){
-        e.hidden=true; e.textContent='';}}
+        e.hidden=true; e.textContent=''; progressOff(row);}}
     const done=d.jobs.some(j=>j.state==='done');
     if(done){ clearInterval(polling); polling=null;
               say('Done. Reloading to show the documents.');
@@ -742,7 +792,16 @@ async function poll(){
     if(!anyBusy && d.jobs.length===0){clearInterval(polling);polling=null;}
   },2500);}
 
-if(document.querySelector('.acts button.busy')) poll();
+// Poll whenever something is in flight, not only when a busy BUTTON is on the
+// page. Past EAGER_ROWS a row has no buttons until it is touched, so a job on
+// row 500 showed no progress at all and the tab looked idle while it ran.
+(async ()=>{
+  if(document.querySelector('.acts button.busy')) return poll();
+  try{ const r=await fetch('/api/jobs'); if(!r.ok) return;
+       const d=await r.json();
+       if((d.jobs||[]).some(j=>j.state==='running'||j.state==='pending')) poll();
+  }catch(e){}
+})();
 """
 
 

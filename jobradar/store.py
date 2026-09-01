@@ -819,6 +819,32 @@ def has_artifact(con, uid, kind) -> bool:
 
 # ------------------------------------------------------------------- jobs
 
+def typical_seconds(con, kind: str) -> int:
+    """How long this kind of job has actually taken here, or 0.
+
+    The median of the last completed runs rather than a number in the source.
+    A drafting run is three agent calls in the worst case and the wall clock
+    moves with the model, the machine and the length of the advert, so a
+    hardcoded "about eight minutes" would be wrong within a release and wrong
+    in the direction that matters: a reader told to expect two minutes at
+    minute six concludes it has hung and kills a job that was working.
+
+    Zero when there is nothing to go on, and the caller says nothing rather
+    than guessing. An estimate built from one sample is a guess wearing a
+    number.
+    """
+    rows = con.execute(
+        "SELECT (julianday(replace(finished_at,'T',' ')) "
+        "      - julianday(replace(started_at,'T',' '))) * 86400 AS secs "
+        "FROM jobs WHERE kind=? AND state='done' "
+        "AND started_at IS NOT NULL AND finished_at IS NOT NULL "
+        "ORDER BY id DESC LIMIT 10", (kind,)).fetchall()
+    secs = sorted(int(r["secs"]) for r in rows if r["secs"] and r["secs"] > 0)
+    if len(secs) < 2:
+        return 0
+    return secs[len(secs) // 2]
+
+
 def enqueue(con, uid, kind) -> int:
     """Queue a generation job, unless one is already pending or running."""
     existing = con.execute(

@@ -208,7 +208,12 @@ class Handler(BaseHTTPRequestHandler):
                 #     wins, so every job finished today looked recent.
                 #   * datetime('now') is UTC; the stored value is local.
                 rows = con.execute(
-                    "SELECT id,uid,kind,state,error FROM jobs "
+                    # `started_at` travels so the browser can show elapsed
+                    # time. A spinner with no clock on an eight minute job is
+                    # the same failure as a page that paints nothing for a
+                    # second: it reads as hung, and the reader kills work that
+                    # was going fine.
+                    "SELECT id,uid,kind,state,error,started_at FROM jobs "
                     "WHERE state IN ('pending','running') OR "
                     "replace(finished_at,'T',' ') > "
                     "datetime('now','localtime','-2 minutes')").fetchall()
@@ -217,6 +222,11 @@ class Handler(BaseHTTPRequestHandler):
                 states = con.execute("SELECT uid,status FROM role_state").fetchall()
                 return self._json({
                     "jobs": [dict(r) for r in rows],
+                    # Per kind, and only the kinds actually in flight, so a
+                    # quiet poll stays a small answer.
+                    "typical": {k: store.typical_seconds(con, k)
+                                for k in {r["kind"] for r in rows}},
+                    "now": store._now(),
                     "artifacts": [dict(r) for r in arts],
                     "states": {r["uid"]: r["status"] for r in states},
                 })
