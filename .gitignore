@@ -73,3 +73,6 @@ seed/
 seed-build/
 seed-build.new/
 .seed-cache/
+
+# Local scan logs. Run output, not source, and it names the boards you scan.
+logs/

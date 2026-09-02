@@ -65,5 +65,28 @@ class LeavesAlone(unittest.TestCase):
             "## Skills\n\n**AI:** Large language model pipelines\n\n- Led it\n")
 
 
+    def test_an_email_address_is_not_a_first_word(self):
+        # The contact line at the top of every letter went out reading
+        # "Mcdonaldcallum@hotmail.co.uk". The old guard skipped a word only
+        # when a letter or digit followed it, and "@" is neither.
+        s = "mcdonaldcallum@hotmail.co.uk"
+        self.assertEqual(tidy_case(s), s)
+
+    def test_a_domain_is_not_a_first_word(self):
+        for s in ("linkedin.com/in/callum-mcdonald-b416b299",
+                  "github.com/maccydee",
+                  "canalholidays.co.uk"):
+            self.assertEqual(tidy_case(s), s)
+
+    def test_a_whole_contact_line(self):
+        s = ("mcdonaldcallum@hotmail.co.uk \u00b7 07369 241441 \u00b7 "
+             "linkedin.com/in/callum-mcdonald-b416b299")
+        self.assertEqual(tidy_case(s), s)
+
+    def test_a_one_word_line_ending_in_a_full_stop_still_capitalises(self):
+        # Only a dot that starts a domain disqualifies the word.
+        self.assertEqual(tidy_case("done."), "Done.")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -68,5 +68,36 @@ class RealOverlapIsStillCaught(unittest.TestCase):
         self.assertEqual(shared_ngram("", CV), "")
 
 
+class AnAddressIsNotPhrasing(unittest.TestCase):
+    """Both documents carry the same contact block on purpose.
+
+    The tokeniser splits on punctuation, so a URL arrives as a row of
+    ordinary-looking words: "linkedin.com/in/callum-mcdonald-b416b299" becomes
+    six tokens, only one of which is filler. It cleared the prose check and the
+    letter was failed for reusing its own header.
+    """
+
+    HEADER = ("Callum McDonald\n\nmcdonaldcallum@hotmail.co.uk \u00b7 07369 241441 "
+              "\u00b7 linkedin.com/in/callum-mcdonald-b416b299 \u00b7 "
+              "github.com/maccydee\n")
+
+    def test_a_shared_contact_block_is_not_overlap(self):
+        self.assertEqual(shared_ngram(self.HEADER, self.HEADER), "")
+
+    def test_a_shared_email_alone_is_not_overlap(self):
+        s = "mcdonaldcallum@hotmail.co.uk"
+        self.assertEqual(shared_ngram(s, s), "")
+
+    def test_a_shared_url_alone_is_not_overlap(self):
+        s = "https://www.linkedin.com/in/callum-mcdonald-b416b299"
+        self.assertEqual(shared_ngram(s, s), "")
+
+    def test_prose_around_a_shared_address_is_still_caught(self):
+        a = self.HEADER + "I coach team leads into owning their own workstreams."
+        b = self.HEADER + "I coach team leads into owning their own workstreams."
+        self.assertIn("team leads into owning their own workstreams",
+                      shared_ngram(a, b))
+
+
 if __name__ == "__main__":
     unittest.main()

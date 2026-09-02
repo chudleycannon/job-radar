@@ -891,6 +891,15 @@ def _is_prose(gram) -> bool:
     return len(content) >= 4
 
 
+# Emails and URLs, which both documents share by design.
+_ADDRESS = re.compile(
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"                      # an email address
+    r"|(?:https?://|www\.)\S+"                             # an explicit URL
+    r"|\b[\w-]+(?:\.[\w-]+)*\.(?:com|co\.uk|org|net|io|dev|ai|me)\b(?:/\S*)?",
+    re.I,
+)
+
+
 def shared_ngram(a: str, b: str, n: int = 6) -> str:
     """The longest shared sequence of n or more words, or "" if there is none.
 
@@ -900,7 +909,13 @@ def shared_ngram(a: str, b: str, n: int = 6) -> str:
     result as a failure.
     """
     def toks(s: str) -> list[str]:
-        return re.findall(r"[a-z0-9']+", s.lower())
+        # Strip addresses before tokenising. The tokeniser splits on
+        # punctuation, so "linkedin.com/in/callum-mcdonald-b416b299" arrives as
+        # six ordinary-looking words, clears _is_prose, and is reported as the
+        # letter reusing the CV's phrasing. Both documents carry the same
+        # contact block on purpose: that is a header, not repeated writing.
+        s = _ADDRESS.sub(" ", s.lower())
+        return re.findall(r"[a-z0-9']+", s)
 
     ta, tb = toks(a), toks(b)
     if len(ta) < n or len(tb) < n:
@@ -972,6 +987,17 @@ _KEEPS_LOWER = frozenset({"npm", "pip", "sudo", "curl", "ssh", "git", "vim",
                           "bash", "zsh", "ffmpeg", "jq", "kubectl", "systemd"})
 
 
+# A first word is only a word if what follows it is not an address. The old
+# guard was `(?![A-Za-z0-9])`, which skips "n8n" and "macOS" but waves through
+# "mcdonaldcallum@hotmail.co.uk" and "linkedin.com/in/...", because "@" and "."
+# are neither a letter nor a digit. The contact line at the top of every letter
+# went out reading "Mcdonaldcallum@hotmail.co.uk".
+#
+# A trailing "." on its own still capitalises, so a one-word line like "Done."
+# is untouched; only a dot that starts a domain disqualifies the word.
+_NOT_AN_ADDRESS = r"(?![A-Za-z0-9]|@|\.[A-Za-z])"
+
+
 def tidy_case(text: str) -> str:
     """Capitalise the first word of a line, and of a `**Label:**` list.
 
@@ -996,10 +1022,10 @@ def tidy_case(text: str) -> str:
         return m.group("pre") + word[0].upper() + word[1:]
 
     # After a bold label: "**Leadership:** managing" -> "Managing".
-    text = re.sub(r"(?P<pre>\*\*[^*\n]+:\*\*\s+)(?P<w>[a-z]+)(?![A-Za-z0-9])",
+    text = re.sub(r"(?P<pre>\*\*[^*\n]+:\*\*\s+)(?P<w>[a-z]+)" + _NOT_AN_ADDRESS,
                   up, text)
     # Start of a line, including a bullet or a numbered item.
-    text = re.sub(r"(?P<pre>^(?:[-*+]\s+|\d+\.\s+)?)(?P<w>[a-z]+)(?![A-Za-z0-9])",
+    text = re.sub(r"(?P<pre>^(?:[-*+]\s+|\d+\.\s+)?)(?P<w>[a-z]+)" + _NOT_AN_ADDRESS,
                   up, text, flags=re.M)
     return text
 
