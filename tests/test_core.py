@@ -366,6 +366,16 @@ def test_settled_roles_are_hidden_and_reversible():
     assert j.uid not in store.settled_uids(con)
 
 
+def test_ready_to_apply_is_active_application_progress():
+    from jobradar import store
+
+    assert "ready_to_apply" in store.STATUSES
+    assert "ready_to_apply" in store.IN_FLIGHT
+    assert "ready_to_apply" not in store.SETTLED
+    assert store.PROGRESS["interested"] < store.PROGRESS["ready_to_apply"]
+    assert store.PROGRESS["ready_to_apply"] < store.PROGRESS["applied"]
+
+
 def test_bad_status_is_refused():
     from jobradar import store
     con = _tmpdb()
@@ -1297,6 +1307,58 @@ def test_a_rating_is_read_from_the_score_not_the_first_number():
     runner._record(con, job, d, "")
     got = con.execute("SELECT rating FROM artifacts WHERE kind='cv'").fetchone()
     assert got["rating"] == 68.0, f"read {got['rating']} from a 68/100 file"
+
+
+def test_cv_generation_clears_stale_role_workspace_files():
+    """A reused role folder can contain drafts and context from an earlier
+    action. Those files are useful artefacts for the user, but they must not be
+    visible as local workspace context when a fresh CV is generated."""
+    import tempfile
+    from jobradar import runner
+
+    d = Path(tempfile.mkdtemp())
+    for name in (
+        "CV.md",
+        "CV.docx",
+        "cv-rating.txt",
+        "cover-letter.md",
+        "cover-letter.docx",
+        "overlap.txt",
+        "screening.md",
+        "verdict.txt",
+        "job-description.md",
+        "candidate-profile.txt",
+        "role-evidence.txt",
+        "source-cv.txt",
+        "source-cv.md",
+        "source-cv.docx",
+        "source-cv.pdf",
+        "evidence-used.json",
+    ):
+        (d / name).write_text("previous role: ServiceNow and FCA\n",
+                              encoding="utf-8")
+
+    runner._clear_generated_outputs(d, "cv")
+
+    assert list(d.iterdir()) == []
+
+
+def test_cover_letter_generation_keeps_the_current_role_cv_for_overlap_check():
+    import tempfile
+    from jobradar import runner
+
+    d = Path(tempfile.mkdtemp())
+    (d / "CV.md").write_text("current role CV\n", encoding="utf-8")
+    (d / "cover-letter.md").write_text("old letter\n", encoding="utf-8")
+    (d / "screening.md").write_text("old screen\n", encoding="utf-8")
+    (d / "job-description.md").write_text("old JD\n", encoding="utf-8")
+
+    runner._clear_generated_outputs(d, "cover_letter")
+
+    assert (d / "CV.md").read_text(encoding="utf-8") == "current role CV\n"
+    assert not (d / "cover-letter.md").exists()
+    assert not (d / "screening.md").exists()
+    assert not (d / "job-description.md").exists()
 
 
 def test_the_dashboard_survives_a_limited_scan():

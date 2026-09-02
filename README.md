@@ -386,9 +386,11 @@ and has to be one. It is no longer written to; see
 [`applications.example.yaml`](applications.example.yaml) for the format if you
 are migrating an old file.
 
-Statuses run `new → interested → applied → submitted → interviewing → offer`,
-plus `rejected`, `withdrawn`, `skipped` and `closed`. `skipped` is what the
-dashboard's **Skip** button writes.
+Statuses run `new → interested → ready_to_apply → applied → submitted →
+interviewing → offer`, plus `rejected`, `withdrawn`, `skipped` and `closed`.
+`ready_to_apply` is for roles where the CV and cover letter are prepared and
+reviewed, but not submitted yet. `skipped` is what the dashboard's **Skip**
+button writes.
 
 **The four settled ones are hidden from results** rather than shown again.
 Everything else gets a status pill on the dashboard, so a role you are three

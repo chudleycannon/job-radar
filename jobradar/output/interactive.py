@@ -49,6 +49,13 @@ _EXTRA_CSS = """
 @media (prefers-reduced-motion:reduce){.acts button.busy::after{animation:none}}
 .row.settled{opacity:.45}
 .row.settled .role{text-decoration:line-through;text-decoration-thickness:1px}
+.compact .row{padding:10px var(--s5)}
+.compact .docs,.compact .fit,.compact .note,.compact .rownote,
+.compact .screening,.compact .answerbox,.compact .acts,.compact .pay,
+.compact .status,.compact .meta{display:none}
+.compact-meta{display:none;color:var(--muted);font-size:.875rem;letter-spacing:-.008em;margin-top:2px}
+.compact .compact-meta{display:block}
+.compact .score{font-size:.875rem;color:var(--accent);font-weight:650}
 .docs{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2);
   font-size:.8125rem}
 .docs a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
@@ -91,12 +98,105 @@ _EXTRA_CSS = """
 .chips button.none{opacity:.45}
 """
 
+
+def _status_label(status: str) -> str:
+    return (status or "").replace("_", " ")
+
 _JS = r"""
 const $=s=>document.querySelector(s), toast=$('#toast');
-// Opens on Open, not All. All includes skipped and rejected, and they sort by
-// score like everything else, so a skipped role you already dismissed sat at
-// the top of the board every time you refreshed.
-let f='open', secs=new Set(), modes=new Set(), statuses=new Set(), country='', city='';
+let f='all', secs=new Set(), modes=new Set(), statuses=new Set(), country='', city='', anchorUid='';
+let compact=false, restoringAnchor=false;
+const STATE_KEY='jobRadar.dashboard.state.v1';
+const RETURN_KEY='jobRadar.dashboard.return.v1';
+const VIEWS=new Set(['all','new','fit','interested','ready','live','closed','pay']);
+
+function splitList(v){return (v||'').split(',').map(x=>x.trim()).filter(Boolean);}
+function stateFromParams(p){
+  return {
+    f:p.get('view')||p.get('f')||'all',
+    secs:splitList(p.get('sector')),
+    modes:splitList(p.get('mode')),
+    statuses:splitList(p.get('status')),
+    country:p.get('country')||'',
+    city:p.get('city')||'',
+    sort:p.get('sort')||'rank',
+    compact:p.get('compact')==='1',
+    anchor:p.get('role')||''};}
+function readState(){
+  if(location.hash.length>1) return stateFromParams(new URLSearchParams(location.hash.slice(1)));
+  try{
+    const raw=localStorage.getItem(STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){return null;}}
+function stateNow(){
+  const sel=$('#fsort');
+  return {f,secs:[...secs],modes:[...modes],statuses:[...statuses],
+          country,city,sort:(sel&&sel.value)||'rank',
+          compact,anchor:visibleUid()||anchorUid};}
+function writeState(){
+  const st=stateNow(), p=new URLSearchParams();
+  if(st.f&&st.f!=='all') p.set('view',st.f);
+  if(st.secs.length) p.set('sector',st.secs.join(','));
+  if(st.modes.length) p.set('mode',st.modes.join(','));
+  if(st.statuses.length) p.set('status',st.statuses.join(','));
+  if(st.country) p.set('country',st.country);
+  if(st.city) p.set('city',st.city);
+  if(st.sort&&st.sort!=='rank') p.set('sort',st.sort);
+  if(st.compact) p.set('compact','1');
+  if(st.anchor) p.set('role',st.anchor);
+  const hash=p.toString(), url=location.pathname+(hash?'#'+hash:'');
+  try{
+    localStorage.setItem(STATE_KEY,JSON.stringify(st));
+    localStorage.setItem(RETURN_KEY,url);
+  }catch(e){}
+  history.replaceState(null,'',url);}
+function restoreState(){
+  const st=readState(); if(!st) return;
+  const hasOption=(q,v)=>!v || [...document.querySelectorAll(q+' option')].some(o=>o.value===v);
+  const view = st.f==='open'||st.f==='unapplied' ? 'all' : st.f;
+  if(VIEWS.has(view)) f=view;
+  compact=!!st.compact;
+  anchorUid=st.anchor||'';
+  secs=new Set((st.secs||[]).filter(Boolean));
+  modes=new Set((st.modes||[]).filter(Boolean));
+  statuses=new Set((st.statuses||[]).filter(Boolean));
+  country=hasOption('#fcountry',st.country)?(st.country||''):'';
+  city=hasOption('#fcity',st.city)?(st.city||''):'';
+  document.querySelectorAll('.seg button').forEach(b=>
+    b.setAttribute('aria-selected',b.dataset.f===f?'true':'false'));
+  document.querySelectorAll('.chips button').forEach(b=>{
+    const set=b.dataset.sec?secs:(b.dataset.mode?modes:statuses);
+    const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
+    b.setAttribute('aria-pressed',set.has(key)?'true':'false');});
+  const c=$('#fcountry'), y=$('#fcity'), s=$('#fsort');
+  if(c) c.value=country;
+  if(y) y.value=city;
+  if(s && [...s.options].some(o=>o.value===st.sort)) s.value=st.sort;
+  document.body.classList.toggle('compact',compact);
+  const btn=$('#compact');
+  if(btn) btn.setAttribute('aria-pressed',compact?'true':'false');
+}
+function visibleUid(){
+  const rows=[...document.querySelectorAll('.row:not([hidden])')];
+  const top=16;
+  let best=rows.find(r=>r.getBoundingClientRect().bottom>top);
+  return best ? best.dataset.uid : '';
+}
+function restoreAnchor(){
+  if(!anchorUid || restoringAnchor) return;
+  const esc=window.CSS&&CSS.escape ? CSS.escape(anchorUid) : anchorUid.replace(/["\\]/g,'\\$&');
+  const row=document.querySelector(`.row[data-uid="${esc}"]:not([hidden])`);
+  if(!row) return;
+  restoringAnchor=true;
+  row.scrollIntoView({block:'start'});
+  setTimeout(()=>{restoringAnchor=false;},250);
+}
+let scrollTimer=null;
+addEventListener('scroll',()=>{
+  if(restoringAnchor) return;
+  clearTimeout(scrollTimer);
+  scrollTimer=setTimeout(()=>{anchorUid=visibleUid(); writeState();},180);
+},{passive:true});
 
 function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
   toast.title='Select this text, or click to copy it.';
@@ -118,15 +218,16 @@ if(toast) toast.onclick=async ()=>{
 
 const SETTLED=new Set(['rejected','withdrawn','skipped','closed']);
 // Applications with something still owed on them, either way.
-const IN_FLIGHT=new Set(['applied','submitted','interviewing','offer']);
+const IN_FLIGHT=new Set(['ready_to_apply','applied','submitted','interviewing','offer']);
 // Applications that ended. Not "skipped": you never applied to those.
 const CLOSED_OUT=new Set(['rejected','withdrawn','closed']);
+function statusLabel(s){return (s||'').replaceAll('_',' ');}
 // The number on a facet has to be the number that facet will show you.
 //
 // These were counted once, in Python, over every row in the database, while
-// the page opens on Open and Open hides everything settled. So a board with
-// one skipped public-sector role rendered a chip reading "Public sector 1",
-// and clicking it emptied the list and said "Nothing matches those filters".
+// the selected tab can hide rows. So a board with one skipped public-sector
+// role rendered a chip reading "Public sector 1", and clicking it emptied
+// the list and said "Nothing matches those filters".
 // Same for the country and city menus. Counting here, against the rows the
 // current tab admits, means the chip cannot promise a role the tab hides.
 //
@@ -150,11 +251,10 @@ function apply(){let n=0;
   const bump=(m,k)=>{m[k]=(m[k]||0)+1};
   for(const r of document.querySelectorAll('.row')){
     const st=r.dataset.status;
-    const viewOk = f==='all' || (f==='open' && !SETTLED.has(st)) ||
-                   (f==='unapplied' && !SETTLED.has(st) && st!=='applied') ||
-                   (f==='pay' && r.dataset.pay==='1') ||
+    const viewOk = f==='all' || (f==='pay' && r.dataset.pay==='1') ||
                    (f==='new' && r.dataset.new==='1') ||
                    (f==='interested' && st==='interested') ||
+                   (f==='ready' && st==='ready_to_apply') ||
                    (f==='live' && IN_FLIGHT.has(st)) ||
                    (f==='closed' && CLOSED_OUT.has(st)) ||
                    (f==='fit' && (+r.dataset.fit)>=70);
@@ -180,7 +280,7 @@ document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
   // owns it: the sort select below stays in charge everywhere, so you can
   // read New in fit order, which is the pairing you actually want.
   if(f==='fit'){const sel=$('#fsort'); if(sel) sel.value='fit';}
-  resort(); apply();});
+  resort(); apply(); writeState();});
 // Rank order, used everywhere except Best fit. Applications you are in come
 // first because they are the ones with a deadline on them; things you settled
 // go last because you have already decided. Score breaks the tie in between.
@@ -264,19 +364,26 @@ function resort(){
 
 // Sort and filter once at load. The filter previously only ran on a click,
 // which was invisible while the default view was All and everything showed
-// anyway; the moment the default became Open, every settled role was still on
-// screen until you touched a tab.
+// anyway.
 (function(){
+  restoreState();
   const sel=$('#fsort');
-  if(sel) sel.onchange=()=>{resort(); apply();};
-  resort(); apply();})();
+  if(sel) sel.onchange=()=>{resort(); apply(); writeState();};
+  const compactBtn=$('#compact');
+  if(compactBtn) compactBtn.onclick=()=>{
+    compact=!compact;
+    document.body.classList.toggle('compact',compact);
+    compactBtn.setAttribute('aria-pressed',compact?'true':'false');
+    writeState();
+  };
+  resort(); apply(); restoreAnchor(); writeState();})();
 
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
   b.setAttribute('aria-pressed', on?'false':'true');
   const set=b.dataset.sec?secs:(b.dataset.mode?modes:statuses);
   const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
-  on?set.delete(key):set.add(key); apply();});
+  on?set.delete(key):set.add(key); apply(); writeState();});
 // Ranking spends tokens, so the click shows the cost and waits for a yes.
 // Everything else that spends in this tool works the same way.
 const rankBtn=$('#rank'), rankInfo=$('#rankinfo');
@@ -441,8 +548,8 @@ if(scanBtn){
   setInterval(paintScan,5000);
 }
 
-$('#fcountry').onchange=e=>{country=e.target.value;apply()};
-$('#fcity').onchange=e=>{city=e.target.value;apply()};
+$('#fcountry').onchange=e=>{country=e.target.value;apply();writeState();};
+$('#fcity').onchange=e=>{city=e.target.value;apply();writeState();};
 
 async function post(url,body){
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -465,7 +572,7 @@ function mark(row,status){
   else{
     if(!pill){ pill=document.createElement('span');
       const head=row.querySelector('.role'); if(head) head.appendChild(pill); }
-    if(pill){ pill.textContent=status; pill.className='status '+status; }}
+    if(pill){ pill.textContent=statusLabel(status); pill.className='status '+status; }}
   const sel=row.querySelector('select.setstatus'); if(sel) sel.value=status;}
 
 // The status select was rendered with all ten statuses and never wired to
@@ -480,8 +587,8 @@ document.addEventListener('change', async e=>{
   const {ok,data}=await post('/api/status',{uid:row.dataset.uid,status});
   if(!ok){ sel.value=prev||''; say(data.error||'could not save'); return; }
   mark(row,status);
-  say('Marked '+status+(SETTLED.has(status)?'. It will not come back.':''));
-  apply();
+  say('Marked '+statusLabel(status)+(SETTLED.has(status)?'. It will not come back.':''));
+  apply(); writeState();
 });
 
 document.addEventListener('click', async e=>{
@@ -491,7 +598,7 @@ document.addEventListener('click', async e=>{
   // was cancelled and the page showed "could not open it" even though
   // `/artifact/<id>` was serving the artifact correctly.
   const doc=e.target.closest('.docs a');
-  if(doc && doc.getAttribute('href').startsWith('/artifact/')) return;
+  if(doc && doc.getAttribute('href').startsWith('/artifact/')){writeState(); return;}
   if(doc){ e.preventDefault();
     const r=await fetch(doc.getAttribute('href'));
     const d=await r.json().catch(()=>({}));
@@ -512,8 +619,8 @@ document.addEventListener('click', async e=>{
     const {ok,data}=await post('/api/status',{uid,status});
     if(!ok){say(data.error||'could not save');return}
     mark(row,status);
-    say(status==='skipped'?'Skipped. It will not come back.':'Marked '+status);
-    apply(); return;}
+    say(status==='skipped'?'Skipped. It will not come back.':'Marked '+statusLabel(status));
+    apply(); writeState(); return;}
 
   if(e.target.closest('[data-apply]')){
     // Apply is also just the link to the advert, and it posted "applied"
@@ -525,11 +632,11 @@ document.addEventListener('click', async e=>{
     // It only ever moves a role forward now; the link opens either way.
     const cur=row.dataset.status||'new';
     if((PROGRESS[cur]||0) >= PROGRESS.applied){
-      say('Opening the job board. Still marked '+cur+'.'); return;}
+      say('Opening the job board. Still marked '+statusLabel(cur)+'.'); return;}
     const {ok,data}=await post('/api/status',{uid,status:'applied'});
     if(!ok){ say(data.error||'could not save'); return; }
     mark(row,'applied'); say('Marked applied, opening the job board');
-    apply(); return;}
+    apply(); writeState(); return;}
 
   if(e.target.closest('[data-note]')){
     const cur=row.querySelector('.rownote');
@@ -753,6 +860,9 @@ def render(con, home_currency: str = "") -> str:
     interested = sum(1 for r in rows if r["status"] == "interested")
     _interested_count = f'<span class="n">{interested}</span>' if interested else ""
 
+    ready = sum(1 for r in rows if r["status"] == "ready_to_apply")
+    _ready_count = f'<span class="n">{ready}</span>' if ready else ""
+
     # Rejections and withdrawals, which every other view hides. Worth being
     # able to look at on purpose: it is the record of what you actually went
     # for, and it is the only place to notice a pattern in what comes back.
@@ -802,7 +912,7 @@ def render(con, home_currency: str = "") -> str:
     sc = Counter((r["status"] or "new") for r in rows)
     statuses = "".join(
         f'<button aria-pressed="false" data-status-filter="{_h.escape(s, quote=True)}">'
-        f'{_h.escape(s)}<span class="n">{sc[s]}</span></button>'
+        f'{_h.escape(_status_label(s))}<span class="n">{sc[s]}</span></button>'
         for s in store.STATUSES if sc.get(s))
     # data-label so the count can be rewritten in the browser against the rows
     # the current tab actually shows, without losing the name.
@@ -854,18 +964,18 @@ def render(con, home_currency: str = "") -> str:
      live from the database, so anything you click sticks</p>
 </header>
 <div class="seg" role="tablist" aria-label="Filter roles">
-  <button role="tab" aria-selected="false" data-f="all">All</button>
+  <button role="tab" aria-selected="true" data-f="all">All</button>
   <button role="tab" aria-selected="false" data-f="new">New{_new_count}</button>
   <button role="tab" aria-selected="false" data-f="fit">Best fit{_fit_count}</button>
   <button role="tab" aria-selected="false" data-f="interested">Interested{_interested_count}</button>
+  <button role="tab" aria-selected="false" data-f="ready">Ready to apply{_ready_count}</button>
   <button role="tab" aria-selected="false" data-f="live">In flight{_live_count}</button>
   <button role="tab" aria-selected="false" data-f="closed">Closed{_closed_count}</button>
-  <button role="tab" aria-selected="true"  data-f="open">Open</button>
-  <button role="tab" aria-selected="false" data-f="unapplied">Hide applied</button>
   <button role="tab" aria-selected="false" data-f="pay">Salary shown</button>
 </div>
 <div class="actions"><button id="rank" type="button">Rank against my CV</button>
   <button id="scan" type="button">Scan now</button>
+  <button id="compact" type="button" aria-pressed="false">Compact cards</button>
   <button id="profile" type="button">Profile</button>
   <button id="settings" type="button">Settings</button>
   <button id="scanstop" type="button" hidden>Stop scan</button>
@@ -917,7 +1027,8 @@ def _row(r, arts, job, run=0) -> str:
     paid = bool(r["salary_confirmed"])
     meta = " \u00b7 ".join(x for x in [r["company"], _cap_location(r["location"] or "")] if x)
     status_pill = (f'<span class="status {_h.escape(r["status"], quote=True)}">'
-                   f'{_h.escape(r["status"])}</span>' if r["status"] != "new" else "")
+                   f'{_h.escape(_status_label(r["status"]))}</span>'
+                   if r["status"] != "new" else "")
 
     docs = []
     if "cv" in arts:
@@ -1027,6 +1138,8 @@ def _row(r, arts, job, run=0) -> str:
     letter_btn = (b("cover_letter", "Cover letter") if has_cv else
                   '<button disabled title="Draft the CV first: the letter is '
                   'checked against it for repeated phrasing">Cover letter</button>')
+    score_text = (f'fit {int(fv)}' if fv >= 0 else
+                  f'score {int(r["score"] or 0)}')
 
     return (
         f'<div class="row{" settled" if settled else ""}" data-uid="{_h.escape(r["uid"], quote=True)}" '
@@ -1052,9 +1165,11 @@ def _row(r, arts, job, run=0) -> str:
         f'<div><div class="role">'
         f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
         f'{status_pill}</div>'
-        f'<div class="meta">{_h.escape(meta)}</div></div>'
+        f'<div class="meta">{_h.escape(meta)}</div>'
+        f'<div class="compact-meta">{_h.escape(_cap_location(r["location"] or ""))}</div></div>'
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
-        f'{_h.escape(r["salary_label"] or "unconfirmed salary")}</span></div>'
+        f'{_h.escape(r["salary_label"] or "unconfirmed salary")}</span>'
+        f'<span class="score">{_h.escape(score_text)}</span></div>'
         + (f'<div class="docs">{" &middot; ".join(docs)}</div>' if docs else "")
         # All of them, not notes[0]. A role could be both unscreenable and
         # carrying a salary that was never compared to the floor, and only
@@ -1078,7 +1193,8 @@ def _row(r, arts, job, run=0) -> str:
         + '<select class="setstatus" aria-label="Set status">'
         + '<option value="">Status\u2026</option>'
         + "".join(
-            f'<option value="{s}"{" selected" if s == r["status"] else ""}>{s}</option>'
+            f'<option value="{s}"{" selected" if s == r["status"] else ""}>'
+            f'{_h.escape(_status_label(s))}</option>'
             for s in store.STATUSES)
         + '</select>'
         + '<button data-note="1" title="Add or edit a note">Note</button>'

@@ -8,8 +8,8 @@
 # of the tool is showing you fewer things, and this is most of that.
 #
 # status, earliest to latest:
-#   interested | applied | submitted | interviewing | offer | rejected |
-#   withdrawn | closed
+#   interested | ready_to_apply | applied | submitted | interviewing | offer |
+#   rejected | withdrawn | closed
 #
 # rejected, withdrawn and closed are "settled": those roles are hidden from
 # results instead of shown again. Everything else gets a status pill on the

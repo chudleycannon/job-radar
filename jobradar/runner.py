@@ -352,6 +352,10 @@ the output. Use only the facts in `source-cv.txt`, but leave most of them out.
 SELECTION. The master CV is deliberately broad. A tailored CV is deliberately
 narrow.
 - Write for this one role, not for every role the master CV could match.
+- Do not write for any previous role that was screened or drafted in this app.
+  Treat `job-description.md` as the only target role. If approved profile
+  evidence or role-evidence came from a different screening answer, use it
+  only when it directly answers a requirement in the current job description.
 - Use about a quarter to a third of the source evidence. If a detail does not
   help this application, cut it.
 - Do not include sections called "Target role signals", "Why this role",
@@ -367,9 +371,10 @@ narrow.
   "Selected achievements" bank can be used only under the employer where the
   same fact appears in Professional experience. If the role history does not
   place an outcome under Matillion, do not write it under Matillion.
-- The CV must make the match obvious in the first half-page: lead with the
-  incident, service restoration, stakeholder communication, governance,
-  continuity and post-incident review evidence that answers this posting.
+- The CV must make the match obvious in the first half-page: identify the
+  current posting's strongest requirements, then lead with the evidence that
+  answers those requirements. Do not keep emphasis from a previous role unless
+  the current posting asks for the same thing.
 
 WHO READS IT. A hiring manager and a recruiter at a different company, and an
 applicant tracking system before either of them opens it. Nobody in that chain
@@ -416,6 +421,10 @@ FACTS.
   mention this prompt, source-cv.txt, the source CV, missing evidence, invented
   experience, or what must not be claimed. If a requirement is a gap, put it in
   `cv-rating.txt`, not in the CV.
+- The Profile or Summary must not read like screening feedback or an evidence
+  note. Do not write phrases such as "Strongest evidence is", "most relevant
+  evidence", "evidence is in", "practical base", "this gives" or "that gives".
+  Write one natural applicant-facing paragraph for this posting only.
 - No em-dashes anywhere.
 - Plain first. State the fact and stop. No triads with a payoff, no
   "not X but Y", no denial used to set up a reveal ("Not a pilot: it
@@ -666,9 +675,26 @@ GENERATED_OUTPUTS = {
     "screen": ("screening.md", "verdict.txt"),
 }
 
+WORKSPACE_CONTEXT = (
+    "job-description.md",
+    "candidate-profile.txt",
+    "role-evidence.txt",
+    "source-cv.txt",
+    "source-cv.md",
+    "source-cv.docx",
+    "source-cv.pdf",
+    "evidence-used.json",
+)
+
 
 def _clear_generated_outputs(d: Path, kind: str) -> None:
-    for name in GENERATED_OUTPUTS.get(kind, ()):
+    stale = set(WORKSPACE_CONTEXT)
+    stale.update(name for names in GENERATED_OUTPUTS.values() for name in names)
+    if kind == "cover_letter":
+        # The cover letter is intentionally checked against the CV already
+        # drafted for this same role.
+        stale.difference_update({"CV.md", "CV.docx"})
+    for name in stale:
         try:
             (d / name).unlink()
         except FileNotFoundError:
@@ -1250,6 +1276,23 @@ _INSTRUCTION_LEAKS = (
 )
 
 
+_PROFILE_NOTE_LEAKS = (
+    r"\bstrongest evidence is\b",
+    r"\bmost relevant evidence\b",
+    r"\bevidence is in\b",
+    r"\bpractical base\b",
+    r"\bthis gives\b",
+    r"\bthat gives\b",
+    r"\bscreening\b",
+)
+
+
+def _profile_section(text: str) -> str:
+    m = re.search(r"(?ims)^##\s+(?:profile|summary)\s*$\n(.*?)(?=^##\s+|\Z)",
+                  text)
+    return m.group(1) if m else ""
+
+
 def _selection_problems(text: str) -> list[str]:
     problems = []
     lower = text.lower()
@@ -1268,6 +1311,13 @@ def _selection_problems(text: str) -> list[str]:
     for pattern, message in _INSTRUCTION_LEAKS:
         if re.search(pattern, lower):
             problems.append(f"selection: {message}")
+    profile = _profile_section(text).lower()
+    if any(re.search(pattern, profile) for pattern in _PROFILE_NOTE_LEAKS):
+        problems.append(
+            "selection: rewrite the Profile or Summary as applicant-facing CV "
+            "prose. It currently reads like screening feedback or an evidence "
+            "selection note; remove phrases such as 'Strongest evidence is', "
+            "'evidence is in' and 'practical base'")
     return problems
 
 
@@ -1429,6 +1479,63 @@ def _salvage_score(line: str, terms: set[str]) -> int:
     return score
 
 
+def _salvage_profile(jd: str) -> str:
+    low = jd.lower()
+    if re.search(r"\b(incident|outage|service restoration|problem management|"
+                 r"continuity|itil|sla|root cause|post-incident)\b", low):
+        return (
+            "Engineering leader with experience coordinating incident response, "
+            "restoring critical services and improving operational resilience "
+            "across data, SaaS and travel platforms. Combines calm ownership, "
+            "clear stakeholder communication and hands-on technical judgement "
+            "when customer-facing systems need structured recovery and lasting "
+            "improvement."
+        )
+    if re.search(r"\b(data|analytics|warehouse|pipeline|platform|sql|"
+                 r"kafka|cloud|infrastructure|architecture)\b", low):
+        return (
+            "Engineering leader with experience building data platforms, "
+            "improving reliability and leading teams through complex technical "
+            "delivery. Combines architecture judgement, hands-on engineering "
+            "context and pragmatic stakeholder communication to turn broad "
+            "requirements into maintainable services."
+        )
+    return (
+        "Engineering leader with experience managing teams, improving delivery "
+        "practices and building reliable customer-facing software. Combines "
+        "hands-on technical judgement with coaching, prioritisation and clear "
+        "stakeholder communication across engineering, product and customer "
+        "groups."
+    )
+
+
+def _salvage_skills(jd: str) -> str:
+    low = jd.lower()
+    if re.search(r"\b(incident|outage|service restoration|problem management|"
+                 r"continuity|itil|sla|root cause|post-incident)\b", low):
+        return (
+            "Incident coordination, stakeholder updates, root-cause analysis, "
+            "post-incident review, operational readiness, service restoration, "
+            "SLA/SLO thinking, risk escalation, audit support, disaster "
+            "recovery, runbooks, on-call, platform reliability, supplier and "
+            "customer coordination."
+        )
+    if re.search(r"\b(data|analytics|warehouse|pipeline|sql|kafka|"
+                 r"architecture|cloud|infrastructure)\b", low):
+        return (
+            "Engineering leadership, data platforms, cloud architecture, "
+            "service reliability, CI/CD, infrastructure as code, SQL, "
+            "PostgreSQL, Kafka, observability, technical governance, delivery "
+            "planning, coaching and stakeholder communication."
+        )
+    return (
+        "Engineering leadership, people management, technical architecture, "
+        "delivery planning, stakeholder communication, coaching, hiring, "
+        "operational improvement, service reliability, governance and "
+        "cross-team collaboration."
+    )
+
+
 def _salvage_cv(d: Path) -> bool:
     """Create a compact CV when the model has copied the master CV through.
 
@@ -1469,13 +1576,11 @@ def _salvage_cv(d: Path) -> bool:
         "",
         "## Profile",
         "",
-        "Engineering leader with hands-on experience coordinating major incidents, restoring critical services and improving operational resilience across data, SaaS and travel platforms. Brings incident control, stakeholder communication, root-cause review, governance and continuity experience, with practical exposure to audited, high-volume environments. Comfortable working across engineering, product, customer, supplier and senior stakeholder groups when a service issue needs calm ownership and clear decisions.",
-        "",
-        "Strongest evidence is in incident response for critical monitoring, metrics and data-platform services, recovery practice improvement, audit-control support and customer-impacting SaaS delivery. Brings a practical base for major incident ownership, escalation, stakeholder reporting, supplier coordination and post-incident improvement in environments where clarity, pace and calm control matter.",
+        _salvage_profile(jd),
         "",
         "## Skills",
         "",
-        "Major incident control, stakeholder updates, root-cause analysis, post-incident review, operational readiness, service restoration, SLA/SLO thinking, risk escalation, audit support, disaster recovery, failover testing, runbooks, on-call, platform reliability, supplier and customer coordination.",
+        _salvage_skills(jd),
         "",
         "## Experience",
         "",

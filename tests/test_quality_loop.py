@@ -233,6 +233,8 @@ Degree in Software Engineering
     assert text.startswith("# Ryan Begen\n"), text[:80]
     assert "Selected achievements and evidence" not in text
     assert "Additional notes for matching systems" not in text
+    assert "Strongest evidence is" not in text
+    assert "practical base" not in text
     assert "without inventing" not in text.lower()
     assert "not present in the source CV" not in text
     assert "incident controller" in text
@@ -253,6 +255,21 @@ def test_a_cv_profile_that_leaks_prompt_instructions_is_sent_back():
     assert ok is False
     assert any("without inventing" in p for p in problems), problems
     assert any("candidate-facing CV" in p for p in problems), problems
+
+
+def test_a_cv_profile_that_reads_like_screening_notes_is_sent_back():
+    draft = CLEAN_CV.replace(
+        "I am on the incident rota.",
+        "Strongest evidence is in incident response for critical monitoring, "
+        "metrics and data-platform services. Brings a practical base for "
+        "major incident ownership and stakeholder reporting.")
+    with mock.patch.object(runner, "_BUNDLED_SKILLS", _skills(CLEAN_REPORT)), \
+            mock.patch.object(runner, "_skill_roots",
+                              lambda: [runner._BUNDLED_SKILLS]):
+        ok, problems, _ = runner._quality(_dir(draft), "CV.md", "cv")
+    assert ok is False
+    assert any("screening feedback" in p for p in problems), problems
+    assert any("Strongest evidence is" in p for p in problems), problems
 
 
 def test_skills_bullets_do_not_count_as_too_many_achievement_bullets():

@@ -2619,8 +2619,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap = sub.add_parser("applied", help="record what happened with a role")
     ap.add_argument("target", help="a posting URL, a company name, or a uid")
     ap.add_argument("-s", "--status", default="applied",
-                    help="new|interested|applied|submitted|interviewing|offer|"
-                         "rejected|withdrawn|skipped|closed")
+                    help="new|interested|ready_to_apply|applied|submitted|"
+                         "interviewing|offer|rejected|withdrawn|skipped|closed")
     ap.add_argument("--note", default=None,
                    help="free text kept against the role, shown by `list` and "
                         "on the dashboard. Pass an empty string to clear one.")
@@ -2684,8 +2684,8 @@ def build_parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("list", help="the dashboard, as text")
     ls.add_argument("--status", default=None,
                     help="only roles at this status: "
-                         "new|interested|applied|submitted|interviewing|offer|"
-                         "rejected|withdrawn|skipped|closed. Naming a settled "
+                         "new|interested|ready_to_apply|applied|submitted|"
+                         "interviewing|offer|rejected|withdrawn|skipped|closed. Naming a settled "
                          "one shows it, which is otherwise what --all is for.")
     ls.add_argument("--all", action="store_true",
                     help="include settled roles and ones no longer on a board")

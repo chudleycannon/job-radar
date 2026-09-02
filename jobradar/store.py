@@ -123,13 +123,14 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 
 # Terminal states: these roles stop appearing in results.
 SETTLED = {"rejected", "withdrawn", "skipped", "closed"}
-STATUSES = ["new", "interested", "applied", "submitted", "interviewing",
-            "offer", "rejected", "withdrawn", "skipped", "closed"]
+STATUSES = ["new", "interested", "ready_to_apply", "applied", "submitted",
+            "interviewing", "offer", "rejected", "withdrawn", "skipped",
+            "closed"]
 
 # Applications with something still owed on them, by you or by them. These are
 # the rows with a deadline attached, and they were scattered among hundreds of
 # roles nobody has touched.
-IN_FLIGHT = {"applied", "submitted", "interviewing", "offer"}
+IN_FLIGHT = {"ready_to_apply", "applied", "submitted", "interviewing", "offer"}
 
 # Applications that ended. Deliberately excludes "skipped": you never applied
 # to those, so they are noise in a record of what you actually went for.
@@ -150,9 +151,9 @@ APPLICATION_EXCLUDED_EVIDENCE_CATEGORIES = {"preference", "constraint"}
 
 # How far along an application is, for deciding which of two records of the
 # same job to keep. A merge must never trade an interview for an "interested".
-PROGRESS = {"new": 0, "skipped": 1, "interested": 2, "applied": 3,
-            "submitted": 4, "closed": 5, "withdrawn": 6, "rejected": 7,
-            "interviewing": 8, "offer": 9}
+PROGRESS = {"new": 0, "skipped": 1, "interested": 2, "ready_to_apply": 3,
+            "applied": 4, "submitted": 5, "closed": 6, "withdrawn": 7,
+            "rejected": 8, "interviewing": 9, "offer": 10}
 
 
 class StoreError(Exception):

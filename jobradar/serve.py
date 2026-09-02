@@ -20,7 +20,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import html as _h
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import ai
 from . import profile as candidate_profile
@@ -105,8 +105,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _markdown_page(self, title: str, text: str, artifact_id: int | None = None):
-        html = _markdown_document(title, text, artifact_id=artifact_id)
+    def _markdown_page(self, title: str, text: str,
+                       artifact_id: int | None = None, nav: str = ""):
+        html = _markdown_document(title, text, artifact_id=artifact_id, nav=nav)
         return self._html(html)
 
     def _artifact_path(self, raw: str) -> Path:
@@ -330,8 +331,9 @@ class Handler(BaseHTTPRequestHandler):
             con = store.connect(self.db_path)
             try:
                 row = con.execute(
-                    "SELECT id,kind,path,body FROM artifacts WHERE id=?",
+                    "SELECT id,uid,kind,path,body FROM artifacts WHERE id=?",
                     (int(raw_id),)).fetchone()
+                nav = _review_nav(con, row["uid"], row["kind"], int(row["id"])) if row else ""
             finally:
                 con.close()
             if not row:
@@ -368,13 +370,13 @@ class Handler(BaseHTTPRequestHandler):
                         return self._markdown_page(
                             md.name,
                             md.read_text(encoding="utf-8", errors="ignore"),
-                            int(row["id"]))
+                            int(row["id"]), nav)
                     except OSError as exc:
                         _log_error(f"could not read artifact markdown {row['id']}: {exc}")
                 if (row["body"] or "").strip():
                     return self._markdown_page(
                         "CV.md" if row["kind"] == "cv" else "cover-letter.md",
-                        row["body"], int(row["id"]))
+                        row["body"], int(row["id"]), nav)
             if p.exists() and p.is_file():
                 try:
                     return self._file(p)
@@ -387,6 +389,28 @@ class Handler(BaseHTTPRequestHandler):
                     "padding:0 1.5rem'>"
                     f"{_h.escape(row['body'])}</pre>")
             return self._json({"ok": False, "error": "not found"}, 404)
+        if path.startswith("/role/"):
+            parts = [x for x in path.removeprefix("/role/").split("/") if x]
+            if len(parts) != 2 or parts[1] != "job-description":
+                return self._json({"ok": False, "error": "bad role document"}, 400)
+            uid = unquote(parts[0])
+            con = store.connect(self.db_path)
+            try:
+                row = con.execute(
+                    "SELECT uid,company,title,description FROM roles WHERE uid=?",
+                    (uid,)).fetchone()
+                nav = _review_nav(con, uid, "job_description", None) if row else ""
+            finally:
+                con.close()
+            if not row:
+                return self._json({"ok": False, "error": "not found"}, 404)
+            title = "Job description"
+            head = " - ".join(x for x in (row["company"], row["title"]) if x)
+            text = f"# {title}\n\n"
+            if head:
+                text += f"**{head}**\n\n"
+            text += (row["description"] or "_No stored job description._")
+            return self._markdown_page(title, text, nav=nav)
         if path.startswith("/open"):
             # Checked like a POST. It is a GET, but it runs `open -R` on a
             # path from the query string, so any page in the browser could
@@ -396,7 +420,6 @@ class Handler(BaseHTTPRequestHandler):
                     {"ok": False, "error": "cross-origin request refused"}, 403)
             # Reveal a generated document in Finder rather than serving it.
             import subprocess
-            from urllib.parse import parse_qs, unquote
             q = parse_qs(urlparse(self.path).query)
             target = (q.get("path") or [""])[0]
             p = Path(unquote(target)) if target else None
@@ -833,8 +856,32 @@ def _artifact_markdown_path(kind: str, artifact_path: Path) -> Path:
     return artifact_path.with_name(name)
 
 
+def _review_nav(con, uid: str, current: str, current_id: int | None = None) -> str:
+    rows = con.execute(
+        "SELECT id,kind FROM artifacts WHERE uid=? "
+        "AND kind IN ('cv','cover_letter') ORDER BY id DESC",
+        (uid,)).fetchall()
+    latest = {}
+    for r in rows:
+        latest.setdefault(r["kind"], int(r["id"]))
+    items = []
+    for kind, label in (("cv", "CV"), ("cover_letter", "Cover letter")):
+        aid = latest.get(kind)
+        if not aid:
+            continue
+        active = (current_id == aid) or (current == kind and current_id is None)
+        items.append(
+            f"<a class='{'active' if active else ''}' href='/artifact/{aid}'>"
+            f"{_h.escape(label)}</a>")
+    jd_active = current == "job_description"
+    items.append(
+        f"<a class='{'active' if jd_active else ''}' "
+        f"href='/role/{quote(uid, safe='')}/job-description'>Job description</a>")
+    return "<div class='tabs'>" + "".join(items) + "</div>"
+
+
 def _markdown_document(title: str, text: str, *,
-                       artifact_id: int | None = None) -> str:
+                       artifact_id: int | None = None, nav: str = "") -> str:
     body = _markdown_body(text)
     panel = _rewrite_panel(artifact_id)
     css = """
@@ -842,6 +889,9 @@ def _markdown_document(title: str, text: str, *,
     main{max-width:760px;margin:0 auto;padding:48px 24px 72px;background:#fff;min-height:100vh;box-shadow:0 0 0 1px rgba(30,25,15,.08)}
     nav{max-width:760px;margin:0 auto;padding:18px 24px 0}
     a{color:#285f79;text-decoration:none}a:hover{text-decoration:underline}
+    .tabs{max-width:760px;margin:14px auto 0;padding:0 24px;display:flex;gap:8px;flex-wrap:wrap}
+    .tabs a{border:1px solid #d6cdbd;border-radius:6px;background:#fff;padding:7px 11px;font-size:14px}
+    .tabs a.active{background:#285f79;color:#fff;border-color:#285f79}
     h1{font-size:30px;line-height:1.15;margin:0 0 22px}
     h2{font-size:21px;line-height:1.25;margin:30px 0 10px;border-top:1px solid #e7e0d2;padding-top:18px}
     h3{font-size:17px;margin:22px 0 8px}
@@ -857,11 +907,19 @@ def _markdown_document(title: str, text: str, *,
     .review .msg{font-size:13px;color:#60584d}
     """
     script = _rewrite_script(artifact_id)
+    back_script = """
+    const back=document.querySelector('#back-dashboard');
+    try{
+      const saved=localStorage.getItem('jobRadar.dashboard.return.v1');
+      if(back && saved && saved.startsWith('/')) back.setAttribute('href',saved);
+    }catch(e){}
+    """
     return (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{_h.escape(title)}</title><style>{css}</style></head>"
-            f"<body><nav><a href='/'>Dashboard</a></nav><main>{body}</main>"
-            f"{panel}<script>{script}</script></body></html>")
+            f"<body><nav><a id='back-dashboard' href='/'>Dashboard</a></nav>"
+            f"{nav}<main>{body}</main>{panel}<script>{back_script}{script}</script>"
+            f"</body></html>")
 
 
 def _rewrite_panel(artifact_id: int | None) -> str:

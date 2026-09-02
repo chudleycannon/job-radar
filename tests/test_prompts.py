@@ -163,8 +163,19 @@ def test_the_master_cv_is_an_evidence_bank_not_the_output_shape():
     assert _says("cv", "Use about a quarter to a third")
     assert _says("cv", "Keep at most 18 achievement bullets")
     assert _says("cv", "Experience section")
+    assert _says("cv", "Treat `job-description.md` as the only target role")
+    assert _says("cv", "current posting's strongest requirements")
     for section in ("Target role signals", "Why this role", "Additional notes"):
         assert _says("cv", section)
+
+
+def test_the_profile_must_not_read_like_screening_feedback():
+    """The profile is the front of the application, not a note explaining why
+    the generator selected certain evidence."""
+    assert _says("cv", "screening feedback")
+    assert _says("cv", "Strongest evidence is")
+    assert _says("cv", "practical base")
+    assert _says("cv", "one natural applicant-facing paragraph")
 
 
 def test_cover_letters_are_letters_not_second_cvs():

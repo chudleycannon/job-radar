@@ -76,7 +76,7 @@ def test_document_artifact_links_are_not_intercepted_as_json():
     download. The old Finder-reveal handler still intercepted those clicks and
     tried to parse the response as JSON, so the browser never opened the file
     and the toast said "could not open it"."""
-    assert "startsWith('/artifact/')) return" in SRC
+    assert "startsWith('/artifact/')){writeState(); return;}" in SRC
 
 
 def test_the_dashboard_links_to_generation_evidence_trace():
@@ -89,17 +89,43 @@ def test_the_dashboard_can_reset_saved_generation_outputs():
     assert "/api/reset-outputs" in SRC
 
 
-def test_the_dashboard_can_hide_only_applied_roles():
-    """Applied roles are still active enough to appear in Open and In flight,
-    but sometimes you want to clear away the ones where the application is
-    already sent while keeping interviews and offers visible."""
-    assert 'data-f="unapplied">Hide applied' in SRC
-    assert "(f==='unapplied' && !SETTLED.has(st) && st!=='applied')" in SRC
+def test_the_dashboard_top_bar_has_ready_to_apply_not_the_old_open_tabs():
+    assert 'data-f="ready">Ready to apply' in SRC
+    assert "(f==='ready' && st==='ready_to_apply')" in SRC
+    assert 'data-f="open">Open' not in SRC
+    assert 'data-f="unapplied">Hide applied' not in SRC
 
 
 def test_the_dashboard_can_filter_interested_roles():
     assert 'data-f="interested">Interested' in SRC
     assert "(f==='interested' && st==='interested')" in SRC
+
+
+def test_the_dashboard_can_mark_roles_ready_to_apply():
+    assert "ready_to_apply" in store.STATUSES
+    assert "ready_to_apply" in interactive.render(_con())
+    assert "ready to apply" in interactive.render(_con())
+    assert "ready_to_apply','applied" in SRC
+    assert "statusLabel(status)" in SRC
+
+
+def test_dashboard_state_remembers_the_visible_role():
+    assert "role',st.anchor" in SRC
+    assert "function visibleUid()" in SRC
+    assert "scrollIntoView({block:'start'})" in SRC
+    assert "addEventListener('scroll'" in SRC
+
+
+def test_dashboard_has_a_compact_card_mode():
+    page = interactive.render(_con())
+    assert 'id="compact"' in page
+    assert "Compact cards" in page
+    assert ".compact .docs" in page
+    assert ".compact .acts" in page
+    assert "compact-meta" in page
+    assert ".compact .status" in page
+    assert "compact,anchor" in SRC
+    assert "document.body.classList.toggle('compact',compact)" in SRC
 
 
 def test_the_dashboard_has_multi_status_filter_chips():
@@ -152,9 +178,9 @@ def test_a_saved_screen_answer_is_rendered_with_the_screening():
 
 def test_the_facet_counts_are_counted_against_the_tab_you_are_in():
     """They were counted once, in Python, over every row in the database,
-    while the page opens on Open and Open hides everything settled. A board
-    with one skipped public-sector role rendered "Public sector 1", and
-    clicking it emptied the list and said "Nothing matches those filters"."""
+    while the selected tab can hide rows. A board with one skipped
+    public-sector role rendered "Public sector 1", and clicking it emptied
+    the list and said "Nothing matches those filters"."""
     assert "function paintCounts(" in SRC
     assert "paintCounts(cSec,cMode,cStatus,cCountry,cCity)" in SRC
 

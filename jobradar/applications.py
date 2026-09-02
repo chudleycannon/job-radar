@@ -19,8 +19,8 @@ import yaml
 
 # Ordered from earliest to latest. Anything past `applied` means the role has
 # had real effort spent on it and should not resurface as a new find.
-STATUSES = ["interested", "applied", "submitted", "interviewing",
-            "offer", "rejected", "withdrawn", "closed"]
+STATUSES = ["interested", "ready_to_apply", "applied", "submitted",
+            "interviewing", "offer", "rejected", "withdrawn", "closed"]
 
 # Statuses that mean "stop showing me this as new".
 SETTLED = {"rejected", "withdrawn", "closed"}

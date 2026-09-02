@@ -1125,6 +1125,9 @@ def test_artifact_link_serves_the_generated_cv_markdown_preview():
             assert "<li>Led incidents.</li>" in body, body
             assert "Rewrite selection" in body, body
             assert "/api/artifact/rewrite" in body, body
+            assert f"href='/artifact/{aid}'" in body, body
+            assert f"href='/artifact/{lid}'" in body, body
+            assert "href='/role/uid-one/job-description'" in body, body
             assert "download me" not in body, body
 
             code, body = _req(base, f"/artifact/{aid}/download.md", method="GET")
@@ -1136,12 +1139,23 @@ def test_artifact_link_serves_the_generated_cv_markdown_preview():
             code, body = _req(base, f"/artifact/{lid}", method="GET")
             assert code == 200, (code, body)
             assert "<h1>Cover Letter</h1>" in body, body
+            assert f"href='/artifact/{aid}'" in body, body
+            assert "href='/role/uid-one/job-description'" in body, body
             code, body = _req(base, f"/artifact/{lid}/download.md", method="GET")
             assert code == 200, (code, body)
             assert "# Cover Letter" in body, body
             code, body = _req(base, f"/artifact/{lid}/download.docx", method="GET")
             assert code == 200, (code, body)
             assert body == "letter docx", body
+
+            code, body = _req(base, "/role/uid-one/job-description", method="GET")
+            assert code == 200, (code, body)
+            assert "<h1>Job description</h1>" in body, body
+            assert "Tidewater Optics" in body, body
+            assert "We are hiring an engineering leader." in body, body
+            assert f"href='/artifact/{aid}'" in body, body
+            assert f"href='/artifact/{lid}'" in body, body
+            assert "class='active' href='/role/uid-one/job-description'" in body, body
 
 
 def test_artifact_preview_can_rewrite_and_apply_selected_text():
@@ -1241,6 +1255,44 @@ def test_artifact_preview_resolves_paths_relative_to_the_data_folder():
             code, body = _req(base, f"/artifact/{aid}/download.docx", method="GET")
             assert code == 200, (code, body)
             assert body == "fake docx bytes", body
+
+
+def test_dashboard_view_state_survives_refresh_and_artifact_round_trips():
+    with _lab() as (root, db, home):
+        cv = root / "source-cv.md"
+        cv.write_text("Rowan Ashby\n", encoding="utf-8")
+        cfg = root / "config.yaml"
+        cfg.write_text(
+            "titles:\n  include: [Engineering Manager]\n"
+            "locations:\n  countries: [UK]\n"
+            "cv:\n  path: " + json.dumps(str(cv)) + "\n",
+            encoding="utf-8")
+        con = store.connect(db)
+        try:
+            made = root / "docs" / "CV.docx"
+            made.parent.mkdir(parents=True, exist_ok=True)
+            made.write_text("download me", encoding="utf-8")
+            (made.parent / "CV.md").write_text("# Rowan Ashby\n",
+                                               encoding="utf-8")
+            aid = store.add_artifact(con, "uid-one", "cv", str(made),
+                                     body="download me")
+        finally:
+            con.close()
+
+        with _server(db, config_path=cfg) as base:
+            code, page = _req(base, "/", method="GET")
+            assert code == 200, (code, page)
+            assert "jobRadar.dashboard.state.v1" in page, page
+            assert "jobRadar.dashboard.return.v1" in page, page
+            assert "location.hash.slice(1)" in page, page
+            assert "history.replaceState" in page, page
+            assert "writeState(); return;" in page, page
+
+            code, preview = _req(base, f"/artifact/{aid}", method="GET")
+            assert code == 200, (code, preview)
+            assert "id='back-dashboard'" in preview, preview
+            assert "jobRadar.dashboard.return.v1" in preview, preview
+            assert "saved.startsWith('/')" in preview, preview
 
 
 def test_browser_generation_defaults_documents_beside_the_database():
