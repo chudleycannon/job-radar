@@ -26,6 +26,19 @@ DEFAULT_BASE = Path.home() / "job-applications"
 TIMEOUT = 900          # 15 minutes; a pack that takes longer has gone wrong
 MAX_ATTEMPTS = 2
 
+# How many generations may run at once.
+#
+# There used to be one lock called "generate" and the answer was one, which
+# was the right guard for the wrong reason: the collision it stopped is two
+# runs writing the SAME role's folder, and that is now a per-role lock. Two
+# different roles were never in each other's way, so bulk screening a
+# shortlist ran them one at a time for no reason.
+#
+# Three, because each one is a `claude` subprocess that spends money and the
+# machine also has a scan on it. Raise it with JOB_RADAR_MAX_RUNNING if you
+# know what your quota and your laptop will take.
+MAX_RUNNING = max(1, int(os.environ.get("JOB_RADAR_MAX_RUNNING", "3")))
+
 KINDS = {
     "screen": "Screen this role against my dealbreakers",
     "cv": "Draft a tailored CV",
@@ -999,6 +1012,16 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
 
         expected = {"cv": "CV.md", "cover_letter": "cover-letter.md",
                     "screen": "screening.md"}[job["kind"]]
+        # Before the gates read it, so what is checked is what is filed.
+        if job["kind"] in ("cv", "cover_letter") and (d / expected).exists():
+            f = d / expected
+            try:
+                raw = f.read_text(encoding="utf-8")
+                fixed = tidy_case(raw)
+                if fixed != raw:
+                    f.write_text(fixed, encoding="utf-8")
+            except OSError:
+                pass
         if not (d / expected).exists():
             fail(f"finished without writing {expected}. See the log.", out)
             return
@@ -1168,6 +1191,46 @@ def _record(con, job, d: Path, log: str) -> None:
             store.add_artifact(con, uid, "evidence_used", d / "evidence-used.json")
 
 
+# Words that carry no phrasing on their own. A run made of these plus a
+# number is a shared fact, not a shared sentence.
+_FILLER = frozenset("""
+a an and are as at be been but by for from has have in into is it its of on
+or that the their there this to was were which with within will would can
+could over under between across per year years month months week weeks day
+days about around up down out off than then so if not no all any each both
+""".split())
+
+
+def _is_prose(gram) -> bool:
+    """Whether a shared run is repeated writing rather than a repeated fact.
+
+    The gate exists to stop the letter re-reading the CV in the same words. It
+    was firing on "1 325 engineer hours a year", which is one figure: the
+    tokeniser drops the comma in "1,325" and the hyphen in "engineer-hours",
+    so a single statistic and three ordinary words reach six tokens.
+
+    Worse than a false positive, it put two gates in direct conflict.
+    `unsourced_specifics` requires every figure in a document to appear in the
+    real CV, and then this one reported the figure appearing in both as
+    overlap. A draft could not satisfy both, and the honest one failed.
+
+    So a run has to carry enough words that are neither numbers nor filler
+    before it counts. Real repeated prose clears this easily; a shared
+    statistic does not.
+    """
+    content = [w for w in gram if w not in _FILLER and not w.isdigit()]
+    return len(content) >= 4
+
+
+# Emails and URLs, which both documents share by design.
+_ADDRESS = re.compile(
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"                      # an email address
+    r"|(?:https?://|www\.)\S+"                             # an explicit URL
+    r"|\b[\w-]+(?:\.[\w-]+)*\.(?:com|co\.uk|org|net|io|dev|ai|me)\b(?:/\S*)?",
+    re.I,
+)
+
+
 def shared_ngram(a: str, b: str, n: int = 6) -> str:
     """The longest shared sequence of n or more words, or "" if there is none.
 
@@ -1177,7 +1240,13 @@ def shared_ngram(a: str, b: str, n: int = 6) -> str:
     result as a failure.
     """
     def toks(s: str) -> list[str]:
-        return re.findall(r"[a-z0-9']+", s.lower())
+        # Strip addresses before tokenising. The tokeniser splits on
+        # punctuation, so "linkedin.com/in/callum-mcdonald-b416b299" arrives as
+        # six ordinary-looking words, clears _is_prose, and is reported as the
+        # letter reusing the CV's phrasing. Both documents carry the same
+        # contact block on purpose: that is a header, not repeated writing.
+        s = _ADDRESS.sub(" ", s.lower())
+        return re.findall(r"[a-z0-9']+", s)
 
     ta, tb = toks(a), toks(b)
     if len(ta) < n or len(tb) < n:
@@ -1185,7 +1254,7 @@ def shared_ngram(a: str, b: str, n: int = 6) -> str:
     grams_b = {tuple(tb[i:i + n]) for i in range(len(tb) - n + 1)}
     best = ""
     for i in range(len(ta) - n + 1):
-        if tuple(ta[i:i + n]) in grams_b:
+        if tuple(ta[i:i + n]) in grams_b and _is_prose(ta[i:i + n]):
             # extend the match as far as it goes, to report something useful
             k = n
             while (i + k < len(ta)
@@ -1626,6 +1695,57 @@ def _salvage_cv(d: Path) -> bool:
     return True
 
 
+# Words that are lower case on purpose, and stay that way at the start of a
+# line. The list is short because the rule below only fires on a run of plain
+# letters: anything with a digit or an internal capital (n8n, iOS, macOS,
+# eBay, gRPC) is skipped without needing an entry here.
+_KEEPS_LOWER = frozenset({"npm", "pip", "sudo", "curl", "ssh", "git", "vim",
+                          "bash", "zsh", "ffmpeg", "jq", "kubectl", "systemd"})
+
+
+# A first word is only a word if what follows it is not an address. The old
+# guard was `(?![A-Za-z0-9])`, which skips "n8n" and "macOS" but waves through
+# "mcdonaldcallum@hotmail.co.uk" and "linkedin.com/in/...", because "@" and "."
+# are neither a letter nor a digit. The contact line at the top of every letter
+# went out reading "Mcdonaldcallum@hotmail.co.uk".
+#
+# A trailing "." on its own still capitalises, so a one-word line like "Done."
+# is untouched; only a dot that starts a domain disqualifies the word.
+_NOT_AN_ADDRESS = r"(?![A-Za-z0-9]|@|\.[A-Za-z])"
+
+
+def tidy_case(text: str) -> str:
+    """Capitalise the first word of a line, and of a `**Label:**` list.
+
+    A CV whose skills read "**Leadership:** managing team leads" looks like
+    somebody stopped mid-sentence. The source CV had it and the drafts
+    faithfully reproduced it, which is the point: the model copies the shape
+    of what it is given, so this is not something to ask it for politely. Do
+    it after the draft and it is right every time and costs nothing.
+
+    Deliberately narrow. Only a first word of plain lower-case letters is
+    touched, and the run has to END the word: "n8n" and "macOS" are skipped
+    because a digit or a capital follows the letters, so they are left alone
+    by the shape of the token rather than by a list, and `_KEEPS_LOWER` covers the few
+    real words that are conventionally lower case. Nothing inside a line
+    moves: the last hand-pass over this CV title-cased things that were not
+    titles, and over-capitalising is the more embarrassing failure of the two.
+    """
+    def up(m):
+        word = m.group("w")
+        if word.lower() in _KEEPS_LOWER:
+            return m.group(0)
+        return m.group("pre") + word[0].upper() + word[1:]
+
+    # After a bold label: "**Leadership:** managing" -> "Managing".
+    text = re.sub(r"(?P<pre>\*\*[^*\n]+:\*\*\s+)(?P<w>[a-z]+)" + _NOT_AN_ADDRESS,
+                  up, text)
+    # Start of a line, including a bullet or a numbered item.
+    text = re.sub(r"(?P<pre>^(?:[-*+]\s+|\d+\.\s+)?)(?P<w>[a-z]+)" + _NOT_AN_ADDRESS,
+                  up, text, flags=re.M)
+    return text
+
+
 def _invented(doc: str, source: str) -> list[str]:
     """Specifics in the draft that are not in the source CV.
 
@@ -1641,7 +1761,15 @@ def _invented(doc: str, source: str) -> list[str]:
     and from dates. So this reports rather than blocks, and it is deliberately
     narrow: only tokens with no counterpart anywhere in the source.
     """
-    def norm(x): return x.lower().replace(",", "").rstrip(".")
+    # `.strip()` on both sides, and that is the whole of a bug worth naming.
+    # `_NUMBER` ends `\s?[%kKmMbB]?`, so a figure followed by a space keeps
+    # that space in the match: the source held "241441 " while the draft side
+    # stripped its token to "241441", the two never compared equal, and the
+    # gate reported Callum's own phone number as a figure his CV had invented.
+    # Every number in a source CV that happens to be followed by a space was
+    # unmatchable the same way. A gate that cries wolf is worse than no gate,
+    # because the next real invention is read as more noise.
+    def norm(x): return x.strip().lower().replace(",", "").rstrip(".")
     have = {norm(m.group(0)) for m in _NUMBER.finditer(source)}
     have |= {m.group(0).lower() for m in _QUALIFIERS.finditer(source)}
     out = []
@@ -2055,6 +2183,40 @@ def regate(con) -> int:
     return n
 
 
+def pump(db_path=None, base=None, config_path=None) -> int:
+    """Start queued jobs until `MAX_RUNNING` of them are going. Returns how
+    many it started.
+
+    The cap used to be applied at the door: ask for nine screens and three
+    started and six were refused, while the dialog that took the click said
+    "the rest queue". They did not queue. Selecting nine roles and getting
+    three is worse than useless, because the six that bounced look identical
+    to six that were never asked for.
+
+    So the cap now limits what RUNS, and everything asked for is accepted and
+    waits its turn. Called after enqueueing and again as each job ends, so the
+    queue drains itself without anything polling.
+    """
+    con = store.connect(db_path)
+    try:
+        started = 0
+        while True:
+            busy = store.busy_uids(con)
+            if len(busy) >= MAX_RUNNING:
+                return started
+            row = store.next_pending(con, exclude_uids=busy)
+            if row is None:
+                return started
+            # The lock decides, not the count read a moment ago: two pumps can
+            # run at once, one from a click and one from a job finishing.
+            if not store.claim(con, f"generate:{row['uid']}"):
+                continue
+            spawn(row["id"], db_path=db_path, base=base, config_path=config_path)
+            started += 1
+    finally:
+        con.close()
+
+
 def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
     """Run a job on a daemon thread so the click returns immediately."""
     def work():
@@ -2079,15 +2241,26 @@ def spawn(job_id: int, db_path=None, base=None, config_path=None) -> None:
                 con = None
             if con is not None:
                 try:
-                    if failure:
-                        row = con.execute("SELECT state FROM jobs WHERE id=?",
-                                          (job_id,)).fetchone()
-                        if row and row["state"] in ("pending", "running"):
-                            store.mark_job(con, job_id, "failed",
-                                           error=f"the generation stopped "
-                                                 f"before it started: {failure}")
-                    store.release(con, "generate")
+                    row = con.execute("SELECT uid, state FROM jobs WHERE id=?",
+                                      (job_id,)).fetchone()
+                    if failure and row and row["state"] in ("pending", "running"):
+                        store.mark_job(con, job_id, "failed",
+                                       error=f"the generation stopped "
+                                             f"before it started: {failure}")
+                    # The lock is per role now, so the row is read for its uid
+                    # rather than only when something failed. A lock left
+                    # behind refuses every later run on that role until the
+                    # server restarts.
+                    if row:
+                        store.release(con, f"generate:{row['uid']}")
                 finally:
                     con.close()
+            # A slot just came free, so take the next thing off the queue.
+            # Nothing polls: the queue drains on the back of the job that
+            # freed the space.
+            try:
+                pump(db_path=db_path, base=base, config_path=config_path)
+            except Exception:
+                pass
 
     threading.Thread(target=work, daemon=True).start()

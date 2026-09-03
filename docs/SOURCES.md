@@ -2,7 +2,7 @@
 
 [job-radar](../README.md)
 
-The bundled list is 17,807 employer job boards, read straight from the
+The bundled list is 17,809 employer job boards, read straight from the
 applicant tracking system each employer runs, plus three keyword searches.
 This is the long version: why employer boards rather than an aggregator, the
 two aggregators that are in and how to switch them on, every well-known job
@@ -229,7 +229,7 @@ one live snapshot held **five** engineering-leadership titles across roughly
 
 **Fields you cannot select for, because most of the list is still unlabelled.**
 This used to read as a shortage of employers. It is now a shortage of tags. Of
-17,811 sources, **6,089 carry a sector tag and 11,722 carry none**: the harvest
+17,813 sources, **6,091 carry a sector tag and 11,722 carry none**: the harvest
 that took this list from hundreds to thousands read board addresses out of a
 public crawl index, and an address does not say what industry the employer is
 in. The tagged ones are 1,311 healthcare, 1,304 finance, 512 education, 498
@@ -246,12 +246,12 @@ list for "every hospitality employer" and get a true answer, and `job-radar
 coverage` can only report what somebody labelled.
 
 **The country tags work the same way, and `sources.countries` obeys the same
-rule.** 5,214 sources carry no country tag and 1,597 are tagged `multi`, which
+rule.** 5,215 sources carry no country tag and 1,597 are tagged `multi`, which
 means the board belongs to a multinational rather than to one country. Both
 kinds are fetched whatever you set, because "we could not tell" and "several
 countries" are not evidence that the employer has nothing where you are, and
 a multinational is one of the likelier places to find a vacancy in yours. So
-`sources.countries: [UK]` leaves 7,745 sources rather than the 934 tagged
+`sources.countries: [UK]` leaves 7,747 sources rather than the 934 tagged
 `UK`: it skips the boards that can be proved to be somewhere else, and
 `locations.countries` is what actually decides where a role is.
 
@@ -299,7 +299,7 @@ found 23 dead boards, and 19 of those had simply moved ATS and were hiding
 A weekly job in this repository revalidates every board on Sunday mornings and
 opens a pull request pruning anything dead. Growing the list is a separate job
 that does not live here: the crawl-index harvest that found most of these
-17,807 boards runs in a private maintainer repository, so that forking this
+17,809 boards runs in a private maintainer repository, so that forking this
 does not set a crawler loose. **Neither of them reaches your copy.**
 
 - **Cloned it?** Your source list is frozen at the day you cloned.

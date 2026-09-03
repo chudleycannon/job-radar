@@ -7,8 +7,8 @@
 Watch employers' job boards directly, and only hear about the roles that pass
 your own filters.
 
-It reads 17,807 employer job boards straight from the applicant tracking
-systems companies run, normalises 21 board platforms into one shape, and drops
+It reads 17,809 employer job boards straight from the applicant tracking
+systems companies run, normalises 23 board platforms into one shape, and drops
 anything that fails rules you wrote down once. It is for one person running
 their own search on their own machine, and it is built to show you fewer
 things rather than more.
@@ -210,10 +210,12 @@ job-radar seed load https://github.com/maccydee/job-radar/releases/download/seed
 ```
 
 It reads an index of what is published, works out which country files your
-`locations.countries` needs, and downloads only those. A UK reader takes 38MB
-and 41,038 rows, against 242MB and 289,640 for the whole world. Roles whose
-country could not be read, and roles open in several countries at once, come
-with every download, because neither is evidence that a job is somewhere else.
+`locations.countries` needs, and downloads only those. A UK reader takes
+roughly 38MB of about 240MB. The command prints the exact figures for your
+own countries before it fetches anything, and they change every week, which
+is why they are not written down here. Roles whose country could not be read,
+and roles open in several countries at once, come with every download,
+because neither is evidence that a job is somewhere else.
 
 Those are rows rather than distinct adverts. A job open in six towns is
 written once per town, and the database keeps one row per posting, so around
@@ -244,21 +246,21 @@ prints them again afterwards: one role to two lines, the score, the title, the
 company and either the stated salary or `unconfirmed`, with the role's id and
 location underneath. `job-radar serve` is that same list with buttons.
 
-**17,807 employer boards across 21 platforms**, plus four cross-employer
+**17,809 employer boards across 23 platforms**, plus four cross-employer
 feeds: LinkedIn, NHS Jobs and Workable's own search, which are keyword
 templates expanded against your titles, and Workable's recently-posted feed,
-which takes no keyword. That is what takes `sources/sources.json` to 17,811
+which takes no keyword. That is what takes `sources/sources.json` to 17,813
 entries. Roughly 4,100 of the boards are Greenhouse and 2,600 Ashby, then
 Workable, iCIMS, Workday, Personio, Breezy, Recruitee, SmartRecruiters and
 Oracle in the four figures or high hundreds, down to Pinpoint and
 SuccessFactors in the tens. Names you would recognise are on it: Barclays,
 Lloyds, Santander, BP, Shell, Unilever, Tesco, Marks & Spencer, John Lewis,
 Sky, Skyscanner, Accenture, Linklaters, Transport for London, Ofcom and the
-FCA among them. The code carries 29 adapters, five more than the bundled
+FCA among them. The code carries 31 adapters, five more than the bundled
 list uses.
 
 `job-radar coverage` counts the file rather than trusting that paragraph, and
-prints rather more than 17,811, because each of the three keyword templates
+prints rather more than 17,813, because each of the three keyword templates
 becomes one source per title, and per country for the one that takes a
 country. Where the list came from, and the two keyed aggregators you can add
 yourself, are in [docs/SOURCES.md](docs/SOURCES.md).
@@ -485,12 +487,12 @@ working arrangement anybody chooses.
 
 `sources.countries` narrows the list far less than the name suggests, and
 deliberately. It only drops a board whose country tag names somewhere else.
-Of the 17,811 sources, 5,214 carry no country tag at all and 1,597 are tagged
+Of the 17,813 sources, 5,215 carry no country tag at all and 1,597 are tagged
 `multi`, and both kinds survive whatever you set: "we could not tell" and
 "this employer is in several countries" are not evidence that the employer has
 nothing where you are, and a multinational is one of the likelier places to
-find a vacancy in your country. So `sources.countries: [UK]` leaves 7,745
-sources, not the 934 that carry a `UK` tag. It is a way to skip the boards you
+find a vacancy in your country. So `sources.countries: [UK]` leaves 7,747
+sources, not the 935 that carry a `UK` tag. It is a way to skip the boards you
 can prove are somewhere else, not a way to get a UK-only list, and the
 `locations` filters above are what actually decide where a role is. Run
 `job-radar coverage` to see the tag counts for the list you are really using.
@@ -543,7 +545,7 @@ so these are stated rather than left for you to find.
   flagged, read from the description. Most state nothing, and nothing here is
   filtered on it, so treat an unflagged role as unknown rather than as
   available.
-- **Sector filtering is only as good as the tags.** Of 17,811 sources, 6,089
+- **Sector filtering is only as good as the tags.** Of 17,813 sources, 6,091
   carry a sector tag and 11,722 carry none, because an address harvested from
   a crawl index does not say what industry the employer is in. A `sectors:`
   filter keeps every untagged source as well as the ones you asked for, so it

@@ -297,6 +297,31 @@ def claim(con, name: str) -> bool:
         return False
 
 
+def claim_slot(con, prefix: str, key: str, limit: int) -> tuple[bool, str]:
+    """Take one of `limit` slots named `prefix:key`, or say why not.
+
+    Two different guards in one call, because they answer two different
+    questions and the old single `generate` lock conflated them. `prefix:key`
+    is exclusivity: two runs for the same role write the same folder, which is
+    the collision the original lock existed to stop. `limit` is capacity: each
+    run is a `claude` subprocess that spends money, so the number in flight is
+    bounded whatever the browser asks for.
+
+    Nothing here reads a count and then decides. The INSERT decides, and the
+    count is taken after it so a loser of the race releases rather than
+    proceeding on a number that was true a moment ago.
+    """
+    if not claim(con, f"{prefix}:{key}"):
+        return False, "already running for this role"
+    running = con.execute(
+        "SELECT COUNT(*) c FROM locks WHERE name LIKE ?", (f"{prefix}:%",)
+    ).fetchone()["c"]
+    if running > limit:
+        release(con, f"{prefix}:{key}")
+        return False, f"{limit} generations already running"
+    return True, ""
+
+
 def release(con, name: str) -> None:
     con.execute("DELETE FROM locks WHERE name=?", (name,))
 
@@ -399,8 +424,19 @@ def upsert_roles(con, jobs: Iterable, run: int | None = None,
             # touched, the dashboard's sector filter collapsed to "Other",
             # and `seed load` printed "Stored." either way. Empty never
             # overwrites a value that is there.
-            con.execute("""UPDATE roles SET company=?,title=?,url=?,location=?,city=?,
-                country=?,work_mode=?,sector=COALESCE(NULLIF(?,''),sector),platform=?,department=?,
+            # Same guard, extended to place on 2026-08-31. Loading a seed on
+            # top of a scanned database blanked `country` on 53 roles the
+            # scan had just resolved: shard rows carry a country only when
+            # the builder could read one, and an empty one means "this
+            # writer does not know", never "this role has no country". A
+            # role whose country goes blank drops out of every
+            # country-filtered view, which from the reader's side is
+            # indistinguishable from the job being withdrawn.
+            con.execute("""UPDATE roles SET company=?,title=?,url=?,
+                location=COALESCE(NULLIF(?,''),location),
+                city=COALESCE(NULLIF(?,''),city),
+                country=COALESCE(NULLIF(?,''),country),
+                work_mode=?,sector=COALESCE(NULLIF(?,''),sector),platform=?,department=?,
                 salary_min=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_min END,
                 salary_max=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_max END,
                 salary_currency=CASE WHEN ?=1 OR salary_confirmed=0 THEN ? ELSE salary_currency END,
@@ -1189,6 +1225,32 @@ def approved_candidate_evidence_text(con) -> str:
 
 # ------------------------------------------------------------------- jobs
 
+def typical_seconds(con, kind: str) -> int:
+    """How long this kind of job has actually taken here, or 0.
+
+    The median of the last completed runs rather than a number in the source.
+    A drafting run is three agent calls in the worst case and the wall clock
+    moves with the model, the machine and the length of the advert, so a
+    hardcoded "about eight minutes" would be wrong within a release and wrong
+    in the direction that matters: a reader told to expect two minutes at
+    minute six concludes it has hung and kills a job that was working.
+
+    Zero when there is nothing to go on, and the caller says nothing rather
+    than guessing. An estimate built from one sample is a guess wearing a
+    number.
+    """
+    rows = con.execute(
+        "SELECT (julianday(replace(finished_at,'T',' ')) "
+        "      - julianday(replace(started_at,'T',' '))) * 86400 AS secs "
+        "FROM jobs WHERE kind=? AND state='done' "
+        "AND started_at IS NOT NULL AND finished_at IS NOT NULL "
+        "ORDER BY id DESC LIMIT 10", (kind,)).fetchall()
+    secs = sorted(int(r["secs"]) for r in rows if r["secs"] and r["secs"] > 0)
+    if len(secs) < 2:
+        return 0
+    return secs[len(secs) // 2]
+
+
 def enqueue(con, uid, kind) -> int:
     """Queue a generation job, unless one is already pending or running."""
     existing = con.execute(
@@ -1201,9 +1263,33 @@ def enqueue(con, uid, kind) -> int:
     return cur.lastrowid
 
 
-def next_pending(con):
-    return con.execute("SELECT * FROM jobs WHERE state='pending' "
-                       "ORDER BY id LIMIT 1").fetchone()
+def next_pending(con, exclude_uids=()):
+    """The oldest queued job, oldest first, skipping roles already busy.
+
+    `exclude_uids` is how the pump avoids handing out a second job for a role
+    that already has one running: two runs write the same folder, which is the
+    collision the per-role lock exists to stop, and taking the lock only to
+    release it again would let one busy role block the whole queue behind it.
+    """
+    if not exclude_uids:
+        return con.execute("SELECT * FROM jobs WHERE state='pending' "
+                           "ORDER BY id LIMIT 1").fetchone()
+    marks = ",".join("?" * len(exclude_uids))
+    return con.execute(
+        f"SELECT * FROM jobs WHERE state='pending' AND uid NOT IN ({marks}) "
+        f"ORDER BY id LIMIT 1", tuple(exclude_uids)).fetchone()
+
+
+def pending_count(con) -> int:
+    return con.execute(
+        "SELECT COUNT(*) c FROM jobs WHERE state='pending'").fetchone()["c"]
+
+
+def busy_uids(con, prefix: str = "generate") -> list[str]:
+    """The roles holding a run lock right now."""
+    n = len(prefix) + 1
+    return [r["name"][n:] for r in con.execute(
+        "SELECT name FROM locks WHERE name LIKE ?", (f"{prefix}:%",))]
 
 
 def mark_job(con, job_id, state, error="", log="") -> None:
@@ -1227,9 +1313,11 @@ def reap_orphans(con, timeout_s: int = 900, restarted: bool = True) -> int:
     `running_count >= 1`, every later generation is refused too. One
     interrupted click silently disabled the whole feature.
 
-    Anything still marked running or pending when the server starts belongs to
-    a process that no longer exists. Anything older than the generation
-    timeout is dead whatever started it.
+    Anything still marked RUNNING when the server starts belongs to a process
+    that no longer exists. Anything older than the generation timeout is dead
+    whatever started it. Pending rows are left alone: nothing is running them
+    yet, so there is nothing to orphan, and `runner.pump` starts them when a
+    slot frees.
 
     The two sweeps have to run in that order, and did not. The blanket one
     went first and matched every running and pending row unconditionally, so
@@ -1253,9 +1341,16 @@ def reap_orphans(con, timeout_s: int = 900, restarted: bool = True) -> int:
     ).rowcount
     if not restarted:
         return stale
+    # Running only. A pending row is a job that has NOT started: no thread,
+    # no subprocess, nothing to orphan, and `runner.pump` will pick it up as
+    # soon as a slot frees. Failing those was right when a click ran
+    # immediately and there was no queue behind it; with a queue it destroys
+    # exactly what the queue is for. Nine screens were asked for, three ran
+    # and six sat pending, and a restart failed all nine with "the server
+    # restarted while this was running" on six that never had.
     n = con.execute(
         "UPDATE jobs SET state='failed', finished_at=?, error=? "
-        "WHERE state IN ('running','pending')",
+        "WHERE state='running'",
         (_now(), "interrupted: the server restarted while this was running. "
                  "Nothing was charged for the unfinished part; click again."),
     ).rowcount

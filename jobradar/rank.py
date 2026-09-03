@@ -73,6 +73,16 @@ JD_CHARS = 1200
 #
 # `JOB_RADAR_RANK_WIDTH=1` restores the old strictly serial behaviour exactly,
 # for anyone on a plan where even this is too much.
+# Roughly what screening ONE role costs, input tokens.
+#
+# Measured against real runs, and it is the number the whole two-tier design
+# rests on: ranking a 2,804-role board is about 1.1M tokens, screening the
+# same board one role at a time would be about 168M. It lived as a literal
+# `60_000` in three places, which is how a number rots. Anything quoting a
+# screening cost reads it from here.
+SCREEN_TOKENS = 60_000
+
+
 def _width_default() -> int:
     raw = (os.environ.get("JOB_RADAR_RANK_WIDTH") or "").strip()
     try:

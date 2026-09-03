@@ -242,7 +242,7 @@ def build(jobs: Iterable[Job], out_dir: str | Path, *,
 # Publishing without this would be half a feature: the file would exist and
 # every reader would have to find fifty release assets and work out which
 # three of them they need. The point of sharding is that a UK reader takes
-# 38MB rather than 242MB, and only the tool knows which shards that is.
+# 39MB rather than 240MB, and only the tool knows which shards that is.
 #
 # Deliberately plain HTTPS with no authentication and no client identifier
 # beyond a user agent. A seed download says nothing about who is asking or

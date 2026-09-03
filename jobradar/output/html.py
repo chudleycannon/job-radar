@@ -211,9 +211,22 @@ h1{font-size:2.4375rem;line-height:1.08;font-weight:700;letter-spacing:-.028em}
 
 .list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
   overflow:hidden;box-shadow:var(--shadow)}
-.row{display:grid;grid-template-columns:1fr auto;gap:var(--s2) var(--s4);align-items:center;
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:var(--s2) var(--s4);align-items:center;
   padding:var(--s4) var(--s5);border-bottom:1px solid var(--line);
-  transition:background var(--dur) var(--ease)}
+  transition:background var(--dur) var(--ease);
+  /* Skip layout and paint for rows nobody is looking at.
+     A board is thousands of rows and the browser laid out and painted every
+     one of them before it would show the first: 4,191 rows took seconds on a
+     page the server had already answered in under one. Every row stays in the
+     DOM, which matters because the filters, the counts and the status writes
+     all walk it, so this changes what the browser does with a row and not
+     what the page contains.
+     `contain-intrinsic-size` is the guess used for a row that has not been
+     laid out, and without it the scrollbar jumps as rows come into view. 92px
+     is a one-line role at the current padding; a taller row corrects itself
+     the moment it is rendered. `auto` keeps the last real measurement, so a
+     row only guesses once. */
+  content-visibility:auto;contain-intrinsic-size:auto 92px}
 /* A class selector beats the UA stylesheet's [hidden]{display:none}, so
    .row{display:grid} silently kept filtered rows on screen. Any element given
    a display value needs its own hidden rule. */
@@ -272,7 +285,7 @@ footer{margin-top:var(--s5);color:var(--muted);font-size:.8125rem;line-height:1.
 @media (max-width:640px){
   body{padding:var(--s5) var(--s3) var(--s7);font-size:16px}
   h1{font-size:1.9375rem}
-  .row{grid-template-columns:1fr;padding:var(--s4)}
+  .row{grid-template-columns:auto 1fr;padding:var(--s4)}
   .right{flex-direction:row;align-items:baseline;gap:var(--s3);
     justify-content:flex-start;text-align:left}
   .seg{width:100%}

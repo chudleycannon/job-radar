@@ -1,0 +1,226 @@
+{
+ "status": 200,
+ "error": {
+  "message": "",
+  "body": ""
+ },
+ "data": {
+  "positions": [
+   {
+    "id": 1970393556981844,
+    "displayJobId": "200051815",
+    "name": "Product Management Manager, Microsoft Digital",
+    "locations": [
+     "United States, Washington, Redmond"
+    ],
+    "standardizedLocations": [
+     "Redmond, WA, US"
+    ],
+    "postedTs": 1788220350,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Product Management",
+    "creationTs": 1787760408,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200051815",
+    "positionUrl": "/careers/job/1970393556981844"
+   },
+   {
+    "id": 1970393556982201,
+    "displayJobId": "200052061",
+    "name": "Senior Software Engineer",
+    "locations": [
+     "United States, California, Mountain View",
+     "United States, Washington, Redmond"
+    ],
+    "standardizedLocations": [
+     "Mountain View, CA, US",
+     "Redmond, WA, US"
+    ],
+    "postedTs": 1788218946,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Software Engineering",
+    "creationTs": 1787798455,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200052061",
+    "positionUrl": "/careers/job/1970393556982201"
+   },
+   {
+    "id": 1970393556982132,
+    "displayJobId": "200052001",
+    "name": "Critical Environment Operations Director",
+    "locations": [
+     "United States, Wisconsin, Mount Pleasant"
+    ],
+    "standardizedLocations": [
+     "Mt Pleasant, WI, US"
+    ],
+    "postedTs": 1788218101,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Data Center Operations Management",
+    "creationTs": 1787785349,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200052001",
+    "positionUrl": "/careers/job/1970393556982132"
+   },
+   {
+    "id": 1970393556950617,
+    "displayJobId": "200046029",
+    "name": "Principal Product Manager",
+    "locations": [
+     "United States, Multiple Locations, Multiple Locations"
+    ],
+    "standardizedLocations": [
+     "US"
+    ],
+    "postedTs": 1788218020,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Product Management",
+    "creationTs": 1785332332,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200046029",
+    "positionUrl": "/careers/job/1970393556950617"
+   },
+   {
+    "id": 1970393556803683,
+    "displayJobId": "200029223",
+    "name": "Principal Software Engineer",
+    "locations": [
+     "United States, Washington, Redmond"
+    ],
+    "standardizedLocations": [
+     "Redmond, WA, US"
+    ],
+    "postedTs": 1788217287,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Software Engineering",
+    "creationTs": 1771980722,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200029223",
+    "positionUrl": "/careers/job/1970393556803683"
+   },
+   {
+    "id": 1970393556981149,
+    "displayJobId": "200051447",
+    "name": "Software Engineer II - Data Platform & Database Systems",
+    "locations": [
+     "United States, Washington, Redmond"
+    ],
+    "standardizedLocations": [
+     "Redmond, WA, US"
+    ],
+    "postedTs": 1788215883,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Software Engineering",
+    "creationTs": 1787681291,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200051447",
+    "positionUrl": "/careers/job/1970393556981149"
+   },
+   {
+    "id": 1970393556927686,
+    "displayJobId": "200042970",
+    "name": "Business Administrator",
+    "locations": [
+     "United States, Washington, Redmond"
+    ],
+    "standardizedLocations": [
+     "Redmond, WA, US"
+    ],
+    "postedTs": 1788215348,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Business Support",
+    "creationTs": 1783532605,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200042970",
+    "positionUrl": "/careers/job/1970393556927686"
+   },
+   {
+    "id": 1970393556981430,
+    "displayJobId": "200051565",
+    "name": "Principal Investigator",
+    "locations": [
+     "United States, Washington, Redmond",
+     "United States, District of Columbia, Washington D.C."
+    ],
+    "standardizedLocations": [
+     "Redmond, WA, US",
+     "Washington, DC, US"
+    ],
+    "postedTs": 1788214802,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Investigations",
+    "creationTs": 1787694452,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200051565",
+    "positionUrl": "/careers/job/1970393556981430"
+   },
+   {
+    "id": 1970393556899623,
+    "displayJobId": "200041051",
+    "name": "Principal Product Manager, M365 Core",
+    "locations": [
+     "United States, Washington, Redmond"
+    ],
+    "standardizedLocations": [
+     "Redmond, WA, US"
+    ],
+    "postedTs": 1788214623,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Product Management",
+    "creationTs": 1781912987,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200041051",
+    "positionUrl": "/careers/job/1970393556899623"
+   },
+   {
+    "id": 1970393556958701,
+    "displayJobId": "200047631",
+    "name": "Senior Software Engineer",
+    "locations": [
+     "United States, Multiple Locations, Multiple Locations"
+    ],
+    "standardizedLocations": [
+     "US"
+    ],
+    "postedTs": 1788213761,
+    "solrScore": null,
+    "stars": 0,
+    "department": "Software Engineering",
+    "creationTs": 1786126843,
+    "isHot": 0,
+    "workLocationOption": "onsite",
+    "locationFlexibility": null,
+    "atsJobId": "200047631",
+    "positionUrl": "/careers/job/1970393556958701"
+   }
+  ],
+  "count": 2120
+ }
+}

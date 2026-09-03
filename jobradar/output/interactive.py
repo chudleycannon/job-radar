@@ -22,7 +22,116 @@ _MARK = _favicon_mark()
 
 from .html import _CSS, _cap_location, _SECTORS, _MODES, safe_url
 
+
+def _js() -> str:
+    """The dashboard script with the three costs filled in.
+
+    Derived, never typed twice. `60_000` lived as a literal in three files
+    until one of them was wrong, and a page quoting a token cost the tool no
+    longer charges is worse than one quoting none: the reader budgets against
+    it. `tests/test_dashboard_bulk.py` fails if a placeholder survives.
+    """
+    from .. import rank
+    from ..runner import MAX_RUNNING
+    from ..serve import BULK_LIMIT
+    return (_JS.replace("%SCREEN_TOKENS%", str(rank.SCREEN_TOKENS))
+               .replace("%BULK_LIMIT%", str(BULK_LIMIT))
+               .replace("%MAX_RUNNING%", str(MAX_RUNNING)))
+
+
+# How many rows are written with their action buttons already in them.
+#
+# Enough to cover the first screenful several times over, so a reader who
+# never scrolls never sees a button appear. Everything past this gets them
+# from `fillActs` on hover or focus, which is a fraction of a millisecond for
+# one row and is why the page is not 60,000 nodes of controls nobody clicked.
+EAGER_ROWS = 60
+
+# The data attribute suffix for each kind of document, named explicitly rather
+# than derived from the kind.
+#
+# `cover_letter` became `data-open-cover_letter`, which the browser exposes as
+# `dataset.openCover_letter`, while the script asked for `openCoverLetter`.
+# The two never met, so on every lazy row the cover letter showed a plain
+# draft button instead of Download and Open, and clicking it would have paid
+# to write a second one. The suffixes have no underscores now, so the mapping
+# from attribute to dataset key is the identity.
+DOC_ATTR = {"screen": "screen", "cv": "cv", "cover_letter": "letter"}
+
+# Indexed by `eager`, so the marker is a lookup rather than an f-string that
+# has to escape its own quotes. See the comment where it is used.
+_LAZY_ATTR = {True: "", False: ' data-lazyacts="1"'}
+
+
 _EXTRA_CSS = """
+/* Whether anything is running at all, where you can see it without knowing
+   which row to look at. A queue of nine screens is invisible if the only
+   sign of it is a line on nine separate rows. */
+#jobsinfo{margin-left:var(--s3);color:var(--accent);font-size:.8125rem;
+  font-variant-numeric:tabular-nums}
+#jobsinfo:empty{display:none}
+
+/* "There is one already", on the title line where the other states are. */
+.ready{display:inline-block;margin-left:var(--s2);padding:1px 7px;
+  border:1px solid var(--accent);border-radius:999px;
+  font-size:.6875rem;font-weight:600;letter-spacing:.02em;
+  color:var(--accent);vertical-align:middle;white-space:nowrap}
+
+/* The row the reload was for. Fades rather than staying marked, because a
+   highlight that never clears becomes part of the furniture. */
+.row.justdone{background:var(--surface-2);
+  box-shadow:inset 3px 0 0 0 var(--accent);
+  animation:justdone 12s ease-out forwards}
+@keyframes justdone{0%,85%{background:var(--surface-2)}100%{background:transparent}}
+@media (prefers-reduced-motion: reduce){.row.justdone{animation:none}}
+
+.gateok{color:var(--muted);font-size:.75rem}
+
+.jobprog{grid-column:1/-1;margin-top:var(--s2);font-size:.8125rem;
+  color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* Shown while the browser builds the board.
+   The server answers in under a second and the browser then spends most of
+   another one parsing several thousand rows, which reads as a frozen tab
+   rather than as work in progress. Painted before the list because it sits
+   first in the body, and removed the moment the first filter pass finishes.
+
+   `position:fixed` and its own background, so it covers a half-built list
+   rather than sitting above one. */
+.boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:var(--s3);
+  background:var(--bg);color:var(--muted);text-align:center;padding:var(--s4)}
+.boot p{margin:0;font-size:.9375rem}
+.boot .boot-sub{font-size:.8125rem;opacity:.7;max-width:34ch}
+.boot-spin{width:26px;height:26px;border-radius:50%;
+  border:2px solid var(--line);border-top-color:var(--accent);
+  animation:bootspin .7s linear infinite}
+@keyframes bootspin{to{transform:rotate(360deg)}}
+/* A spinner that cannot spin is a still ring, which reads as broken. Pulse
+   the opacity instead, which is motion nobody has asked us not to make. */
+@media (prefers-reduced-motion: reduce){
+  .boot-spin{animation:bootfade 1.4s ease-in-out infinite;border-top-color:var(--line)}
+  @keyframes bootfade{0%,100%{opacity:.35}50%{opacity:1}}
+}
+
+/* Bulk selection. The checkbox is quiet until something is selected, because
+   the row is the content and a column of ticked boxes down the left of a
+   four thousand row board is noise on every visit. */
+.pick{display:flex;align-items:center}
+.pick input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;
+  opacity:.35;transition:opacity var(--dur) var(--ease)}
+.row:hover .pick input,.pick input:checked,.pick input:focus-visible{opacity:1}
+/* The bar only exists while something is picked, so it never takes space it
+   is not using. */
+.bulk{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:var(--s3);
+  align-items:center;justify-content:space-between;
+  padding:var(--s3) var(--s4);margin-top:var(--s4);
+  background:var(--surface);border:1px solid var(--accent);
+  border-radius:var(--r-lg);box-shadow:var(--shadow)}
+.bulk[hidden]{display:none}
+.bulk .cost{color:var(--muted);font-size:.8125rem}
+.bulk .warn{color:var(--accent);font-weight:600}
+
 /* Actions. Kept quiet: the row is the content, these are what you do to it. */
 .acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
 .acts button,.acts a.btn{border:1px solid var(--line);background:var(--surface);
@@ -198,6 +307,56 @@ addEventListener('scroll',()=>{
   scrollTimer=setTimeout(()=>{anchorUid=visibleUid(); writeState();},180);
 },{passive:true});
 
+// The board reloads itself when a screen or a CV finishes, to show the new
+// document. Every reload threw the reader back to Open with no sector, no
+// country and no city: you filtered down to eleven roles, paid to screen one,
+// and landed back on four thousand. The reload is the right behaviour; losing
+// where you were is not.
+//
+// localStorage, not the URL and not sessionStorage. Not the URL because this
+// is where one reader is looking rather than a view worth sharing, and a link
+// carrying somebody else's filters is its own surprise. Not sessionStorage,
+// which was the first attempt: it dies with the tab, so it survived the
+// board's own reloads and lost the view every time the browser was closed,
+// which is most of when it matters. Wrapped, because a browser told to block
+// site data throws on the accessor itself rather than returning nothing.
+const VIEW_KEY='job-radar:view';
+function saveView(){
+  try{ localStorage.setItem(VIEW_KEY, JSON.stringify({
+    f, secs:[...secs], modes:[...modes], country, city,
+    sort:(document.querySelector('#fsort')||{}).value||''})); }catch(e){}}
+function loadView(){
+  let v=null;
+  try{ v=JSON.parse(localStorage.getItem(VIEW_KEY)||'null'); }catch(e){}
+  if(!v) return;
+  // Each one guarded on its own. A filter for a city that no longer has a
+  // role in it would otherwise restore an empty board and read as a scan
+  // that found nothing.
+  const has=(sel,val)=>!!document.querySelector(sel+' [value="'+CSS.escape(val)+'"]');
+  if(v.f) { const b=document.querySelector('.seg button[data-f="'+CSS.escape(v.f)+'"]');
+            if(b){ document.querySelectorAll('.seg button').forEach(o=>o.setAttribute('aria-selected','false'));
+                   b.setAttribute('aria-selected','true'); f=v.f; } }
+  if(v.country && has('#fcountry', v.country)){ country=v.country;
+    const s=document.querySelector('#fcountry'); if(s) s.value=country; }
+  if(v.city && has('#fcity', v.city)){ city=v.city;
+    const s=document.querySelector('#fcity'); if(s) s.value=city; }
+  for(const x of (v.secs||[])) secs.add(x);
+  for(const x of (v.modes||[])) modes.add(x);
+  // Only chips that are still on the page. A sector whose last role went
+  // settled has no chip this time round, and a set holding a key nothing can
+  // clear is a filter the reader cannot see or switch off.
+  const live=new Set(), liveModes=new Set();
+  for(const b of document.querySelectorAll('.chips button')){
+    const key=b.dataset.sec||b.dataset.mode;
+    const set=b.dataset.sec?live:liveModes;
+    set.add(key);
+    if((b.dataset.sec?secs:modes).has(key)) b.setAttribute('aria-pressed','true'); }
+  for(const x of [...secs]) if(!live.has(x)) secs.delete(x);
+  for(const x of [...modes]) if(!liveModes.has(x)) modes.delete(x);
+  const sort=document.querySelector('#fsort');
+  if(sort && v.sort){ const ok=[...sort.options].some(o=>o.value===v.sort);
+                      if(ok) sort.value=v.sort; }}
+
 function say(msg,ms=3200){toast.textContent=msg;toast.classList.add('show');
   toast.title='Select this text, or click to copy it.';
   toast.classList.remove('copied');
@@ -221,7 +380,8 @@ const SETTLED=new Set(['rejected','withdrawn','skipped','closed']);
 const IN_FLIGHT=new Set(['ready_to_apply','applied','submitted','interviewing','offer']);
 // Applications that ended. Not "skipped": you never applied to those.
 const CLOSED_OUT=new Set(['rejected','withdrawn','closed']);
-function statusLabel(s){return (s||'').replaceAll('_',' ');}
+const STATUS_LABELS={ready_to_apply:'ready to apply'};
+function statusLabel(s){return STATUS_LABELS[s]||(s||'').replaceAll('_',' ');}
 // The number on a facet has to be the number that facet will show you.
 //
 // These were counted once, in Python, over every row in the database, while
@@ -271,6 +431,7 @@ function apply(){let n=0;
     const ok = viewOk && okSec && okMode && okStatus && okCtry && okCity;
     r.hidden=!ok; if(ok)n++;}
   paintCounts(cSec,cMode,cStatus,cCountry,cCity);
+  saveView();
   $('#empty').hidden=n>0; $('#list').hidden=n===0;}
 
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
@@ -366,6 +527,7 @@ function resort(){
 // which was invisible while the default view was All and everything showed
 // anyway.
 (function(){
+  loadView();
   restoreState();
   const sel=$('#fsort');
   if(sel) sel.onchange=()=>{resort(); apply(); writeState();};
@@ -376,7 +538,12 @@ function resort(){
     compactBtn.setAttribute('aria-pressed',compact?'true':'false');
     writeState();
   };
-  resort(); apply(); restoreAnchor(); writeState();})();
+  resort(); apply(); restoreAnchor(); writeState();
+  // After the first sort and filter pass, which is the point the board is
+  // actually usable. The inline fallback above clears it on DOMContentLoaded,
+  // which is earlier and would uncover a list still being sorted.
+  const boot=document.getElementById('boot'); if(boot) boot.remove();
+})();
 
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
@@ -573,7 +740,319 @@ function mark(row,status){
     if(!pill){ pill=document.createElement('span');
       const head=row.querySelector('.role'); if(head) head.appendChild(pill); }
     if(pill){ pill.textContent=statusLabel(status); pill.className='status '+status; }}
-  const sel=row.querySelector('select.setstatus'); if(sel) sel.value=status;}
+  const sel=row.querySelector('select.setstatus');
+  if(sel){ sel.dataset.current=status;
+    if(sel.dataset.filled) sel.value=status;
+    else sel.options[0].textContent=(status||'Status')+'\u2026'; }}
+
+// The per-row status options are not in the HTML: see the comment where the
+// select is written. Fill this one the first time it is touched, which is the
+// only moment they can possibly matter.
+const STATUSES=['new','interested','ready_to_apply','applied','submitted','interviewing','offer','rejected','withdrawn','skipped','closed'];
+function fillStatus(sel){
+  if(sel.dataset.filled) return;
+  const cur=sel.dataset.current||'';
+  for(const s of STATUSES){
+    const o=document.createElement('option');
+    o.value=s; o.textContent=statusLabel(s); if(s===cur) o.selected=true;
+    sel.appendChild(o); }
+  sel.dataset.filled='1';
+  sel.value=cur; }
+// What finished, after the reload that shows it.
+//
+// The board reloads to pick the new document up, and the reload threw away
+// the only sign anything had happened. "It finished" is not the answer the
+// reader wants either: they want to know whether it WORKED, which is the
+// rating and the gates, and both are already rendered on the row. So the row
+// is found, scrolled to, marked, and its own docs line is read back.
+(function(){
+  // sessionStorage here on purpose, unlike the view above. This is a
+  // one-shot handoff across a single reload in one tab; in localStorage it
+  // would announce a job that finished days ago the next time the board was
+  // opened anywhere.
+  let done=null;
+  try{ done=JSON.parse(sessionStorage.getItem('job-radar:finished')||'null');
+       sessionStorage.removeItem('job-radar:finished'); }catch(e){}
+  if(!done || !done.length) return;
+  // Runs here, at the bottom of the script, and that position is the fix.
+  // On DOMContentLoaded it fired before `resort()` had reordered the rows,
+  // and reordering the DOM resets the scroll: the reader was put back at the
+  // top with the row unmarked, which looks exactly like nothing happening.
+  // Calling it from the init block above does not work either, because that
+  // block runs before this one has defined anything.
+  let pending=null;
+  const announce=()=>{
+    const first=done[0];
+    const row=document.querySelector('.row[data-uid="'+CSS.escape(first.uid)+'"]');
+    if(!row){ say('Finished, but that role is not on this view.', 6000); return; }
+    // The row may be hidden by the current filter, which is its own answer:
+    // scrolling to something display:none does nothing and looks like the
+    // click was ignored.
+    if(row.hidden){ say('Finished. The role is hidden by your current filter.', 7000); return; }
+    row.classList.add('justdone');
+    // The browser restores the previous scroll position on a reload, and it
+    // does it AFTER this script runs, so scrolling here was undone a frame
+    // later and the reader stayed at the top. Told not to restore, and the
+    // scroll deferred a frame so it lands after the last layout of the load.
+    try{ history.scrollRestoration='manual'; }catch(e){}
+    // No automatic scroll. It was tried and it does not survive this page:
+    // the browser restores the old scroll position after the script runs, and
+    // `content-visibility` means the rows above have never been laid out, so
+    // the document reflows under the jump as their real heights resolve and
+    // the row drifts off screen again. Measured at 883px above the viewport a
+    // moment after landing on it.
+    //
+    // So the toast carries the jump instead. A scroll the reader asks for
+    // happens after layout has settled and lands every time, and it does not
+    // yank the page out from under someone who was already reading something
+    // else. Same reasoning as the boot overlay: better to say plainly what
+    // happened than to move things and hope.
+    pending=row;
+    const docs=row.querySelector('.docs');
+    const title=(row.querySelector('.role a')||{}).textContent||'the role';
+    const name={screen:'Screening',cv:'CV',cover_letter:'Cover letter'}[first.kind]||first.kind;
+    // Read back what the row itself says, rather than a second copy of the
+    // outcome that could disagree with it.
+    const detail=docs ? docs.textContent.replace(/\s+/g,' ').trim() : '';
+    say(name+' done for '+title.slice(0,48)+(detail?' \u2014 '+detail:'')
+        +'  \u2014  click to show it', 14000);
+  };
+  // The toast is the control. It stays up long enough to be clicked and
+  // clears itself either way.
+  const toast=$('#toast');
+  if(toast){ toast.style.cursor='pointer'; toast.title='Jump to the role';
+    toast.addEventListener('click', ()=>{
+      if(!pending) return;
+      // Filtered to, not scrolled to. `scrollIntoView` on a board this tall
+      // computes against `content-visibility` estimates for every row above
+      // and lands in the wrong place; hiding the rest puts the role at the
+      // top of the list with no arithmetic at all. Any tab or chip puts the
+      // board back, because `apply()` owns `hidden` and will overwrite this
+      // on its next pass.
+      for(const r of document.querySelectorAll('.row')) r.hidden = r!==pending;
+      $('#empty').hidden=true; $('#list').hidden=false;
+      window.scrollTo(0,0);
+      toast.classList.remove('show');
+      say('Showing that one role. Pick a tab to go back to the board.', 8000); }); }
+  announce();
+})();
+
+// One line saying what the queue is doing, at the top of the page.
+//
+// The per-row note only helps if you already know which row to look at, and
+// a bulk screen of nine roles puts a note on nine rows you cannot all see at
+// once. So the count lives beside the rank line, where "is anything still
+// happening" is answered without scrolling.
+function paintJobs(d){
+  const el=$('#jobsinfo'); if(!el) return;
+  const live=(d.jobs||[]).filter(j=>j.state==='running'||j.state==='pending');
+  if(!live.length){ el.textContent=''; return; }
+  const running=live.filter(j=>j.state==='running').length;
+  const queued=live.length-running;
+  const kinds=[...new Set(live.map(j=>j.kind))];
+  const name=kinds.length===1
+    ? ({screen:'screening',cv:'CV',cover_letter:'cover letter'}[kinds[0]]||kinds[0])
+    : 'jobs';
+  let s=running+' '+name+(running===1?'':'s')+' running';
+  if(queued) s+=', '+queued+' queued';
+  // The typical is per kind and only useful when there is one kind in flight.
+  const usual=(d.typical||{})[kinds[0]];
+  if(kinds.length===1 && usual && live.length>1){
+    const rounds=Math.ceil(live.length/Math.max(running,1));
+    s+=', roughly '+hhmm(usual*rounds)+' left';
+  }
+  el.textContent=s; }
+
+// ------------------------------------------------------- job progress
+// A drafting run is a draft, a set of quality gates and up to two revisions,
+// which on this machine is a median of about eight minutes. The row showed a
+// disabled button and nothing else for all of it, so the only way to tell a
+// working job from a dead one was to read the process table. That is the same
+// failure as a page that paints nothing for a second, except eight minutes of
+// it, and the reader's remedy is worse: they kill a job that was fine.
+//
+// The typical is the median of the last ten completed runs of that kind on
+// THIS machine, computed server-side, and it is absent until there are at
+// least two to go on. A number in the source would be wrong within a release
+// and wrong in the expensive direction: told to expect two minutes at minute
+// six, you conclude it has hung.
+const KINDNAME={screen:'Screening',cv:'Drafting CV',cover_letter:'Drafting cover letter'};
+function hhmm(s){
+  s=Math.max(0,Math.round(s));
+  const m=Math.floor(s/60), r=s%60;
+  return m ? m+'m '+String(r).padStart(2,'0')+'s' : r+'s';}
+// Server clock against server timestamps. The browser's clock is not the
+// server's, and on a laptop that has slept they can be minutes apart, which
+// would show a job that started in the future.
+function progressOn(row, j, typical, now){
+  let el=row.querySelector('.jobprog');
+  if(!el){ el=document.createElement('div'); el.className='jobprog';
+           const acts=row.querySelector('.acts');
+           row.insertBefore(el, acts || row.querySelector('.err') || null); }
+  if(j.state==='pending'){
+    el.textContent=(KINDNAME[j.kind]||j.kind)+' queued, waiting for a free slot';
+    return; }
+  const t0=Date.parse((j.started_at||'').replace(' ','T'));
+  const t1=Date.parse((now||'').replace(' ','T'));
+  const secs=(isNaN(t0)||isNaN(t1)) ? null : (t1-t0)/1000;
+  const usual=typical[j.kind]||0;
+  let s=(KINDNAME[j.kind]||j.kind);
+  if(secs!==null) s+=', '+hhmm(secs);
+  if(usual) s+=', usually about '+hhmm(usual);
+  // Only once it is genuinely over, and said plainly rather than as a
+  // warning: a long run is not a broken one, and the point of the line is
+  // that the reader can tell the difference themselves.
+  if(usual && secs!==null && secs > usual*1.5) s+=' (running long, still going)';
+  el.textContent=s; }
+function progressOff(row){
+  const el=row.querySelector('.jobprog'); if(el) el.remove(); }
+
+// ---------------------------------------------------------------- bulk
+// Screening reads one advert properly and costs about SCREEN_TOKENS input
+// tokens a role, which is why this tool ranks a whole board for roughly the
+// price of screening twenty of it. A bulk button is therefore the one control
+// here that can spend real money on a mis-click, so it says the number and
+// the cost and asks, every time, however many are picked.
+const SCREEN_TOKENS=%SCREEN_TOKENS%, BULK_LIMIT=%BULK_LIMIT%;
+const picked=new Set();
+function fmt(n){return n.toLocaleString();}
+function paintBulk(){
+  const bar=$('#bulk'); if(!bar) return;
+  const n=picked.size;
+  bar.hidden = n===0;
+  if(!n) return;
+  $('#bulkn').textContent = n+' selected';
+  const over = n>BULK_LIMIT;
+  $('#bulkcost').innerHTML = over
+    ? '<span class="warn">more than '+BULK_LIMIT+' at once is refused</span>'
+    : 'about '+fmt(n*SCREEN_TOKENS)+' input tokens to screen, '
+      +fmt(n*SCREEN_TOKENS)+' more if you draft CVs too';
+  $('#bulkscreen').disabled = over;
+  $('#bulkcv').disabled = over; }
+document.addEventListener('change', e=>{
+  const box=e.target.closest && e.target.closest('input.sel'); if(!box) return;
+  const row=box.closest('.row'); if(!row) return;
+  box.checked ? picked.add(row.dataset.uid) : picked.delete(row.dataset.uid);
+  paintBulk(); });
+function clearPicked(){
+  picked.clear();
+  document.querySelectorAll('input.sel:checked').forEach(b=>b.checked=false);
+  paintBulk(); }
+// Only the rows the reader can actually see. "Select all" over a filtered
+// board that quietly took the four thousand hidden ones with it is the
+// expensive version of the mistake this whole file is written against.
+function pickVisible(){
+  let n=0;
+  for(const r of document.querySelectorAll('.row')){
+    if(r.hidden) continue;
+    const b=r.querySelector('input.sel'); if(!b) continue;
+    b.checked=true; picked.add(r.dataset.uid); n++; }
+  paintBulk(); return n; }
+async function bulkGenerate(kind){
+  const uids=[...picked];
+  if(!uids.length) return;
+  const cost=fmt(uids.length*SCREEN_TOKENS);
+  const what = kind==='screen' ? 'Screen' : 'Draft a CV for';
+  if(!confirm(what+' '+uids.length+' role'+(uids.length===1?'':'s')+'?\n\n'
+      +'Roughly '+cost+' input tokens, spent through your Claude subscription. '
+      +'At most %MAX_RUNNING% run at once and the rest queue.')) return;
+  const {ok,data}=await post('/api/generate/bulk',{kind,uids});
+  if(!ok){ say(data.error||'could not start'); return; }
+  const started=(data.queued||data.started||[]).length, skipped=(data.skipped||[]);
+  // Names, not a count. "3 skipped" on a shortlist means opening every row to
+  // find out which three and why.
+  let msg=started+' queued'
+    + (data.running ? ', '+data.running+' running now' : '');
+  if(skipped.length){
+    const why=skipped[0].why||'refused';
+    msg += ', '+skipped.length+' skipped ('+why
+        +(skipped.length>1?' and others':'')+')'; }
+  say(msg, 6000);
+  clearPicked();
+  if(started) poll(); }
+(function(){
+  const s=$('#bulkscreen'), c=$('#bulkcv'), x=$('#bulkclear');
+  if(s) s.onclick=()=>bulkGenerate('screen');
+  if(c) c.onclick=()=>bulkGenerate('cv');
+  if(x) x.onclick=clearPicked; })();
+// A keyboard route, because ticking forty boxes by hand is the thing this is
+// meant to replace. Not Ctrl-A: that is select-the-text and taking it would
+// break copying a title out of the board.
+document.addEventListener('keydown', e=>{
+  if(e.key==='a' && (e.metaKey||e.ctrlKey) && e.shiftKey){
+    e.preventDefault(); say(pickVisible()+' selected'); }
+  if(e.key==='Escape' && picked.size) clearPicked(); });
+
+// The same argument as fillStatus, one level up: the whole action bar is
+// absent from every row past EAGER_ROWS and built here the moment the row is
+// touched. Kept in step with the Python that writes the eager ones by
+// tests/test_dashboard_lazy_actions.py, because two renderers of one control
+// is a drift that has already cost this dashboard a working status menu.
+function fillActs(row){
+  if(!row || !row.dataset.lazyacts) return;
+  delete row.dataset.lazyacts;
+  const cv=row.dataset.hascv==='1', settled=row.dataset.settled==='1';
+  const st=row.dataset.status||'';
+  const d=document.createElement('div'); d.className='acts';
+  const btn=(html)=>{const s=document.createElement('span');s.innerHTML=html;return s.firstChild;};
+  // Whether a document already exists comes from the row's data-open-*
+  // attributes, written from the artifacts table. Not from the rendered docs
+  // line: the screening is shown inline in a <details> and has no link there
+  // at all, so reading the markup decided no screening existed and offered a
+  // button that would pay to run it a second time.
+  const pair=(kind,label,made,attr,cls)=>{
+    // `attr` is the suffix from DOC_ATTR, capitalised. Not derived from the
+    // kind: deriving it is what silently lost the cover letter's buttons.
+    const href=row.dataset['open'+attr[0].toUpperCase()+attr.slice(1)];
+    if(!href) return [btn('<button class="'+(cls||'')+'" data-gen="'+kind+'">'+label+'</button>')];
+    const dl=document.createElement('a');
+    dl.className='btn '+(cls||''); dl.href=href.replace('/open?','/download?');
+    dl.setAttribute('download','');
+    dl.title='Save it to your Downloads folder, where the browser\'s upload '
+            +'dialog opens';
+    dl.textContent='Download '+made;
+    const open=document.createElement('a');
+    open.className='btn'; open.href=href; open.title='Show it in Finder';
+    open.textContent='Open';
+    const out=[dl, open];
+    // See the Python beside this: a screening reads an advert that has not
+    // changed, so there is nothing to gain from a second one.
+    if(kind!=='screen') out.push(btn('<button data-gen="'+kind+'" data-redraft="1" '
+      +'title="Draft it again. This spends tokens.">Redraft</button>'));
+    return out; };
+  for(const el of pair('screen','Screen','screening','screen','primary')) d.appendChild(el);
+  for(const el of pair('cv','CV','CV','cv')) d.appendChild(el);
+  if(cv){ for(const el of pair('cover_letter','Cover letter','letter','letter')) d.appendChild(el); }
+  else d.appendChild(btn('<button disabled title="Draft the CV first: the letter is checked against it for repeated phrasing">Cover letter</button>'));
+  const a=document.createElement('a'); a.className='btn'; a.href=row.dataset.url||'#';
+  a.target='_blank'; a.rel='noopener'; a.dataset.apply='1'; a.textContent='Apply';
+  d.appendChild(a);
+  d.appendChild(btn('<button data-status="skipped">Skip</button>'));
+  if(settled) d.appendChild(btn('<button data-status="interested">Unskip</button>'));
+  const sel=document.createElement('select');
+  sel.className='setstatus'; sel.setAttribute('aria-label','Set status');
+  sel.dataset.current=st;
+  const ph=document.createElement('option'); ph.value=''; ph.textContent=(st||'Status')+'\u2026';
+  sel.appendChild(ph); d.appendChild(sel);
+  d.appendChild(btn('<button data-note="1" title="Add or edit a note">Note</button>'));
+  if(row.dataset.hasoutputs==='1')
+    d.appendChild(btn('<button data-reset-outputs="1" title="Clear saved screening and generated documents">Reset</button>'));
+  const err=row.querySelector('.err');
+  row.insertBefore(d, err || null); }
+document.addEventListener('pointerover', e=>{
+  const row=e.target.closest && e.target.closest('.row'); if(row) fillActs(row); }, true);
+document.addEventListener('focusin', e=>{
+  const row=e.target.closest && e.target.closest('.row'); if(row) fillActs(row); });
+// A click that lands before the hover handler has run still has to work: a
+// touch screen has no hover at all, and a row whose buttons were never built
+// would swallow the tap in silence.
+document.addEventListener('pointerdown', e=>{
+  const row=e.target.closest && e.target.closest('.row'); if(row) fillActs(row); }, true);
+
+document.addEventListener('pointerdown', e=>{
+  const sel=e.target.closest('select.setstatus'); if(sel) fillStatus(sel); }, true);
+document.addEventListener('focusin', e=>{
+  const sel=e.target.closest('select.setstatus'); if(sel) fillStatus(sel); });
 
 // The status select was rendered with all ten statuses and never wired to
 // anything, so picking "rejected" looked like it worked, changed nothing, and
@@ -675,6 +1154,13 @@ document.addEventListener('click', async e=>{
   const gen=e.target.closest('[data-gen]');
   if(gen && !gen.disabled){
     const kind=gen.dataset.gen;
+    // Redraft is the only one of these that can throw away work already paid
+    // for, so it is the only one that asks. Everything else here is either
+    // free or is the first time.
+    if(gen.dataset.redraft){
+      const name={screen:'screening',cv:'CV',cover_letter:'cover letter'}[kind]||kind;
+      if(!confirm('Draft this '+name+' again?\n\nThere is one on file already. '
+                  +'This spends tokens and replaces it.')) return; }
     const {ok,data}=await post('/api/generate',{uid,kind});
     const err=row.querySelector('.err');
     if(!ok){ err.hidden=false; err.textContent=data.error||'could not start';
@@ -687,6 +1173,11 @@ document.addEventListener('click', async e=>{
 });
 
 let polling=null;
+// Anything that finished during THIS polling session. `/api/jobs` only
+// reports completions from the last two minutes, so a long queue can empty
+// with its last success already outside that window, and the reload that
+// shows the documents would never fire.
+let sawFinished=[];
 async function poll(){
   if(polling) return;
   polling=setInterval(async ()=>{
@@ -721,16 +1212,51 @@ async function poll(){
       const j=newest.get(row.dataset.uid);
       if(j && j.state==='failed'){
         e.hidden=false; e.textContent='Generation failed: '+(j.error||'unknown');
+        progressOff(row);
+      }else if(j && (j.state==='running'||j.state==='pending')){
+        e.hidden=true; e.textContent='';
+        progressOn(row, j, d.typical||{}, d.now);
       }else if(j){
-        e.hidden=true; e.textContent='';}}
-    const done=d.jobs.some(j=>j.state==='done');
-    if(done){ clearInterval(polling); polling=null;
-              say('Done. Reloading to show the documents.');
-              setTimeout(()=>location.reload(),900); return;}
+        e.hidden=true; e.textContent=''; progressOff(row);}}
+    paintJobs(d);
+    const finished=d.jobs.filter(j=>j.state==='done');
+    // Only once the queue is EMPTY. Reloading on every completion was fine
+    // when one click meant one job and is unusable with a queue behind it:
+    // ten screens is ten reloads, each one throwing away the scroll position
+    // and re-closing the screening you had just opened to read. Which is
+    // exactly how this was found.
+    for(const j of finished){
+      if(!sawFinished.some(x=>x.uid===j.uid && x.kind===j.kind))
+        sawFinished.push({uid:j.uid, kind:j.kind}); }
+    const busyStill=d.jobs.some(j=>j.state==='running'||j.state==='pending');
+    if(busyStill && sawFinished.length){
+      // Say what landed, so the wait is legible without a reload.
+      say(sawFinished.length+' finished, '
+          +d.jobs.filter(j=>j.state!=='done').length
+          +' to go. The board refreshes when the queue is empty.', 4000);
+    }
+    if(sawFinished.length && !busyStill){ clearInterval(polling); polling=null;
+      // Remember WHICH role finished across the reload. Without this the
+      // page came back with a toast already gone, no scroll position, and the
+      // result sitting somewhere in four thousand rows: the job had worked
+      // and there was no way to tell without hunting for the row.
+      try{ sessionStorage.setItem('job-radar:finished',
+             JSON.stringify(sawFinished)); }catch(e){}
+      say('Done. Reloading to show the documents.');
+      setTimeout(()=>location.reload(),900); return;}
     if(!anyBusy && d.jobs.length===0){clearInterval(polling);polling=null;}
   },2500);}
 
-if(document.querySelector('.acts button.busy')) poll();
+// Poll whenever something is in flight, not only when a busy BUTTON is on the
+// page. Past EAGER_ROWS a row has no buttons until it is touched, so a job on
+// row 500 showed no progress at all and the tab looked idle while it ran.
+(async ()=>{
+  if(document.querySelector('.acts button.busy')) return poll();
+  try{ const r=await fetch('/api/jobs'); if(!r.ok) return;
+       const d=await r.json();
+       if((d.jobs||[]).some(j=>j.state==='running'||j.state==='pending')) poll();
+  }catch(e){}
+})();
 """
 
 
@@ -956,7 +1482,23 @@ def render(con, home_currency: str = "") -> str:
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body><div class="wrap">
+<title>Job radar</title>{_FAVICON}<style>{_CSS}{_EXTRA_CSS}</style></head><body>
+<div class="boot" id="boot" role="status" aria-live="polite">
+  <div class="boot-spin" aria-hidden="true"></div>
+  <p>Loading {total} roles</p>
+  <p class="boot-sub">The board is built in your browser, so this is the slow bit,
+     not the server.</p>
+</div>
+<script>
+// The overlay must not outlive a script that failed. Both of these clear it
+// even if the main script below never runs: a page that says "Loading" for
+// ever is a worse answer than a page that looks broken, because the reader
+// waits instead of reloading.
+addEventListener('DOMContentLoaded',()=>{{setTimeout(()=>{{
+  const b=document.getElementById('boot'); if(b) b.remove(); }},50);}});
+setTimeout(()=>{{const b=document.getElementById('boot'); if(b) b.remove();}},8000);
+</script>
+<div class="wrap">
 <header>
   <div class="brand">{_MARK}<span>job radar</span></div>
   <h1>{total} roles worth a look</h1>
@@ -982,7 +1524,8 @@ def render(con, home_currency: str = "") -> str:
   <button id="rankstop" type="button" hidden>Stop</button>
   <span id="rankinfo"></span>
   <span id="scaninfo" class="scanstat" hidden></span>
-  <span id="scanbar" class="scanbar" aria-hidden="true" hidden><i id="scanfill"></i></span>{_sync}</div>
+  <span id="scanbar" class="scanbar" aria-hidden="true" hidden><i id="scanfill"></i></span>
+  <span id="jobsinfo"></span>{_sync}</div>
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="chips" role="group" aria-label="Filter by status">{statuses}</div>
@@ -996,12 +1539,21 @@ def render(con, home_currency: str = "") -> str:
   <label><span>Country</span><select id="fcountry" aria-label="Country">{countries}</select></label>
   <label><span>City</span><select id="fcity" aria-label="City">{cities}</select></label>
 </div>
-<div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run) for r in rows)}</div>
+<div class="list" id="list">{"".join(_row(r, arts.get(r["uid"], {}), live.get(r["uid"]), run, eager=i < EAGER_ROWS) for i, r in enumerate(rows))}</div>
+<div class="bulk" id="bulk" hidden>
+  <div><b id="bulkn">0 selected</b>
+    <span class="cost" id="bulkcost"></span></div>
+  <div class="acts" style="margin:0">
+    <button id="bulkscreen" class="primary" type="button">Screen selected</button>
+    <button id="bulkcv" type="button">Draft CVs</button>
+    <button id="bulkclear" type="button">Clear</button>
+  </div>
+</div>
 {_empty}
 <footer>{_floor}Nothing is generated
 unless you click for it.</footer>
 </div><div class="toast" id="toast"></div>
-<script>{prelude}{_JS}</script></body></html>"""
+<script>{prelude}{_js()}</script></body></html>"""
 
 
 def _flags(row) -> list:
@@ -1022,7 +1574,7 @@ def _flags(row) -> list:
     return out if isinstance(out, list) else []
 
 
-def _row(r, arts, job, run=0) -> str:
+def _row(r, arts, job, run=0, eager=True) -> str:
     settled = r["status"] in store.SETTLED
     paid = bool(r["salary_confirmed"])
     meta = " \u00b7 ".join(x for x in [r["company"], _cap_location(r["location"] or "")] if x)
@@ -1030,14 +1582,45 @@ def _row(r, arts, job, run=0) -> str:
                    f'{_h.escape(_status_label(r["status"]))}</span>'
                    if r["status"] != "new" else "")
 
+    # Said on the title line, not only in the documents row underneath.
+    # Clicking CV on a role whose CV was already written started a second
+    # eight minute run and charged for it, and the reason it was easy to do is
+    # that "there is one already" was one line further down and looked like
+    # part of the metadata. A ready document is a state of the role, so it
+    # belongs where the other states are.
+    ready = "".join(
+        f'<span class="ready" title="Already drafted. Open it from the buttons '
+        f'below.">{name} ready</span>'
+        for kind, name in (("screen", "screening"), ("cv", "CV"),
+                           ("cover_letter", "letter"))
+        if kind in arts)
+
     docs = []
     if "cv" in arts:
         a = arts["cv"]
         rating = (f'<span class="rating">{a["rating"]:.0f}/100</span>'
                   if a["rating"] else "")
-        fails = [k for k, v in json.loads(a["gates"] or "{}").items() if v is False]
-        gate = (f'<span class="gatefail">{len(fails)} gate(s) failed</span>'
-                if fails else "")
+        gates_j = json.loads(a["gates"] or "{}")
+        fails = [k for k, v in gates_j.items() if v is False]
+        # Name them. "1 gate(s) failed" is a number the reader cannot act on:
+        # it does not say which rule, so the only way to find out was to open
+        # the rating file. The failing gate is usually the reason to look at
+        # the document at all.
+        _GATE_NAMES = {
+            "written": "nothing was written",
+            "no_em_dash": "contains an em-dash",
+            "unsourced_specifics": "figures not in your CV",
+            "natural_writing": "reads as AI-written",
+            "no_overlap_with_cv": "repeats the CV",
+        }
+        if fails:
+            label = ", ".join(_GATE_NAMES.get(k, k.replace("_", " ")) for k in fails)
+            found = gates_j.get("unsourced_found") or []
+            tip = ("not in your CV: " + ", ".join(map(str, found))) if found else label
+            gate = (f'<span class="gatefail" '
+                    f'title="{_h.escape(tip, quote=True)}">{_h.escape(label)}</span>')
+        else:
+            gate = '<span class="gateok">all gates passed</span>'
         aid = int(a["id"])
         docs.append(
             f'<a href="/artifact/{aid}">CV</a> '
@@ -1063,8 +1646,13 @@ def _row(r, arts, job, run=0) -> str:
         docs.append(f'<a href="/artifact/{int(a["id"])}">Evidence used</a>')
     # The screening is the thing you asked for, so it goes in the row rather
     # than behind a link to a file. <details> gives the minimise for free and
-    # keeps working with JavaScript off. Open by default: you clicked Screen
-    # to read it, and a collapsed answer is one more click for no reason.
+    # keeps working with JavaScript off.
+    #
+    # Closed by default. It was open, on the reasoning that you clicked Screen
+    # to read it. That holds for the first one and stops holding immediately
+    # after: screen nine roles and the board is nine walls of analysis you
+    # have already read, with the rows you were comparing pushed pages apart.
+    # The summary line carries the verdict, which is the part you re-read.
     # The fit score, where it can be read next to the role rather than only
     # in a sort order.
     fitline = ""
@@ -1130,16 +1718,79 @@ def _row(r, arts, job, run=0) -> str:
         "screen", "screen_answer", "cv", "cover_letter",
         "evidence_used", "jd_snapshot")))
 
-    def b(kind, label, cls=""):
-        on = busy == kind
-        return (f'<button class="{cls}{" busy" if on else ""}" data-gen="{kind}" '
-                f'{"disabled" if on else ""}>{label}</button>')
+    def b(kind, label, cls="", made=""):
+        """The button for one kind, which is Open once the thing exists.
 
-    letter_btn = (b("cover_letter", "Cover letter") if has_cv else
+        It used to be Draft either way, so clicking CV on a role whose CV was
+        already written started a second eight minute agent run and charged
+        for it. The document was right there in the row, one line below, as a
+        link. A control that spends money has to be the one that says it will:
+        the default action on something already made is to look at it.
+        """
+        on = busy == kind
+        if on:
+            return f'<button class="{cls} busy" data-gen="{kind}" disabled>{label}</button>'
+        art = arts.get(kind)
+        if art and art["path"]:
+            href = _h.escape(quote(str(art["path"])), quote=True)
+            return (f'<a class="btn {cls}" href="/download?path={href}" '
+                    f'download title="Save it to your Downloads folder, where '
+                    f'the browser\'s upload dialog opens">Download {made or label}</a>'
+                    f'<a class="btn" href="/open?path={href}" '
+                    f'title="Show it in Finder">Open</a>'
+                    # Only where redoing it could give a different answer. A
+                    # screening is a reading of an advert that has not
+                    # changed, so a second one costs money to reach the same
+                    # conclusion; a CV or a letter is a draft, and a draft is
+                    # a thing you might want another go at.
+                    + (f'<button data-gen="{kind}" data-redraft="1" '
+                       f'title="Draft it again. This spends tokens.">Redraft</button>'
+                       if kind in ("cv", "cover_letter") else ""))
+        return f'<button class="{cls}" data-gen="{kind}">{label}</button>'
+
+    letter_btn = (b("cover_letter", "Cover letter", made="letter") if has_cv else
                   '<button disabled title="Draft the CV first: the letter is '
                   'checked against it for repeated phrasing">Cover letter</button>')
     score_text = (f'fit {int(fv)}' if fv >= 0 else
                   f'score {int(r["score"] or 0)}')
+
+    # The action buttons are the page. Nine controls a row over 4,191 rows is
+    # ~60,000 nodes and most of a 7.2MB document, all of it built before the
+    # browser will paint, for rows nobody has scrolled to. So they are written
+    # for the rows that open on screen and built by `fillActs` for the rest,
+    # on hover or focus, from the data attributes below.
+    # The action buttons are the page's weight. Nine controls a row across
+    # 4,191 rows is most of a 7.2MB document and ~60,000 nodes, every one of
+    # them built before the browser will paint, for rows nobody has scrolled
+    # to. So they are written for the rows that open on screen and built by
+    # `fillActs` for the rest, on hover or focus, out of the data attributes
+    # the row already carries.
+    acts = (
+        '<div class="acts">'
+        + b("screen", "Screen", "primary", made="screening")
+        + b("cv", "CV", made="CV")
+        + letter_btn
+        + f'<a class="btn" href="{_h.escape(safe_url(r["url"]))}" target="_blank" '
+          f'rel="noopener" data-apply="1">Apply</a>'
+        + '<button data-status="skipped">Skip</button>'
+        + ('<button data-status="interested">Unskip</button>' if settled else '')
+        # The dashboard offered two of the ten statuses and no note, while the
+        # CLI had all ten and a note, so the browser could not record an
+        # interview date, the thing a tracker is for.
+        #
+        # The options are not here either: ten a row was 43,600 <option> nodes
+        # and 2.3MB on its own. `fillStatus` adds them on first interaction,
+        # and the current status rides on the element so `mark()` can read it
+        # without them existing.
+        + f'<select class="setstatus" aria-label="Set status" '
+          f'data-current="{_h.escape(r["status"] or "")}">'
+        + f'<option value="">{_h.escape(r["status"] or "Status")}\u2026</option>'
+        + '</select>'
+        + '<button data-note="1" title="Add or edit a note">Note</button>'
+        + ('<button data-reset-outputs="1" title="Clear saved screening and generated documents">Reset</button>'
+           if has_outputs else '')
+        + '</div>'
+    )
 
     return (
         f'<div class="row{" settled" if settled else ""}" data-uid="{_h.escape(r["uid"], quote=True)}" '
@@ -1161,10 +1812,36 @@ def _row(r, arts, job, run=0) -> str:
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
         f'data-mode="{_h.escape(r["work_mode"] or "unstated", quote=True)}" '
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '
-        f'data-city="{_h.escape(r["city"] or "", quote=True)}">'
+        f'data-city="{_h.escape(r["city"] or "", quote=True)}" '
+        # Read by `fillActs` to build this row's buttons when it is first
+        # hovered or focused. Cheap attributes, against ~14 elements each.
+        f'data-url="{_h.escape(safe_url(r["url"]), quote=True)}" '
+        f'data-hascv="{1 if has_cv else 0}" '
+        f'data-hasoutputs="{1 if has_outputs else 0}" '
+        # The address of anything already generated for this role, so a lazy
+        # row can offer Open rather than a button that would pay to make a
+        # second one. Read off `arts` rather than off the rendered docs line:
+        # the screening is shown inline in a <details> and has no link there
+        # at all, so a reader of the markup would have decided no screening
+        # existed and offered to run it again.
+        + "".join(
+            f'data-open-{suffix}="/open?path='
+            f'{_h.escape(quote(str(arts[k]["path"])), quote=True)}" '
+            for k, suffix in DOC_ATTR.items()
+            if arts.get(k) and arts[k]["path"])
+        + f'data-settled="{1 if settled else 0}"'
+        # The attribute is built outside the f-string on purpose. A backslash
+        # inside an f-string expression is a SyntaxError before Python 3.12,
+        # and this file parsed on 3.13 here while failing to import on 3.10
+        # and 3.11 in CI: thirteen red runs whose only symptom was 26 test
+        # files "could not import".
+        + _LAZY_ATTR[bool(eager)]
+        + '>'
+        f'<div class="pick"><input type="checkbox" class="sel" '
+        f'aria-label="Select for bulk screening"></div>'
         f'<div><div class="role">'
         f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
-        f'{status_pill}</div>'
+        f'{status_pill}{ready}</div>'
         f'<div class="meta">{_h.escape(meta)}</div>'
         f'<div class="compact-meta">{_h.escape(_cap_location(r["location"] or ""))}</div></div>'
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
@@ -1179,27 +1856,6 @@ def _row(r, arts, job, run=0) -> str:
         + (f'<div class="rownote">{_h.escape(r["note"])}</div>' if r["note"] else "")
         + screening
         + screen_answer
-        + '<div class="acts">'
-        + b("screen", "Screen", "primary")
-        + b("cv", "CV")
-        + letter_btn
-        + f'<a class="btn" href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener" '
-          f'data-apply="1">Apply</a>'
-        + '<button data-status="skipped">Skip</button>'
-        + ('<button data-status="interested">Unskip</button>' if settled else '')
-        # The dashboard offered two of the ten statuses and no note, while the
-        # CLI had all ten and a note, so the browser could not record an
-        # interview date -- the thing a tracker is for.
-        + '<select class="setstatus" aria-label="Set status">'
-        + '<option value="">Status\u2026</option>'
-        + "".join(
-            f'<option value="{s}"{" selected" if s == r["status"] else ""}>'
-            f'{_h.escape(_status_label(s))}</option>'
-            for s in store.STATUSES)
-        + '</select>'
-        + '<button data-note="1" title="Add or edit a note">Note</button>'
-        + ('<button data-reset-outputs="1" title="Clear saved screening and generated documents">Reset</button>'
-           if has_outputs else '')
-        + '</div>'
+        + (acts if eager else "")
         + (f'<div class="err" hidden></div>')
         + '</div>')

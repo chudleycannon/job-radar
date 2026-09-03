@@ -77,6 +77,7 @@ def main() -> int:
         return 1
 
     total = bad = 0
+    unimportable = []
     for path in files:
         print(f"\n{path.name}")
         try:
@@ -86,6 +87,7 @@ def main() -> int:
             # Skipping is how the first one went missing.
             print(f"  FAIL  could not import {path.name}")
             traceback.print_exc()
+            unimportable.append(path.name)
             bad += 1
             total += 1
             continue
@@ -123,6 +125,16 @@ def main() -> int:
                 print(f"  FAIL  {name}")
                 traceback.print_exc()
 
+    # Named again at the end, where a reader of a two thousand line log
+    # actually looks. A file that will not import fails every test in it, so
+    # the pass count drops by dozens and the cause is one line, thousands of
+    # lines up: thirteen red runs read as "70 tests broke" when the truth was
+    # one SyntaxError in one module that 26 files import.
+    if unimportable:
+        print(f"\n{len(unimportable)} file(s) could not be imported at all. "
+              f"That is usually one broken module, not many broken tests:")
+        for name in unimportable:
+            print(f"  {name}")
     print(f"\n{total - bad}/{total} passed across {len(files)} files")
     return 1 if bad else 0
 

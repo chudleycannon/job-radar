@@ -1367,7 +1367,10 @@ def test_a_worker_that_dies_before_it_starts_does_not_leave_a_spinner():
     with _lab() as (root, db, home):
         con = store.connect(db)
         job = store.enqueue(con, "uid-one", "cv")
-        assert store.claim(con, "generate")
+        # Per role since bulk generation landed: two different roles were
+        # never in each other's way, and the collision the lock exists to
+        # stop is two runs writing one role's folder.
+        assert store.claim(con, "generate:uid-one")
         real = store.connect
         # Keyed to the worker thread, not to a call count, and settling on the
         # lock rather than on the row. Both faults are the ones its rank twin
@@ -1393,7 +1396,7 @@ def test_a_worker_that_dies_before_it_starts_does_not_leave_a_spinner():
                     "SELECT state FROM jobs WHERE id=?", (job,)
                 ).fetchone()["state"] != "pending"
                     and con.execute(
-                        "SELECT 1 FROM locks WHERE name='generate'"
+                        "SELECT 1 FROM locks WHERE name='generate:uid-one'"
                     ).fetchone() is None)
         finally:
             store.connect = real

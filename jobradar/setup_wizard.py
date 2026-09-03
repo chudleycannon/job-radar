@@ -293,6 +293,57 @@ def _sources_it_will_read(config_path: Path) -> int:
 SEED_URL = "https://github.com/maccydee/job-radar/releases/download/seed-latest"
 
 
+def _open_board(config_path: Path) -> str:
+    """Start the dashboard and point a browser at it. Returns the URL or "".
+
+    Never raises. A dashboard that could not be started is not a reason to
+    stop a setup that has just stored several hundred roles; the reader is
+    told the command instead.
+    """
+    from . import serve as serve_mod
+    home = config_path.expanduser().resolve().parent
+    db = str(home / "data" / "job-radar.db")
+    # The next free port, rather than a sentence explaining why there is no
+    # dashboard. 8765 is busy whenever another config is already being served,
+    # which on any machine that has run this twice is most of the time, and
+    # the reader has just been handed several hundred roles: they should get a
+    # page, not homework.
+    #
+    # A handful of ports, not a search: if five in a row are taken, something
+    # is wrong that starting a sixth server will not fix.
+    url = None
+    for port in range(8765, 8770):
+        try:
+            url = serve_mod.open_in_background(
+                db_path=db, config_path=str(config_path), port=port)
+        except Exception:
+            url = None
+        if url:
+            break
+    if not url:
+        # Two different reasons, and telling them apart matters. Nothing
+        # started because a dashboard is ALREADY up is not a failure, and
+        # "see them with `job-radar serve`" would send the reader at a command
+        # that then refuses the port.
+        #
+        # It does not claim the running one holds THEIR roles. All that is
+        # known is that something answers on the port; it may be a dashboard
+        # on somebody else's database, which is a mistake this file has made
+        # before and will not make by implication.
+        print("\nYour roles are ready. Could not start a dashboard "
+              "(ports 8765 to 8769 are all busy).")
+        print("See them with `job-radar serve --port <free port>`.")
+        return ""
+    print(f"\nYour dashboard is open at {url}")
+    print("It stays up while the scan runs and fills in underneath you.")
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception:
+        pass
+    return url
+
+
 def seed_first(config_path: Path) -> int:
     """Fetch the published seed before the first scan. Returns roles stored.
 
@@ -328,7 +379,7 @@ def seed_first(config_path: Path) -> int:
         dry_run = False
 
     try:
-        return cli.cmd_seed_load(_Args())
+        rc = cli.cmd_seed_load(_Args())
     except KeyboardInterrupt:
         print("\nStopped. The scan below still does the whole job.")
         return 1
@@ -340,6 +391,20 @@ def seed_first(config_path: Path) -> int:
         print("just takes longer. You can try again later with")
         print(f"  job-radar seed load {SEED_URL}")
         return 1
+
+    # Opened here, not after the scan's first pass.
+    #
+    # The scan already opens one five minutes in, which is when it first has
+    # something worth looking at. With a seed there is something worth looking
+    # at BEFORE the scan starts, and the alternative was a line of prose
+    # telling somebody to open a second terminal and type a command, which is
+    # the tool asking a person to do the tool's job.
+    #
+    # `open_in_background` returns None when a dashboard is already up, and
+    # the scan's own attempt later says so rather than starting a second one
+    # that would contend for the same database.
+    _open_board(config_path)
+    return rc
 
 
 def _span(minutes: float) -> str:
@@ -424,11 +489,11 @@ def first_scan(config_path: Path) -> int:
     # working dashboard and had no idea they could use it now.
     if have:
         print()
-        print(f"You already have {have:,} roles from the seed, and they are")
-        print("usable right now: open a second terminal and run")
-        print("`job-radar serve`. This scan refreshes those and adds")
+        print(f"You already have {have:,} roles from the seed, on the")
+        print("dashboard that is open now. This scan refreshes those and adds")
         print("everything the seed does not carry, which is the fast half of")
-        print("the sources and anything posted since it was built.")
+        print("the sources and anything posted since it was built. The page")
+        print("fills in underneath you; you do not have to wait for it.")
     print()
     print("You do not have to wait for the end: the dashboard is worth opening")
     print("after the first pass and the rest fill in behind it. Your machine")

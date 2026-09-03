@@ -1963,6 +1963,218 @@ def parse_phenom(payload: Any, src: Source) -> Iterator[Job]:
 
 
 # --------------------------------------------------------------------------
+# amazon.jobs (`/en/search.json`)
+# --------------------------------------------------------------------------
+# Amazon run their own board and their own API. Nothing else here reads it,
+# which is why the largest employer on this list was absent from it.
+#
+# Country codes come back as ISO alpha-3 ("GBR"), which is not what anything
+# downstream filters on, and `normalized_location` ends with the same alpha-3
+# rather than a country name. So the country is set here from the code rather
+# than left for the shared reader to infer from "Cambridge, England, GBR".
+_A3 = {
+    "GBR": "UK", "USA": "US", "CAN": "CA", "IRL": "IE", "DEU": "DE",
+    "FRA": "FR", "ESP": "ES", "ITA": "IT", "NLD": "NL", "POL": "PL",
+    "IND": "IN", "AUS": "AU", "NZL": "NZ", "JPN": "JP", "SGP": "SG",
+    "ARE": "AE", "ZAF": "ZA", "BRA": "BR", "MEX": "MX", "SWE": "SE",
+    "CHE": "CH", "AUT": "AT", "BEL": "BE", "DNK": "DK", "FIN": "FI",
+    "NOR": "NO", "PRT": "PT", "CZE": "CZ", "ROU": "RO", "TUR": "TR",
+    "ISR": "IL", "SAU": "SA", "EGY": "EG", "KOR": "KR", "CHN": "CN",
+    "MYS": "MY", "PHL": "PH", "IDN": "ID", "THA": "TH", "VNM": "VN",
+    "LUX": "LU", "GRC": "GR", "HUN": "HU", "SVK": "SK", "BGR": "BG",
+    "HRV": "HR", "SVN": "SI", "EST": "EE", "LVA": "LV", "LTU": "LT",
+    "COL": "CO", "CHL": "CL", "ARG": "AR", "PER": "PE", "CRI": "CR",
+    "JOR": "JO", "NGA": "NG", "KEN": "KE", "TWN": "TW", "HKG": "HK",
+}
+
+
+def _strip_tags(v: Any) -> str:
+    """Advert text with the markup taken out and the line breaks kept.
+
+    `_text` collapses all whitespace, which turns a qualifications list into
+    one unreadable paragraph and loses the bullet structure a reader and a
+    dealbreaker regex both use. `<br/>` and `</li>` become newlines first.
+    """
+    if not isinstance(v, str) or not v:
+        return ""
+    s = re.sub(r"<br\s*/?>|</li>|</p>|</div>", "\n", v, flags=re.I)
+    s = _TAGS.sub("", s)
+    s = html.unescape(s)
+    s = re.sub(r"[ \t]+", " ", s)
+    return re.sub(r"\n{3,}", "\n\n", s).strip()
+
+
+def parse_amazon(payload: Any, src: Source) -> Iterator[Job]:
+    """Rows from `jobs`.
+
+    The advert is spread over three fields and all three matter. `description`
+    alone is the pitch; `basic_qualifications` is where the must-haves live,
+    which is what dealbreakers and fit are actually judged on, and it is the
+    field that says "5+ years" or "prior experience as a software engineer".
+    Joining them is the difference between screening the advert and screening
+    the marketing.
+
+    `company_name` is the legal entity that employs you, and it varies by
+    country and business: "Amazon Web Services Malaysia SDN. BHD.",
+    "Amazon France Logistique SAS". Stored as the source's name instead, so a
+    board does not fragment into two hundred employers on the dashboard, with
+    the entity kept in the advert text where it belongs.
+    """
+    rows = (payload or {}).get("jobs") if isinstance(payload, dict) else None
+    for j in rows or []:
+        if not isinstance(j, dict):
+            continue
+        title = _text(j.get("title"))
+        path = _text(j.get("job_path"))
+        if not (title and path):
+            continue
+        parts = [_strip_tags(j.get(k)) for k in
+                 ("description", "basic_qualifications", "preferred_qualifications")]
+        desc = "\n\n".join(p for p in parts if p)
+        code = (j.get("country_code") or "").upper()
+        # "Virtual" is Amazon's word for a home-based role. It is not a town,
+        # and stored as one it lands in the dashboard's city filter looking
+        # exactly like a place you could commute to. Same failure as Workday's
+        # "2 Locations", in a different costume.
+        city = _text(j.get("city"))
+        virtual = city.lower() in ("virtual", "remote")
+        if virtual:
+            city = ""
+        loc = _text(j.get("normalized_location"))
+        # Drop the trailing alpha-3. It is already carried as `country`, and
+        # left in it the city filter lists "GBR" as a town.
+        if code and loc.upper().endswith(code):
+            loc = loc[: -len(code)].rstrip(" ,")
+        if not loc:
+            # `normalized_location` is bare "GBR" on virtual roles and on some
+            # ordinary ones, so stripping the code empties it. Two of the
+            # first three hundred rows read this way. Rebuild from the parts,
+            # and fall back to `location`, which is "GB, East London": the
+            # leading alpha-2 goes for the same reason the alpha-3 did.
+            loc = ", ".join(x for x in (city, _text(j.get("state"))) if x)
+        if not loc:
+            raw = _text(j.get("location"))
+            bits = [b.strip() for b in raw.split(",")]
+            if bits and len(bits[0]) == 2 and bits[0].isupper():
+                bits = bits[1:]
+            loc = ", ".join(b for b in bits if b and b.lower() != "virtual")
+        yield Job(
+            company=src.company,
+            title=title,
+            url=urljoin("https://www.amazon.jobs/", path),
+            platform="amazon",
+            location=loc,
+            city=city,
+            country=_A3.get(code) or None,
+            # The row says so outright, which beats reading the words in a
+            # title. `type: VIRTUAL` in `locations` says the same thing.
+            remote=True if virtual else _remote(loc, title),
+            department=_text(j.get("job_category")) or None,
+            posted_at=_iso(_text(j.get("posted_date"))),
+            description=desc,
+            source_id=src.key,
+        )
+
+
+
+# --------------------------------------------------------------------------
+# Phenom PCSX (`/api/pcsx/search`)
+# --------------------------------------------------------------------------
+# Phenom's newer product, and a different system from `parse_phenom` above
+# despite the shared vendor. That one reads `phApp.ddo` out of rendered HTML
+# or POSTs to `/widgets`; this one is a plain GET returning JSON under
+# `data.positions`, and neither adapter can read the other's board.
+#
+# Microsoft sit here, which is why they were absent from a 17,811-source list:
+# they are on none of the platforms this tool could read, and `discover` found
+# nothing because there was nothing to find.
+#
+# The list carries no advert text at all, only a title, places, a department
+# and a timestamp. `enrich._from_pcsx` fetches the real one per role. That is
+# deliberate rather than a gap: a role stored with no description is marked
+# unscreened, which is the honest state, and inventing a teaser from the title
+# would let the dealbreakers run against nothing and report that they passed.
+_PCSX_JOB = re.compile(r"/careers/job/(\d+)")
+
+
+def parse_pcsx(payload: Any, src: Source) -> Iterator[Job]:
+    """Rows from `data.positions`.
+
+    `locations` is a list of free-text strings, most specific last, in the
+    shape "United States, Washington, Redmond". A posting open in several
+    places carries several of them, so they are joined rather than reduced to
+    a count: Workday and Jobvite both collapse that to the string
+    "2 Locations", which then sits in the location column reading exactly like
+    a city, and this adapter is not repeating it.
+    """
+    data = (payload or {}).get("data") if isinstance(payload, dict) else None
+    for j in (data or {}).get("positions") or []:
+        if not isinstance(j, dict):
+            continue
+        title = _text(j.get("name"))
+        rel = _text(j.get("positionUrl"))
+        jid = j.get("id")
+        # The row's own address, never a search URL: `positionUrl` is relative
+        # and the id is the only other thing that identifies the posting, so a
+        # row carrying neither is a row this tool cannot link to.
+        if rel:
+            url = urljoin(src.url, rel)
+        elif jid:
+            url = urljoin(src.url, f"/careers/job/{jid}")
+        else:
+            continue
+        if not title:
+            continue
+        places = [p for p in (j.get("locations") or []) if isinstance(p, str)]
+        if not places:
+            places = [p for p in (j.get("standardizedLocations") or [])
+                      if isinstance(p, str)]
+        # Microsoft write "United States, Multiple Locations, Multiple
+        # Locations" for a posting open in several places. "Multiple
+        # Locations" is a count wearing a place's clothes, and left in it
+        # becomes the city on the dashboard. The country in front of it is
+        # real and is kept.
+        # PCSX writes a place most-general-first: "United States, Washington,
+        # Redmond". Every other board here writes it the other way round, and
+        # `screen.city_of` takes the first comma part, so left alone every
+        # Microsoft role's city was its country and 2,119 of them had none at
+        # all. Reversed here, in the adapter, because normalising into `Job`
+        # is this layer's job and changing the shared reader to guess the
+        # ordering would touch every platform.
+        #
+        # "Multiple Locations" is dropped on the way through: it is a count
+        # wearing a place's clothes, exactly like Workday's "2 Locations", and
+        # left in it becomes the city on the dashboard.
+        tidy = []
+        for place in places:
+            parts = [part.strip() for part in place.split(",")]
+            parts = [part for part in parts
+                     if part and part.lower() != "multiple locations"]
+            if parts:
+                tidy.append(", ".join(reversed(parts)))
+        loc = "; ".join(dict.fromkeys(tidy))
+        # `workLocationOption` is the employer's own answer, so it beats
+        # guessing from the words in a title.
+        mode = _text(j.get("workLocationOption")).lower()
+        remote = True if mode == "remote" else (False if mode else None)
+        if remote is None:
+            remote = _remote(loc, title)
+        yield Job(
+            company=src.company,
+            title=title,
+            url=url,
+            platform="pcsx",
+            location=loc,
+            remote=remote,
+            department=_text(j.get("department")) or None,
+            posted_at=_iso(j.get("postedTs") or j.get("creationTs")),
+            # No advert in the list. Left empty on purpose: see above.
+            description="",
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
 # SuccessFactors RMK (jobs2web)
 # --------------------------------------------------------------------------
 _RMK_LINK = re.compile(

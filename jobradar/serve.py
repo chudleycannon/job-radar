@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import ai
 from . import profile as candidate_profile
-from . import runner, store
+from . import rank, runner, store
 from .config import resolve as resolve_config
 from .output import interactive
 from .output import profile as profile_page
@@ -39,6 +39,38 @@ MAX_BODY = 1 << 20
 
 def _log_error(msg: str) -> None:
     print(f"  ! {msg}", flush=True)
+
+
+# The most roles one bulk click will take.
+#
+# Not a technical limit: `MAX_RUNNING` is what bounds what actually runs, and
+# the rest queue. This is a guard against a mis-click on "select all" over a
+# four thousand row board turning into four thousand paid agent runs.
+_MIME = {".pdf": "application/pdf", ".md": "text/markdown; charset=utf-8",
+         ".txt": "text/plain; charset=utf-8",
+         ".docx": ("application/vnd.openxmlformats-officedocument"
+                   ".wordprocessingml.document")}
+
+
+def _download_name(company: str, title: str, kind: str, suffix: str) -> str:
+    """A filename you can find in a folder of downloads.
+
+    Every generated CV is called CV.pdf on disk, which is fine in a directory
+    named after the role and useless in ~/Downloads, where three of them
+    become CV.pdf, CV (1).pdf and CV (2).pdf. The employer and the role go in
+    front so the picker's own list is enough.
+    """
+    what = {"cv": "CV", "cover_letter": "Cover-letter",
+            "screen": "Screening"}.get(kind, kind)
+    def slug(s, n):
+        s = re.sub(r"[^\w\s-]", "", s or "").strip()
+        s = re.sub(r"[\s_]+", "-", s)
+        return s[:n].strip("-")
+    parts = [p for p in (slug(company, 28), slug(title, 40), what) if p]
+    return "-".join(parts) + suffix
+
+
+BULK_LIMIT = 40
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -90,7 +122,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Disposition",
-                         f'attachment; filename="{_download_name(name or path.name)}"')
+                         f'attachment; filename="{_safe_download_name(name or path.name)}"')
         self.end_headers()
         self.wfile.write(body)
 
@@ -101,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Disposition",
-                         f'attachment; filename="{_download_name(name)}"')
+                         f'attachment; filename="{_safe_download_name(name)}"')
         self.end_headers()
         self.wfile.write(body)
 
@@ -274,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
                 batches, tokens = rank_mod.estimate(rows)
                 return self._json({
                     "pending": len(rows), "batches": batches, "tokens": tokens,
-                    "screen_tokens": len(rows) * 60_000,
+                    "screen_tokens": len(rows) * rank.SCREEN_TOKENS,
                     "state": store.get_meta(con, "rank_state", "idle"),
                     "done": max(
                         int(store.get_meta(con, "rank_done", "0") or 0),
@@ -308,7 +340,12 @@ class Handler(BaseHTTPRequestHandler):
                 #     wins, so every job finished today looked recent.
                 #   * datetime('now') is UTC; the stored value is local.
                 rows = con.execute(
-                    "SELECT id,uid,kind,state,error FROM jobs "
+                    # `started_at` travels so the browser can show elapsed
+                    # time. A spinner with no clock on an eight minute job is
+                    # the same failure as a page that paints nothing for a
+                    # second: it reads as hung, and the reader kills work that
+                    # was going fine.
+                    "SELECT id,uid,kind,state,error,started_at FROM jobs "
                     "WHERE state IN ('pending','running') OR "
                     "replace(finished_at,'T',' ') > "
                     "datetime('now','localtime','-2 minutes')").fetchall()
@@ -317,6 +354,11 @@ class Handler(BaseHTTPRequestHandler):
                 states = con.execute("SELECT uid,status FROM role_state").fetchall()
                 return self._json({
                     "jobs": [dict(r) for r in rows],
+                    # Per kind, and only the kinds actually in flight, so a
+                    # quiet poll stays a small answer.
+                    "typical": {k: store.typical_seconds(con, k)
+                                for k in {r["kind"] for r in rows}},
+                    "now": store._now(),
                     "artifacts": [dict(r) for r in arts],
                     "states": {r["uid"]: r["status"] for r in states},
                 })
@@ -411,6 +453,65 @@ class Handler(BaseHTTPRequestHandler):
                 text += f"**{head}**\n\n"
             text += (row["description"] or "_No stored job description._")
             return self._markdown_page(title, text, nav=nav)
+
+        if path.startswith("/download"):
+            # Serve the document as a download rather than revealing it in
+            # Finder.
+            #
+            # `open -R` puts a Finder window in front of you, which is the
+            # right answer when you want to look at the file and the wrong one
+            # when you are about to attach it: Chrome's upload dialog does not
+            # know about that window, so you are hunting through ninety
+            # `2026-09-01-company-role-hash` folders for `CV.pdf`. A download
+            # lands in ~/Downloads, which is where the picker already opens.
+            #
+            # The name matters as much as the route. Every generated CV is
+            # called CV.pdf, so downloading three of them gives you CV.pdf,
+            # CV (1).pdf and CV (2).pdf, and the picker's most useful column
+            # tells you nothing. The employer and the role go in the filename.
+            if not self._same_origin():
+                return self._json(
+                    {"ok": False, "error": "cross-origin request refused"}, 403)
+            q = parse_qs(urlparse(self.path).query)
+            p = Path(unquote((q.get("path") or [""])[0] or ""))
+            con = store.connect(self.db_path)
+            try:
+                row = con.execute(
+                    "SELECT a.kind, r.company, r.title FROM artifacts a "
+                    "JOIN roles r ON r.uid = a.uid WHERE a.path=? LIMIT 1",
+                    (str(p),)).fetchone()
+            finally:
+                con.close()
+            # The same allowlist by construction as /open: the path has to be
+            # one already recorded in `artifacts`, so no amount of traversal
+            # in the query string reaches anything else on the disk.
+            if not row:
+                return self._json(
+                    {"ok": False,
+                     "error": "that is not a document this tool made"}, 403)
+            if not p.exists():
+                return self._json({"ok": False, "error": "not found"}, 404)
+            try:
+                blob = p.read_bytes()
+            except OSError as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+            name = _download_name(row["company"], row["title"], row["kind"],
+                                  p.suffix)
+            self.send_response(200)
+            self.send_header("Content-Type", _MIME.get(p.suffix.lower(),
+                                                       "application/octet-stream"))
+            # ASCII only in the quoted form: a header is latin-1 and an
+            # employer called "Nestlé" would raise inside the handler and drop
+            # the connection. RFC 5987 carries the real one beside it.
+            ascii_name = name.encode("ascii", "ignore").decode() or "document"
+            self.send_header(
+                "Content-Disposition",
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{quote(name)}")
+            self.send_header("Content-Length", str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+            return
         if path.startswith("/open"):
             # Checked like a POST. It is a GET, but it runs `open -R` on a
             # path from the query string, so any page in the browser could
@@ -514,6 +615,40 @@ class Handler(BaseHTTPRequestHandler):
         if origin is None:
             return True                      # curl and same-origin form posts
         return origin.split("//")[-1] in allowed
+
+    def _start_generation(self, con, uid, kind):
+        """Queue one role. Returns (job_id, "") or (None, reason).
+
+        Shared by the single button and the bulk one so a role cannot be
+        accepted by one path and refused by the other. Every check here is a
+        refusal that costs nothing; the thing being guarded costs money.
+        """
+        if kind == "cover_letter" and not store.has_artifact(con, uid, "cv"):
+            return None, ("draft the CV first: the letter is checked against "
+                          "it for repeated phrasing")
+        if kind in ("screen", "cv", "cover_letter"):
+            # Not screen alone. A CV drafted against "_No description
+            # available from this source._" is a full agent run, a rating, and
+            # a document tailored to nothing.
+            row = con.execute("SELECT description FROM roles WHERE uid=?",
+                              (uid,)).fetchone()
+            if row is None:
+                return None, "no such role"
+            if len((row["description"] or "").strip()) < 200:
+                return None, ("this posting has no description, so there is "
+                              "nothing to screen. Open the advert instead.")
+        # Queue it, then let the pump decide what runs. The cap belongs on
+        # what is RUNNING, not on what may be asked for: it used to sit here,
+        # so nine selected roles became three started and six refused while
+        # the dialog that took the click promised the rest would queue.
+        #
+        # `enqueue` is idempotent per role and kind, so a double-click returns
+        # the same job rather than a second one writing the same folder.
+        job_id = store.enqueue(con, uid, kind)
+        con.commit()
+        runner.pump(db_path=self.db_path, base=self.docs_base,
+                    config_path=self.config_path)
+        return job_id, ""
 
     def do_POST(self):
         if not self._same_origin():
@@ -715,6 +850,44 @@ class Handler(BaseHTTPRequestHandler):
                         refresh=bool(data.get("refresh")))
             return self._json({"ok": True, "roles": len(rows)})
 
+        if path == "/api/generate/bulk":
+            con = store.connect(self.db_path)
+            try:
+                # One request, many roles, and a per-role answer. A bulk
+                # button that returns a single ok/failed is unusable: a
+                # shortlist where two roles have no description and one is
+                # already running has to say WHICH, or the reader has to open
+                # forty rows to find out what actually started.
+                kind = data.get("kind")
+                if not isinstance(kind, str) or kind not in runner.KINDS:
+                    return self._json({"ok": False, "error": "bad kind"}, 400)
+                uids = data.get("uids")
+                if not isinstance(uids, list) or not uids:
+                    return self._json(
+                        {"ok": False, "error": "no roles selected"}, 400)
+                if len(uids) > BULK_LIMIT:
+                    return self._json(
+                        {"ok": False,
+                         "error": f"{len(uids)} roles asked for at once; "
+                                  f"{BULK_LIMIT} is the most this will take "
+                                  f"in one go"}, 400)
+                accepted, skipped = [], []
+                for one in uids:
+                    if not isinstance(one, str):
+                        continue
+                    job, why = self._start_generation(con, one, kind)
+                    if job:
+                        accepted.append(one)
+                    else:
+                        skipped.append({"uid": one, "why": why})
+                running = len(store.busy_uids(con))
+                return self._json({"ok": True, "kind": kind,
+                                   "queued": accepted, "started": accepted,
+                                   "running": running,
+                                   "skipped": skipped})
+            finally:
+                con.close()
+
         uid = data.get("uid")
         # An unknown uid used to raise inside the handler and drop the
         # connection, so the browser's fetch rejected and the click silently
@@ -774,38 +947,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(kind, str) or kind not in runner.KINDS:
                     return self._json({"ok": False, "error": "bad kind"}, 400)
                 # The cover letter needs the CV to check itself against.
-                if kind == "cover_letter" and not store.has_artifact(con, uid, "cv"):
-                    return self._json(
-                        {"ok": False,
-                         "error": "draft the CV first: the letter is checked "
-                                  "against it for repeated phrasing"}, 409)
-                if kind in ("screen", "cv", "cover_letter"):
-                    # Not screen alone. A CV drafted against "_No description
-                    # available from this source._" is a full agent run, a
-                    # rating, and a document tailored to nothing.
-                    row = con.execute("SELECT description FROM roles WHERE uid=?",
-                                      (uid,)).fetchone()
-                    if len((row["description"] or "").strip()) < 200:
-                        return self._json(
-                            {"ok": False,
-                             "error": "this posting has no description, so there "
-                                      "is nothing to screen. Open the advert "
-                                      "instead."}, 409)
-                # Same reasoning. The old count-then-insert lost to a
-                # double-click: two job rows for one role, two subprocesses in
-                # one directory, four artifact rows. The button only disables
-                # after the first response comes back, so the window is real.
-                if not store.claim(con, "generate"):
-                    return self._json(
-                        {"ok": False, "error": "one generation at a time"}, 429)
-                try:
-                    job_id = store.enqueue(con, uid, kind)
-                except Exception:
-                    store.release(con, "generate")
-                    raise
-                runner.spawn(job_id, db_path=self.db_path, base=self.docs_base,
-                             config_path=self.config_path)
-                return self._json({"ok": True, "job": job_id, "kind": kind})
+                ok, why = self._start_generation(con, uid, kind)
+                if not ok:
+                    return self._json({"ok": False, "error": why},
+                                      429 if "running" in why else 409)
+                return self._json({"ok": True, "job": ok, "kind": kind})
         finally:
             con.close()
         self.send_error(404)
@@ -828,7 +974,7 @@ def _rank_elapsed(con) -> int:
         return 0
 
 
-def _download_name(name: str) -> str:
+def _safe_download_name(name: str) -> str:
     """A conservative Content-Disposition filename."""
     cleaned = re.sub(r'[^A-Za-z0-9._ -]+', "-", name).strip(" .")
     return cleaned or "document"
@@ -1901,6 +2047,36 @@ def open_in_background(db_path=None, host: str = "127.0.0.1", port: int = 8765,
 
 def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
           docs_base=None, config_path=None) -> int:
+    # Take the port FIRST, before touching the database.
+    #
+    # Everything below assumes "I am starting, therefore no other server is
+    # running", and clears interrupted generations, locks and rank state on
+    # the strength of it. A launchd job with KeepAlive breaks that assumption
+    # in the worst possible way: it retries every few seconds, loses the bind
+    # to the server that is already up, and on the way to losing it reaps the
+    # healthy server's work. Seven queued screenings were killed four seconds
+    # after they started, by a process that never served a single request.
+    #
+    # A failed bind is the only reliable way to know another server owns this
+    # database. So bind first, and if the port is taken, leave everything
+    # alone and say so.
+    try:
+        httpd = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        # A second `serve` in another window, or the last one still running,
+        # is the ordinary way to hit this, and it came out as a nine-frame
+        # socketserver traceback ending in "Address already in use", which
+        # reads as a broken tool rather than as a port that is taken.
+        if getattr(exc, "errno", None) in (errno.EADDRINUSE, errno.EACCES):
+            why = ("is already in use, most likely by a `job-radar serve` "
+                   "that is still running"
+                   if exc.errno == errno.EADDRINUSE
+                   else "needs privileges this process does not have")
+            print(f"Port {port} {why}. Either stop that one, or start this "
+                  f"one somewhere else with `--port {port + 1}`.", flush=True)
+            return 1
+        raise
+
     # Gates are recomputed on start, so a fixed check corrects the rows it got
     # wrong rather than only applying to future runs.
     con = store.connect(db_path)
@@ -1926,22 +2102,6 @@ def serve(db_path=None, host="127.0.0.1", port=8765, open_browser=True,
             _load_cfg(config_path).salary_currency or "").upper()
     except Exception:
         Handler.home_currency = ""
-    try:
-        httpd = ThreadingHTTPServer((host, port), Handler)
-    except OSError as exc:
-        # A second `serve` in another window, or the last one still running,
-        # is the ordinary way to hit this, and it came out as a nine-frame
-        # socketserver traceback ending in "Address already in use" -- which
-        # reads as a broken tool rather than as a port that is taken.
-        if getattr(exc, "errno", None) in (errno.EADDRINUSE, errno.EACCES):
-            why = ("is already in use, most likely by a `job-radar serve` "
-                   "that is still running"
-                   if exc.errno == errno.EADDRINUSE
-                   else "needs privileges this process does not have")
-            print(f"Port {port} {why}. Either stop that one, or start this "
-                  f"one somewhere else with `--port {port + 1}`.", flush=True)
-            return 1
-        raise
     url = f"http://{host}:{port}/"
     print(f"job-radar is at {url}", flush=True)
     print("  buttons: screen, CV, cover letter, apply, skip", flush=True)
