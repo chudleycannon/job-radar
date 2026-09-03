@@ -4,7 +4,7 @@
   "version": 6,
   "validated": "2026-08-25",
   "checked": "2026-08-25",
-  "boards": 17809
+  "boards": 17811
  },
  "sources": [
   {
@@ -108158,6 +108158,20 @@
    "sector": "healthcare",
    "country": "UK",
    "domain": "ossur.com"
+  },
+  {
+   "company": "Google",
+   "platform": "google_careers",
+   "sector": "technology",
+   "country": "UK",
+   "url": "https://www.google.com/about/careers/applications/jobs/results?location=United+Kingdom"
+  },
+  {
+   "company": "Google",
+   "platform": "google_careers",
+   "sector": "technology",
+   "country": "US",
+   "url": "https://www.google.com/about/careers/applications/jobs/results?location=United+States"
   }
  ]
 }

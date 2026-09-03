@@ -612,6 +612,20 @@ REGISTRY: list[Platform] = [
              "preferred_qualifications: the must-haves are in the second one",
     ),
     Platform(
+        "google_careers",
+        r"/about/careers/applications/jobs/results",
+        platforms.parse_google_careers,
+        note="Google publish no ATS feed. The careers search is "
+             "server-rendered and the whole result set sits in the page's own "
+             "`ds:1` boot payload, so this reads structured data rather than "
+             "rendered markup. Rows are positional, so the parser drops any "
+             "row whose id and title do not look like an id and a title: a "
+             "column that moves would otherwise store a URL as a job title. "
+             "Alphabet companies share the board and keep their own names "
+             "(DeepMind, Waymo, YouTube), so the row's company wins over the "
+             "source's.",
+    ),
+    Platform(
         "pcsx",
         r"/api/pcsx/search",
         platforms.parse_pcsx,
