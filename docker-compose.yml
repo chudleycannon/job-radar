@@ -6,7 +6,7 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - ./.docker-data:/data
+      - ./.docker-data:/data:z
     environment:
       REED_API_KEY: ${REED_API_KEY:-}
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}

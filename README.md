@@ -79,7 +79,7 @@ DeepSeek. Ranking, screening, tailored CVs and cover letters will then call
 that API directly from the app. If no key is saved, those AI actions fall back
 to an already authenticated `claude` CLI.
 
-## Docker
+## Docker or Podman
 
 You can also run job-radar in a container. The image runs from `/data`, so one
 bind mount can hold your private config, database, scan state, dashboard output
@@ -98,6 +98,18 @@ docker run --rm -it -p 8765:8765 -v "$PWD/.docker-data:/data" \
   job-radar serve --host 0.0.0.0 --no-browser
 ```
 
+Podman can build and run the same image without changing the `Dockerfile`:
+
+```bash
+podman build -t job-radar .
+mkdir -p .docker-data
+podman run --rm -it -p 8765:8765 -v "$PWD/.docker-data:/data:Z" \
+  job-radar serve --host 0.0.0.0 --no-browser
+```
+
+The `:Z` suffix lets Podman relabel the bind mount on SELinux systems. If
+SELinux is not in use, it is harmless; you can also omit it.
+
 Open <http://127.0.0.1:8765>, fill in setup, then start the first scan from
 the dashboard. Generated CVs and cover letters are saved under the mounted
 data folder and linked from each role in the UI. With Compose, the service is
@@ -107,9 +119,16 @@ already wired to bind the container interface and mount `.docker-data`:
 docker compose up job-radar
 ```
 
+With Podman Compose, use the same Compose file:
+
+```bash
+podman compose up job-radar
+```
+
 If you prefer not to save the API key in `config.yaml`, export
-`ANTHROPIC_API_KEY` before `docker compose`, or pass it with
-`docker run -e ANTHROPIC_API_KEY`. For DeepSeek, also set the Settings base
+`ANTHROPIC_API_KEY` before `docker compose` or `podman compose`, or pass it
+with `docker run -e ANTHROPIC_API_KEY` or
+`podman run -e ANTHROPIC_API_KEY`. For DeepSeek, also set the Settings base
 URL to `https://api.deepseek.com/anthropic`. Reed and Adzuna credentials work
 the same way with `REED_API_KEY`, `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
 
