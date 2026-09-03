@@ -488,20 +488,48 @@ def claude_bin() -> str:
 _LIMIT = re.compile(
     r"credit balance is too low|usage limit|rate.?limit|quota|"
     r"insufficient (?:credit|balance|funds)|billing|payment required|"
-    r"\b429\b|too many requests|overloaded_error|exceeded your", re.I)
+    r"\b429\b|too many requests|exceeded your", re.I)
+
+# An overloaded server is the opposite advice: try again now. It used to be
+# folded into `_LIMIT` as `overloaded_error`, the API's JSON error *type*, but
+# the CLI prints the human string "API Error: 529 Overloaded" and nothing here
+# matched it, so a whole afternoon's failure reported itself as "claude exited
+# non-zero" and had to be reproduced by hand to find out what it was.
+#
+# Telling someone to stop when they should retry is as costly as the reverse,
+# so these are two questions with two answers rather than one bucket.
+_TRANSIENT = re.compile(
+    r"\b(?:500|502|503|504|529)\b|overloaded|service unavailable|"
+    r"internal server error|bad gateway|econnreset|etimedout|"
+    r"socket hang up|fetch failed|network error", re.I)
 
 
 class LimitReached(RuntimeError):
     """The account is out of credit, or over a rate limit."""
 
 
-def looks_like_limit(*chunks: str) -> str:
-    """The offending line, or "" if this was an ordinary failure."""
+def _first_match(pattern, chunks) -> str:
     for chunk in chunks:
         for line in (chunk or "").splitlines():
-            if _LIMIT.search(line):
+            if pattern.search(line):
                 return " ".join(line.split())[:200]
     return ""
+
+
+def looks_like_limit(*chunks: str) -> str:
+    """The offending line, or "" if this was an ordinary failure."""
+    return _first_match(_LIMIT, chunks)
+
+
+def looks_like_transient(*chunks: str) -> str:
+    """The offending line when the server was briefly unavailable.
+
+    Checked after `looks_like_limit`, because a 429 is a limit and belongs
+    with the advice to wait rather than the advice to retry immediately.
+    """
+    if _first_match(_LIMIT, chunks):
+        return ""
+    return _first_match(_TRANSIENT, chunks)
 
 
 def _no_claude_msg() -> str:
@@ -694,13 +722,20 @@ def run_job(job_id: int, db_path=None, base=None, cv_source=None,
             out = note + (proc.stdout or "")[-4000:]
             if proc.returncode != 0:
                 hit = looks_like_limit(proc.stderr, proc.stdout)
+                blip = looks_like_transient(proc.stderr, proc.stdout)
                 store.mark_job(
                     con, job_id, "failed",
                     error=(f"out of credit or rate limited: {hit}. Nothing was "
                            f"written and nothing partial was charged; the "
                            f"button works again once the limit resets."
                            if hit else
-                           (proc.stderr or "claude exited non-zero")[:400]),
+                           f"the model API was briefly unavailable: {blip}. "
+                           f"Nothing was written and nothing partial was "
+                           f"charged; this one is worth running again now."
+                           if blip else
+                           (proc.stderr or proc.stdout
+                            or "claude exited non-zero, with nothing on "
+                               "stderr or stdout")[:400]),
                     log=out)
                 return
         except subprocess.TimeoutExpired:
