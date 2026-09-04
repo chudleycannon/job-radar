@@ -680,7 +680,12 @@ async function paintValidation(){
   const d=await r.json().catch(()=>null); if(!r.ok||!d) return;
   if(d.state==='running'){
     validationWasRunning=true; validateBtn.disabled=true;
-    validateBtn.textContent='Validating...'; return; }
+    const pct=d.total?Math.min(100,Math.floor(d.done*100/d.total)):0;
+    const progress=d.total
+      ? `${d.done.toLocaleString()} / ${d.total.toLocaleString()} (${pct}%)`
+      : 'preparing';
+    validateBtn.textContent=`Validating ${progress} · ${mmss(d.elapsed||0)}`;
+    return; }
   validateBtn.disabled=false; validateBtn.textContent='Validate';
   if(!validationWasRunning) return;
   validationWasRunning=false;

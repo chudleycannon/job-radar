@@ -20,6 +20,8 @@ import subprocess
 import sys
 import threading
 import webbrowser
+from collections import deque
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import html as _h
 from pathlib import Path
@@ -82,10 +84,18 @@ _VALIDATION_THREADS: dict[str, threading.Thread] = {}
 def _validation_status(db_path) -> dict:
     con = store.connect(db_path)
     try:
+        started = store.get_meta(con, "source_validation_started", "") or ""
+        try:
+            elapsed = max(0, int((datetime.now() -
+                                  datetime.fromisoformat(started)).total_seconds()))
+        except (TypeError, ValueError):
+            elapsed = 0
         return {
             "state": store.get_meta(con, "source_validation_state", "idle"),
             "checked": store.get_meta(con, "source_validation_checked", ""),
+            "done": int(store.get_meta(con, "source_validation_done", "0") or 0),
             "total": int(store.get_meta(con, "source_validation_total", "0") or 0),
+            "elapsed": elapsed,
             "dead": int(store.get_meta(con, "source_validation_dead", "0") or 0),
             "unreachable": int(store.get_meta(con, "source_validation_unreachable", "0") or 0),
             "mismatch": int(store.get_meta(con, "source_validation_mismatch", "0") or 0),
@@ -109,11 +119,32 @@ def _run_source_validation(db_path, config_path, data_home: Path) -> None:
     error = ""
     result = None
     try:
-        completed = subprocess.run(cmd, cwd=str(data_home), capture_output=True,
-                                   text=True, encoding="utf-8")
-        if completed.returncode:
-            error = (completed.stderr or completed.stdout or
-                     "validation failed").strip()[-1000:]
+        total = len(src_mod.load_file(src_mod.BUNDLED))
+        con = store.connect(db_path)
+        try:
+            store.set_meta(con, "source_validation_total", str(total))
+            con.commit()
+        finally:
+            con.close()
+        process = subprocess.Popen(
+            cmd, cwd=str(data_home), stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, encoding="utf-8")
+        tail = deque(maxlen=30)
+        assert process.stdout is not None
+        for line in process.stdout:
+            tail.append(line.rstrip())
+            match = re.match(r"\s*(\d+)\s*/\s*(\d+)\s*$", line)
+            if match:
+                con = store.connect(db_path)
+                try:
+                    store.set_meta(con, "source_validation_done", match.group(1))
+                    store.set_meta(con, "source_validation_total", match.group(2))
+                    con.commit()
+                finally:
+                    con.close()
+        returncode = process.wait()
+        if returncode:
+            error = "\n".join(tail).strip()[-1000:] or "validation failed"
         else:
             result = json.loads(report.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -131,6 +162,8 @@ def _run_source_validation(db_path, config_path, data_home: Path) -> None:
             store.set_meta(con, "source_validation_checked",
                            str(result.get("checked") or "")[:10])
             store.set_meta(con, "source_validation_total",
+                           str(result.get("total") or len(rows)))
+            store.set_meta(con, "source_validation_done",
                            str(result.get("total") or len(rows)))
             store.set_meta(con, "source_validation_dead",
                            str(len(result.get("dead") or [])))
@@ -154,6 +187,9 @@ def _start_source_validation(db_path, config_path, data_home: Path) -> bool:
         try:
             store.set_meta(con, "source_validation_state", "running")
             store.set_meta(con, "source_validation_error", "")
+            store.set_meta(con, "source_validation_done", "0")
+            store.set_meta(con, "source_validation_total", "0")
+            store.set_meta(con, "source_validation_started", store._now())
             con.commit()
         finally:
             con.close()
