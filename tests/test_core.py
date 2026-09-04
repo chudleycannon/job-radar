@@ -1632,7 +1632,7 @@ def test_the_dashboard_says_when_the_source_list_is_behind():
         with patch.object(sources, "age_days", return_value=age):
             html = interactive.render(con)
         assert ('sync warn' in html) is warn, f"age {age} warn state wrong"
-        assert ('id="pull"' in html) is button, f"age {age} button wrong"
+        assert ('id="validate"' in html) is button, f"age {age} button wrong"
 
 
 def test_the_sync_nudge_fires_once_a_day_not_every_command():

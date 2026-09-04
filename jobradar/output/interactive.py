@@ -64,6 +64,12 @@ _LAZY_ATTR = {True: "", False: ' data-lazyacts="1"'}
 
 
 _EXTRA_CSS = """
+/* The shared document pages deliberately use a narrow reading column. The
+   dashboard is a comparison surface, so on a large monitor it should use the
+   room available for titles, locations, salary and controls. It still fills
+   only the viewport below this cap and keeps the existing phone breakpoint. */
+.wrap{max-width:1440px}
+
 /* Whether anything is running at all, where you can see it without knowing
    which row to look at. A queue of nine screens is invisible if the only
    sign of it is a line on nine separate rows. */
@@ -638,19 +644,33 @@ rankBtn.onclick=async ()=>{
 
 // Only rendered when the list is behind, so it is a fix offered at the moment
 // the problem is visible rather than a control sitting there for ever.
-const pullBtn=$('#pull');
-if(pullBtn) pullBtn.onclick=async ()=>{
-  pullBtn.disabled=true; pullBtn.textContent='Pulling...';
-  const {ok,data}=await post('/api/pull',{});
-  if(!ok){ pullBtn.disabled=false; pullBtn.textContent='Pull';
-           say(data.error||'could not pull',7000); return; }
-  say(data.message||'pulled');
-  if(data.changed){ pullBtn.textContent='Pulled';
-    // The scan reads the source list at startup, so the new boards only
-    // arrive on the next scan. Say that rather than implying it is done.
-    setTimeout(()=>say('Run a scan to read the boards that just arrived',6000),1200);
-  } else { pullBtn.disabled=false; pullBtn.textContent='Pull'; }
-};
+const validateBtn=$('#validate'); let validationWasRunning=false;
+async function paintValidation(){
+  if(!validateBtn) return;
+  const r=await fetch('/api/source-validation');
+  const d=await r.json().catch(()=>null); if(!r.ok||!d) return;
+  if(d.state==='running'){
+    validationWasRunning=true; validateBtn.disabled=true;
+    validateBtn.textContent='Validating...'; return; }
+  validateBtn.disabled=false; validateBtn.textContent='Validate';
+  if(!validationWasRunning) return;
+  validationWasRunning=false;
+  if(d.state==='failed'){ say(d.error||'source validation failed',9000); return; }
+  say(`Validated ${d.total.toLocaleString()} sources: ${d.dead} dead, `+
+      `${d.unreachable} unreachable, ${d.mismatch} identity mismatches.`,9000);
+  setTimeout(()=>location.reload(),1800);
+}
+if(validateBtn){
+  validateBtn.onclick=async ()=>{
+    validateBtn.disabled=true; validateBtn.textContent='Starting...';
+    const {ok,data}=await post('/api/source-validation',{});
+    if(!ok && !String(data.error||'').includes('already running')){
+      validateBtn.disabled=false; validateBtn.textContent='Validate';
+      say(data.error||'could not start validation',9000); return; }
+    validationWasRunning=true; paintValidation();
+  };
+  paintValidation(); setInterval(paintValidation,10000);
+}
 
 const scanBtn=$('#scan');
 const scanInfo=$('#scaninfo'), scanFill=$('#scanfill'), scanBar=$('#scanbar');
@@ -1408,22 +1428,29 @@ def render(con, home_currency: str = "") -> str:
     # boards as they migrate and looks exactly as healthy as a fresh one.
     from .. import sources as _src
     age = _src.age_days()
+    local_checked = store.get_meta(con, "source_validation_checked", "")
+    if local_checked:
+        from datetime import date
+        try:
+            local_age = (date.today() - date.fromisoformat(local_checked[:10])).days
+            age = local_age if age is None else min(age, local_age)
+        except ValueError:
+            pass
     if age is None:
         _sync = ('<span class="sync warn" title="sources.json carries no date">'
-                 'sources: never synced</span>'
-                 '<button id="pull" type="button">Pull</button>')
+                 'sources: never validated</span>'
+                 '<button id="validate" type="button">Validate</button>')
     else:
         when = "today" if age == 0 else ("yesterday" if age == 1
                                          else f"{age} days ago")
         # Upstream validates weekly, so eight days is one missed cycle.
         cls = "sync warn" if age > 8 else "sync"
-        tip = ("Run `git pull` to get boards that have moved and employers "
-               "added since." if age > 8 else "Up to date with the weekly "
-               "upstream check.")
+        tip = ("Run a local source validation." if age > 8 else
+               "Up to date with the latest local or upstream validation.")
         _sync = (f'<span class="{cls}" title="{_h.escape(tip, quote=True)}">'
-                 f'sources synced {when}</span>'
-                 + ('<button id="pull" type="button" title="git pull --ff-only '
-                    'in this checkout">Pull</button>' if age > 8 else ''))
+                 f'sources validated {when}</span>'
+                 + ('<button id="validate" type="button" title="Check every '
+                    'source locally">Validate</button>' if age > 8 else ''))
 
     sec = Counter((r["sector"] or "other") for r in rows)
     chips = "".join(

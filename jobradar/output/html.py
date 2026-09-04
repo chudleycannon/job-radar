@@ -109,10 +109,10 @@ header{margin-bottom:var(--s5)}
 .sync{margin-left:auto;font-size:.75rem;color:var(--muted);cursor:help;
   border-bottom:1px dotted var(--line)}
 .sync.warn{color:#d98080;border-bottom-color:#d98080}
-#pull{margin-left:8px;font-size:.75rem;padding:4px 10px;border-radius:7px;
+#validate{margin-left:8px;font-size:.75rem;padding:4px 10px;border-radius:7px;
   border:1px solid #d98080;background:transparent;color:#d98080;cursor:pointer}
-#pull:hover:not(:disabled){background:#d98080;color:#fff}
-#pull:disabled{opacity:.55;cursor:default}
+#validate:hover:not(:disabled){background:#d98080;color:#fff}
+#validate:disabled{opacity:.55;cursor:default}
 
 /* Fit against the CV, from `job-radar rank`. Sits under the title because it
    is a judgement about the role, not a property of it like salary. */

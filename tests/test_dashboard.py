@@ -203,6 +203,13 @@ def test_a_word_with_no_spaces_in_it_cannot_run_off_the_edge():
                     .rsplit("\n", 1)[-1].split(",")], f"{cls} still cannot break"
 
 
+def test_the_dashboard_uses_wide_monitors_without_widening_document_pages():
+    page = interactive.render(_con())
+    assert '<div class="wrap">' in page
+    assert ".wrap{max-width:1440px}" in page
+    assert ".wrap{max-width:720px" in page, "shared reading pages keep their measure"
+
+
 def test_a_very_long_title_is_rendered_in_full_rather_than_cut():
     """A 395 character title is legitimate. The user's example: "Senior
     Principal Staff Engineering Manager of Distributed Platform Reliability

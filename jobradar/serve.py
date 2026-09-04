@@ -16,6 +16,9 @@ import mimetypes
 import os
 import re
 import sqlite3
+import subprocess
+import sys
+import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import html as _h
@@ -71,6 +74,96 @@ def _download_name(company: str, title: str, kind: str, suffix: str) -> str:
 
 
 BULK_LIMIT = 40
+
+_VALIDATION_LOCK = threading.Lock()
+_VALIDATION_THREADS: dict[str, threading.Thread] = {}
+
+
+def _validation_status(db_path) -> dict:
+    con = store.connect(db_path)
+    try:
+        return {
+            "state": store.get_meta(con, "source_validation_state", "idle"),
+            "checked": store.get_meta(con, "source_validation_checked", ""),
+            "total": int(store.get_meta(con, "source_validation_total", "0") or 0),
+            "dead": int(store.get_meta(con, "source_validation_dead", "0") or 0),
+            "unreachable": int(store.get_meta(con, "source_validation_unreachable", "0") or 0),
+            "mismatch": int(store.get_meta(con, "source_validation_mismatch", "0") or 0),
+            "error": store.get_meta(con, "source_validation_error", "") or "",
+        }
+    finally:
+        con.close()
+
+
+def _run_source_validation(db_path, config_path, data_home: Path) -> None:
+    """Validate the bundled list without deleting from it, then record success."""
+    from . import sources as src_mod
+
+    report = data_home / "source-validation.json"
+    cmd = [sys.executable, "-m", "jobradar.cli"]
+    config = resolve_config(config_path)
+    if config.exists():
+        cmd.extend(["--config", str(config)])
+    cmd.extend(["validate", "--file", str(src_mod.BUNDLED),
+                "--report", str(report)])
+    error = ""
+    result = None
+    try:
+        completed = subprocess.run(cmd, cwd=str(data_home), capture_output=True,
+                                   text=True, encoding="utf-8")
+        if completed.returncode:
+            error = (completed.stderr or completed.stdout or
+                     "validation failed").strip()[-1000:]
+        else:
+            result = json.loads(report.read_text(encoding="utf-8"))
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+
+    con = store.connect(db_path)
+    try:
+        if error or not isinstance(result, dict):
+            store.set_meta(con, "source_validation_state", "failed")
+            store.set_meta(con, "source_validation_error",
+                           error or "validation produced no report")
+        else:
+            rows = result.get("rows") or []
+            store.set_meta(con, "source_validation_state", "complete")
+            store.set_meta(con, "source_validation_checked",
+                           str(result.get("checked") or "")[:10])
+            store.set_meta(con, "source_validation_total",
+                           str(result.get("total") or len(rows)))
+            store.set_meta(con, "source_validation_dead",
+                           str(len(result.get("dead") or [])))
+            store.set_meta(con, "source_validation_unreachable",
+                           str(sum(r.get("verdict") == "unreachable" for r in rows)))
+            store.set_meta(con, "source_validation_mismatch",
+                           str(len(result.get("mismatch") or [])))
+            store.set_meta(con, "source_validation_error", "")
+        con.commit()
+    finally:
+        con.close()
+
+
+def _start_source_validation(db_path, config_path, data_home: Path) -> bool:
+    key = str(db_path)
+    with _VALIDATION_LOCK:
+        current = _VALIDATION_THREADS.get(key)
+        if current and current.is_alive():
+            return False
+        con = store.connect(db_path)
+        try:
+            store.set_meta(con, "source_validation_state", "running")
+            store.set_meta(con, "source_validation_error", "")
+            con.commit()
+        finally:
+            con.close()
+        thread = threading.Thread(
+            target=_run_source_validation,
+            args=(db_path, config_path, data_home),
+            name="job-radar-source-validation", daemon=True)
+        _VALIDATION_THREADS[key] = thread
+        thread.start()
+        return True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -286,6 +379,8 @@ class Handler(BaseHTTPRequestHandler):
                 })
             finally:
                 con.close()
+        if path == "/api/source-validation":
+            return self._json(_validation_status(self.db_path))
         if path in ("/", "/index.html"):
             con = store.connect(self.db_path)
             try:
@@ -656,50 +751,15 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         data = self._body()
 
-        if path == "/api/pull":
-            # `git pull` on the checkout the server is running from. Read-only
-            # in the sense that matters: it fetches and fast-forwards, and it
-            # is refused outright if the working tree has changes, because a
-            # button that silently merges over someone's edits is worse than
-            # no button. Nothing is pushed and no history is rewritten.
-            import subprocess
-            repo = Path(__file__).resolve().parent.parent
-
-            def git(*a, timeout=90):
-                return subprocess.run(["git", "-C", str(repo), *a],
-                                      capture_output=True, text=True, encoding="utf-8",
-                                      timeout=timeout)
-
-            if not (repo / ".git").exists():
+        if path == "/api/source-validation":
+            started = _start_source_validation(
+                self.db_path, self.config_path, self._data_home())
+            if not started:
                 return self._json(
-                    {"ok": False,
-                     "error": "this is not a git checkout, so there is nothing "
-                              "to pull. Re-download the source list by hand."}, 409)
-            dirty = git("status", "--porcelain").stdout.strip()
-            if dirty:
-                return self._json(
-                    {"ok": False,
-                     "error": "you have uncommitted changes here, so this will "
-                              "not merge over them. Commit or stash, then pull "
-                              "from a terminal."}, 409)
-            before = git("rev-parse", "HEAD").stdout.strip()
-            r = git("pull", "--ff-only")
-            if r.returncode:
-                return self._json(
-                    {"ok": False,
-                     "error": (r.stderr or r.stdout).strip()[:300] or "pull failed"},
+                    {"ok": False, "error": "source validation is already running"},
                     409)
-            after = git("rev-parse", "HEAD").stdout.strip()
-            from . import sources as src_mod
-            if before == after:
-                return self._json({"ok": True, "changed": False,
-                                   "message": "already up to date"})
-            n = git("diff", "--shortstat", before, after, "--",
-                    "sources/sources.json").stdout.strip()
-            return self._json({
-                "ok": True, "changed": True,
-                "message": f"pulled. source list {n or 'unchanged'}",
-                "age": src_mod.age_days()})
+            return self._json({"ok": True, "state": "running",
+                               "message": "validating sources in the background"})
 
         if path == "/api/setup":
             ok, result = _write_web_config(self._config_path(), data)

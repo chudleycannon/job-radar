@@ -423,7 +423,7 @@ def test_a_cross_site_page_cannot_write_a_status_or_spend_money():
                 assert code == 403, f"a cross-site generate was allowed: {kw}"
                 code, _ = _raw(port, "POST", "/api/rank", body="{}", **kw)
                 assert code == 403, f"a cross-site rank was allowed: {kw}"
-            code, _ = _raw(port, "POST", "/api/pull", body="{}", host=evil)
+            code, _ = _raw(port, "POST", "/api/source-validation", body="{}", host=evil)
             assert code == 403
         row = con.execute("SELECT status FROM role_state WHERE uid=?",
                           (uid,)).fetchone()
