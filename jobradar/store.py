@@ -237,11 +237,14 @@ def connect(path: str | Path | None = None, *,
         why = _path_problem(p, must_exist)
         if why:
             raise StoreError(why)
+    con = None
     try:
         con = sqlite3.connect(p, timeout=15, isolation_level=None)
         con.row_factory = sqlite3.Row
         con.executescript(SCHEMA)
     except sqlite3.DatabaseError as exc:
+        if con is not None:
+            con.close()
         # `from None`: the traceback is nine frames of this tool's own call
         # stack above one sentence, and the sentence is the only part that
         # tells anybody what to change.
@@ -250,7 +253,15 @@ def connect(path: str | Path | None = None, *,
     # now reads. Adding them on open rather than only in the write path means
     # `serve` and `list` cannot crash on a database that has not been scanned
     # since the upgrade.
-    _ensure_columns(con)
+    try:
+        _ensure_columns(con)
+    except BaseException:
+        # `_ensure_columns` can lose a race with a scan after sqlite has
+        # already handed us a live connection.  Letting that connection fall
+        # out of scope is eventually harmless on POSIX, but Windows keeps the
+        # database file locked until the connection is explicitly closed.
+        con.close()
+        raise
     return con
 
 

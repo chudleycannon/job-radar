@@ -440,6 +440,24 @@ def test_many_connections_can_open_at_once():
     assert not errs, errs
 
 
+def test_a_connection_is_closed_when_column_setup_loses_a_lock_race():
+    """A failed open must not leave the database file locked on Windows."""
+    import sqlite3
+    from jobradar import store
+
+    con = mock.MagicMock()
+    locked = sqlite3.OperationalError("database is locked")
+    with mock.patch.object(store.sqlite3, "connect", return_value=con), \
+         mock.patch.object(store, "_ensure_columns", side_effect=locked):
+        try:
+            store.connect("board.db")
+        except sqlite3.OperationalError as exc:
+            assert exc is locked
+        else:
+            raise AssertionError("the lock failure was swallowed")
+    con.close.assert_called_once_with()
+
+
 def test_generation_is_not_queued_twice():
     """Clicking the button twice should not spawn two Claude processes."""
     from jobradar import store
