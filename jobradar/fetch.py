@@ -1540,6 +1540,106 @@ def fetch_pcsx(
                   truncated=truncated)
 
 
+# Google Careers boots its own JavaScript from an `AF_initDataCallback` block.
+# `ds:1` is the search results; `ds:0` is chrome. Anchored on the key so a
+# page that gains another block does not silently start returning the wrong one.
+_G_BOOT = re.compile(
+    r"AF_initDataCallback\(\{[^}]*?key:\s*'ds:1'.*?data:\s*(\[.*?\])\s*,\s*sideChannel",
+    re.S)
+GOOGLE_PAGE = 20
+
+
+def _google_payload(html: str) -> tuple[Any, int]:
+    """The `ds:1` rows and the board's own total, or `(None, 0)`.
+
+    The total matters more than it looks. Google answer a page past the end
+    with a 200 and an empty list, which is indistinguishable from an employer
+    with no vacancies unless you know what the board said its size was.
+    """
+    m = _G_BOOT.search(html or "")
+    if not m:
+        return None, 0
+    try:
+        data = json.loads(m.group(1))
+    except (ValueError, TypeError):
+        return None, 0
+    if not isinstance(data, list) or not data:
+        return None, 0
+    # Positional, so read the position. The trailing cells are
+    # `[rows, null, total, pageSize]`, and taking `max()` of them returns the
+    # page size for any board smaller than one page: a 7-role employer would
+    # have reported a total of 20. Index 2, or nothing.
+    total = data[2] if len(data) > 2 and isinstance(data[2], int) else 0
+    return data, max(total, 0)
+
+
+def fetch_google_careers(
+    src: Source,
+    terms: list[str] | None = None,
+    *,
+    timeout: int = 20,
+    retries: int = 2,
+    user_agent: str = "job-radar/0.1",
+    max_pages: int = 200,
+) -> Result:
+    """Walk the careers search on `page`, twenty rows at a time.
+
+    Twenty is the board's, not ours: the payload states its own page size and
+    ignores anything asked for. 3,528 postings globally is 177 requests, so
+    `max_pages` sits above that rather than near it.
+
+    The stop is the board's stated total, or a page that returns no rows.
+    Never a short page: the last page is short by definition.
+
+    Deliberately unfiltered. `q=` works server-side and would cut this to a
+    handful of requests, but the terms come from the reader's config, and a
+    source that reads only the titles one person asked for is that person's
+    search saved as an employer list. Any `location=` already on the source
+    URL is the source's own scope and is left alone. See CLAUDE.md.
+    """
+    session = _thread_session()
+    seen: dict[Any, list] = {}
+    total = 0
+    truncated = False
+    for page in range(max_pages):
+        probe = Source(
+            company=src.company, url=_with_query(src.url, page=str(page + 1)),
+            platform="google_careers", sector=src.sector, country=src.country,
+        )
+        res = fetch_one(probe, timeout=timeout, retries=retries,
+                        user_agent=user_agent, session=session)
+        html_text = res.payload if isinstance(res.payload, str) else None
+        if not res.ok or html_text is None:
+            truncated = bool(seen)
+            if not seen:
+                return res
+            break
+        data, stated = _google_payload(html_text)
+        if data is None:
+            # The page came back but carried no boot payload. That is this
+            # adapter failing to read Google, not Google having no jobs, and
+            # the two must not look the same: an empty board is what
+            # `validate --prune` deletes sources for.
+            if seen:
+                truncated = True
+                break
+            return Result(src, status=res.status,
+                          error="no ds:1 payload in the careers page: the "
+                                "boot format changed, or the response was a "
+                                "consent or challenge page")
+        total = max(total, stated)
+        rows = data[0] if isinstance(data[0], list) else []
+        for row in rows:
+            if isinstance(row, list) and row and isinstance(row[0], str):
+                seen.setdefault(row[0], row)
+        if not rows or (total and len(seen) >= total):
+            break
+    else:
+        truncated = True
+    return Result(src, payload=[list(seen.values()), None, total, GOOGLE_PAGE],
+                  truncated=truncated)
+
+
 def _with_query(url: str, **params: str) -> str:
     """Replace query parameters, rather than appending a second copy.
 
@@ -1938,6 +2038,10 @@ PAGE_SIZES = {
     # landing on exactly ten means the walk stopped after page one.
     "pcsx": 10,
     "amazon": AMAZON_PAGE,
+    # Google state their page size in the payload and ignore anything asked
+    # for, so a whole-board read landing on exactly twenty means the walk
+    # stopped after page one.
+    "google_careers": GOOGLE_PAGE,
     "nhs": 10, "reed": REED_PAGE, "adzuna": ADZUNA_PAGE,
     "taleo": TALEO_PAGE,
     # The Teamtailor builder asks for per_page=200; the feed's own default is
@@ -2155,6 +2259,9 @@ def _fetch_dispatch(src, limiter, timeout, retries, ua, terms, keys=None) -> Res
     if src.platform == "pcsx":
         return fetch_pcsx(src, terms, timeout=timeout, retries=retries,
                           user_agent=ua)
+    if src.platform == "google_careers":
+        return fetch_google_careers(src, terms, timeout=timeout,
+                                    retries=retries, user_agent=ua)
     if src.platform == "avature":
         return fetch_avature(src, terms, timeout=timeout, retries=retries,
                              user_agent=ua)

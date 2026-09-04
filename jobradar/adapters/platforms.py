@@ -2175,6 +2175,125 @@ def parse_pcsx(payload: Any, src: Source) -> Iterator[Job]:
 
 
 # --------------------------------------------------------------------------
+# Google Careers (`AF_initDataCallback`, key `ds:1`)
+# --------------------------------------------------------------------------
+# Google publish no ATS feed. The careers site is server-rendered and the
+# whole result set is already in the HTML, inside the `ds:1` boot payload the
+# page hands to its own JavaScript, so this reads structured data rather than
+# scraping rendered markup. Nothing is executed and no private endpoint is
+# called: it is the same bytes any reader gets.
+#
+# The rows are positional, not keyed, which is the risk here. A keyed API that
+# renames a field gives you an empty string; a positional one that gains a
+# column at index 3 gives you the wrong field's contents, confidently. So the
+# indices below are asserted by shape, and a row whose title or id does not
+# look like a title or an id is dropped rather than stored as something else.
+_G_FIELDS = {
+    "id": 0, "title": 1, "apply": 2, "responsibilities": 3,
+    "qualifications": 4, "company": 7, "locations": 9, "about": 10,
+    "posted": 12, "min_quals": 19,
+}
+
+
+def _g_html(row: list, i: int) -> str:
+    """One of the `[null, "<html>"]` pairs the payload wraps its prose in."""
+    if i >= len(row):
+        return ""
+    cell = row[i]
+    if isinstance(cell, list) and len(cell) > 1:
+        return _strip_tags(cell[1])
+    return _strip_tags(cell) if isinstance(cell, str) else ""
+
+
+def parse_google_careers(payload: Any, src: Source) -> Iterator[Job]:
+    """Rows from the `ds:1` boot payload.
+
+    The advert is spread across four fields and all four matter: the
+    responsibilities, the "about the job" prose, and BOTH qualification
+    blocks, because Google put the minimum bar in one and the preferred bar
+    in another. A dealbreaker regex reading only one of them is reading half
+    the advert, which is the shape this repo keeps producing.
+
+    `locations` is a list of rows, each `[display, [address], city, postcode,
+    region, countryCode]`, and a posting open in several places carries
+    several. They are joined, never counted: "3 Locations" written into the
+    location column sits exactly where a city would and reads as one.
+    """
+    rows = payload[0] if isinstance(payload, list) and payload else []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, list) or len(row) <= _G_FIELDS["locations"]:
+            continue
+        jid = row[_G_FIELDS["id"]]
+        title = _text(row[_G_FIELDS["title"]])
+        # Positional rows: an id that is not a digit string, or a title that
+        # is a URL, means the columns have moved under us. Dropping the row
+        # is right; storing it would put a URL in the title column, where it
+        # would render as a job nobody can tell is broken.
+        if not title or not isinstance(jid, str) or not jid.isdigit():
+            continue
+        if title.startswith("http"):
+            continue
+
+        places = []
+        for place in (row[_G_FIELDS["locations"]] or []):
+            if isinstance(place, list) and place and isinstance(place[0], str):
+                places.append(place[0].strip())
+            elif isinstance(place, str):
+                places.append(place.strip())
+        loc = "; ".join(dict.fromkeys(p for p in places if p))
+
+        # The country code the payload states, rather than one guessed from
+        # the words in the location string. "London, UK" and "London, ON,
+        # Canada" both start "London".
+        country = None
+        first = (row[_G_FIELDS["locations"]] or [None])[0]
+        if isinstance(first, list) and len(first) > 5 and isinstance(first[5], str):
+            country = first[5].strip().upper() or None
+
+        # The row carries a sign-in URL with a one-shot token in it. That is
+        # not an address for a posting: it expires, and it is keyed to
+        # whoever fetched it. The canonical page is built from the id.
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        url = ("https://www.google.com/about/careers/applications"
+               f"/jobs/results/{jid}-{slug}")
+
+        description = "\n\n".join(part for part in (
+            _g_html(row, _G_FIELDS["about"]),
+            _g_html(row, _G_FIELDS["responsibilities"]),
+            _g_html(row, _G_FIELDS["min_quals"]),
+            _g_html(row, _G_FIELDS["qualifications"]),
+        ) if part)
+
+        # `[seconds, nanos]`, and `_iso` reads the seconds. A bare list would
+        # be read as a millisecond epoch and land in 1970.
+        posted = row[_G_FIELDS["posted"]] if len(row) > _G_FIELDS["posted"] else None
+        if isinstance(posted, list) and posted and isinstance(posted[0], (int, float)):
+            posted = posted[0]
+        else:
+            posted = None
+
+        # Alphabet companies post to this same board under their own name:
+        # DeepMind, Waymo, GFiber, Verily, Wing, YouTube. Using the row's
+        # company rather than the source's keeps "DeepMind" on a DeepMind
+        # role instead of relabelling all of them "Google".
+        company = _text(row[_G_FIELDS["company"]]) or src.company
+
+        yield Job(
+            company=company,
+            title=title,
+            url=url,
+            platform="google_careers",
+            location=loc,
+            remote=_remote(loc, title, description),
+            posted_at=_iso(posted),
+            description=description,
+            country=country or src.country,
+            sector=src.sector,
+            source_id=src.key,
+        )
+
+
+# --------------------------------------------------------------------------
 # SuccessFactors RMK (jobs2web)
 # --------------------------------------------------------------------------
 _RMK_LINK = re.compile(

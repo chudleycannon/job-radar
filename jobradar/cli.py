@@ -2170,7 +2170,7 @@ def cmd_rescreen(args) -> int:
             "SELECT r.uid, r.company, r.title, r.url, r.platform, r.location, "
             "r.description, r.salary_min, r.salary_max, r.salary_currency, "
             "r.salary_period, r.salary_confirmed, r.salary_label, "
-            "r.city, r.country, r.work_mode, "
+            "r.city, r.country, r.work_mode, r.employment, "
             "COALESCE(s.status,'new') st "
             "FROM roles r LEFT JOIN role_state s ON s.uid=r.uid").fetchall()
         stale, kept_by_status = [], []
@@ -2212,6 +2212,26 @@ def cmd_rescreen(args) -> int:
             # dashboard nobody had refreshed.
             enrich_derived(j)
             city, mode = j.city or "", j.work_mode or "unstated"
+            # Permanent, contract or unstated, for the same reason as the
+            # three above: `employment` is derived at scan time and written
+            # into the table, so every improvement to the classifier reaches
+            # only rows found afterwards. This is the command that backfills
+            # it, and on the database it was written against it was the only
+            # thing that could: 5,474 rows had been stored before the column
+            # existed and every one of them read "unstated".
+            #
+            # A downgrade to "unstated" is allowed here, unlike in
+            # `store.upsert_roles`, and the difference is what the two are
+            # looking at. A scan pass may hold no description at all, so its
+            # "unstated" means "I could not see"; this reads the same stored
+            # text that produced the old value, so with a description present
+            # its "unstated" means "I looked, and the advert does not say".
+            # Without one it is back to not being able to see, and the stored
+            # answer stands.
+            emp = j.employment or "unstated"
+            was_emp = r["employment"] or "unstated"
+            if emp == "unstated" and not (r["description"] or "").strip():
+                emp = was_emp
 
             # The salary too, for the same reason and it was the one derived
             # column left out. It is read from the advert by a parser that
@@ -2262,15 +2282,17 @@ def cmd_rescreen(args) -> int:
                                   r["salary_currency"],
                                   bool(r["salary_confirmed"]))
             now = (sal.min, sal.max, sal.currency, sal.confirmed)
-            if (city, country, mode) != (r["city"] or "", r["country"] or "",
-                                         r["work_mode"] or "unstated") \
+            if (city, country, mode, emp) != (r["city"] or "", r["country"] or "",
+                                              r["work_mode"] or "unstated",
+                                              was_emp) \
                     or now != was:
                 con.execute(
                     "UPDATE roles SET city=?, country=?, work_mode=?, "
+                    "employment=?, "
                     "salary_min=?, salary_max=?, salary_currency=?, "
                     "salary_period=?, salary_confirmed=?, salary_label=? "
                     "WHERE uid=?",
-                    (city, country, mode, sal.min, sal.max, sal.currency,
+                    (city, country, mode, emp, sal.min, sal.max, sal.currency,
                      sal.period or "year", 1 if sal.confirmed else 0,
                      sal.label(), r["uid"]))
                 rederived += 1
@@ -2293,8 +2315,9 @@ def cmd_rescreen(args) -> int:
             # still matches. "All 1,670 roles still match your config" and a
             # silent rewrite of three columns is a report that omits its own
             # only effect.
-            _say(f"Re-derived the city, country, work mode or pay on {rederived} "
-                 f"of {len(rows)} roles from the current rules.")
+            _say(f"Re-derived the city, country, work mode, employment type "
+                 f"or pay on {rederived} of {len(rows)} roles from the current "
+                 f"rules.")
         if not stale and not kept_by_status:
             _say(f"All {len(rows)} roles still match your config.")
             return 0

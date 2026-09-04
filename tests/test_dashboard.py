@@ -133,7 +133,7 @@ def test_the_dashboard_has_multi_status_filter_chips():
     assert "data-status-filter" in SRC
     assert "statuses=new Set()" in SRC
     assert "statuses.size===0 || statuses.has(st)" in SRC
-    assert "b.dataset.sec?secs:(b.dataset.mode?modes:statuses)" in SRC
+    assert "b.dataset.statusFilter?statuses:emps" in SRC
 
 
 def test_the_dashboard_links_to_the_candidate_profile():
@@ -182,7 +182,13 @@ def test_the_facet_counts_are_counted_against_the_tab_you_are_in():
     public-sector role rendered "Public sector 1", and clicking it emptied
     the list and said "Nothing matches those filters"."""
     assert "function paintCounts(" in SRC
-    assert "paintCounts(cSec,cMode,cStatus,cCountry,cCity)" in SRC
+    # Every facet the page offers, counted in the browser against the rows the
+    # current tab admits. Named individually rather than matched as one call
+    # string: a new facet used to break this test purely by being added, which
+    # is a failure that says nothing about whether the counts are right.
+    assert "paintCounts(cSec,cMode,cStatus,cEmp,cCountry,cCity)" in SRC
+    for dim in ("cSec", "cMode", "cStatus", "cEmp", "cCountry", "cCity"):
+        assert f"{dim}={{}}" in SRC.replace(" ", "") or f"{dim}={{}}," in SRC.replace(" ", ""), dim
 
 
 def test_a_word_with_no_spaces_in_it_cannot_run_off_the_edge():

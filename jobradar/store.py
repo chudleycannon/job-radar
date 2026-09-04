@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS roles (
   city TEXT DEFAULT '',
   country TEXT DEFAULT '',
   work_mode TEXT DEFAULT 'unstated',
+  employment TEXT DEFAULT 'unstated',
   sector TEXT DEFAULT '',
   platform TEXT DEFAULT '',
   department TEXT DEFAULT '',
@@ -351,6 +352,13 @@ def _ensure_columns(con) -> None:
         _try_alter(con, "ALTER TABLE roles ADD COLUMN fit INTEGER DEFAULT -1")
     if "fit_why" not in cols:
         _try_alter(con, "ALTER TABLE roles ADD COLUMN fit_why TEXT DEFAULT ''")
+    # Permanent, contract or unstated. Existing rows arrive here as 'unstated',
+    # which is the truthful answer for a row nothing has classified yet: the
+    # backfill is `job-radar rescreen`, and until it runs the dashboard shows
+    # them under "Not stated" rather than quietly calling them permanent.
+    if "employment" not in cols:
+        _try_alter(con,
+                   "ALTER TABLE roles ADD COLUMN employment TEXT DEFAULT 'unstated'")
     acols = {r["name"] for r in con.execute("PRAGMA table_info(artifacts)")}
     if "body" not in acols:
         _try_alter(con, "ALTER TABLE artifacts ADD COLUMN body TEXT DEFAULT ''")
@@ -465,6 +473,23 @@ def upsert_roles(con, jobs: Iterable, run: int | None = None,
                 vals + (seen_first, run, j.uid))
             con.execute("INSERT OR IGNORE INTO role_state (uid,status,updated_at) "
                         "VALUES (?,'new',?)", (j.uid, today))
+        # Employment type, written separately and on purpose.
+        #
+        # The UPDATE above threads twenty-two values through one positional
+        # tuple that is then re-sliced by index, which is a shape this repo
+        # has already been bitten by: adding a column in the middle of it
+        # renumbers everything after and stores each value in its neighbour's
+        # column, confidently and with no error.
+        #
+        # 'unstated' never overwrites a decided value, the same guard `sector`
+        # and `country` carry above and for the same reason: a writer that
+        # could not classify a posting is missing the answer, not contradicting
+        # it. The list endpoints of LinkedIn, Workday and SmartRecruiters send
+        # no description at all, so a scan pass that has not enriched a role
+        # yet would otherwise wipe the classification the enriched pass made.
+        emp = getattr(j, "employment", "") or ""
+        if emp and emp != "unstated":
+            con.execute("UPDATE roles SET employment=? WHERE uid=?", (emp, j.uid))
     return new, seen
 
 
@@ -622,6 +647,8 @@ def live_jobs(con) -> list:
             location=r["location"] or "", city=r["city"] or "",
             country=r["country"] or None,
             work_mode=r["work_mode"] or "unstated",
+            employment=(r["employment"] if "employment" in r.keys()
+                        else None) or "unstated",
             sector=r["sector"] or None, department=r["department"] or None,
             posted_at=r["posted_at"], description=r["description"] or "",
             salary=Salary(min=r["salary_min"], max=r["salary_max"],

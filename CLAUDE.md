@@ -146,7 +146,7 @@ one function rather than the module.
   each place the code relies on that.
 - **Never run `generate` or `rank` to test something.** They call a paid model.
   Stub `runner.claude_bin` or `rank._call` and say so.
-- **Be polite to third parties.** There are 17,809 boards here and every one of
+- **Be polite to third parties.** There are 17,811 boards here and every one of
   them belongs to somebody. When you are probing or experimenting by hand, one
   request a second per host and stop after two failures. The scan itself is
   paced by `fetch.PER_HOST_RPS`, which is higher and is measured: see
@@ -183,8 +183,8 @@ while none of them was true. Derive it, or leave it in the run's own output.
 `meta.boards` in `sources/sources.json` is computed by `sources.save()` for
 exactly this reason.
 
-Current, if you need them for a comment: 17,809 employer boards, 17,813
-entries, 3 keyword templates, 23 board platforms in the data, 31 adapters
+Current, if you need them for a comment: 17,811 employer boards, 17,817
+entries, 5 keyword templates, 24 board platforms in the data, 32 adapters
 written.
 
 ## Style

@@ -1815,13 +1815,40 @@ def test_running_out_of_credit_is_not_treated_as_a_bad_answer():
 
     for msg in ("Credit balance is too low to access the Anthropic API",
                 "API Error: 429 Too Many Requests",
-                "You have exceeded your usage limit for this month",
-                "overloaded_error"):
+                "You have exceeded your usage limit for this month"):
         assert looks_like_limit(msg), msg
     for msg in ("Error: ENOENT no such file",
                 "SyntaxError: unexpected token",
                 ""):
         assert not looks_like_limit(msg), msg
+
+
+def test_an_overloaded_server_is_told_apart_from_an_exhausted_limit():
+    """The two need opposite advice, and one bucket gave the wrong one.
+
+    "overloaded_error" was listed as a limit, so the answer was "stop, it will
+    fail the same way" when the right answer is "run it again now". Worse, the
+    string in that list was the API's JSON error *type*; the CLI prints "API
+    Error: 529 Overloaded", which matched nothing at all, and a real failure
+    reported itself as "claude exited non-zero".
+    """
+    from jobradar.runner import looks_like_limit, looks_like_transient
+
+    for msg in ("API Error: 529 Overloaded",
+                "overloaded_error",
+                "503 Service Unavailable",
+                "Error: socket hang up"):
+        assert looks_like_transient(msg), msg
+        assert not looks_like_limit(msg), msg
+
+    # A rate limit stays a limit: waiting is the advice, not retrying now.
+    for msg in ("API Error: 429 Too Many Requests",
+                "Credit balance is too low"):
+        assert looks_like_limit(msg), msg
+        assert not looks_like_transient(msg), msg
+
+    for msg in ("Error: ENOENT no such file", ""):
+        assert not looks_like_transient(msg), msg
 
 
 def test_the_cli_is_never_called_with_an_open_stdin():

@@ -13,7 +13,7 @@ from urllib.parse import quote
 from collections import Counter
 from datetime import datetime
 
-from .. import store
+from .. import employment, store
 from .favicon import link_tag as _favicon_tag, mark as _favicon_mark
 from .markdown import to_html as _md
 
@@ -82,6 +82,25 @@ _EXTRA_CSS = """
   border:1px solid var(--accent);border-radius:999px;
   font-size:.6875rem;font-weight:600;letter-spacing:.02em;
   color:var(--accent);vertical-align:middle;white-space:nowrap}
+
+/* Contract and interim work, on the title line.
+
+   Filled rather than outlined, unlike `.ready` above, and in `--flag` rather
+   than `--accent`. The two pills sit side by side on the same rows and an
+   outline in the same colour made them read as one control; this is a fact
+   about the job, not a state of the tool. `--flag` exists in the dark
+   palettes only, so the light value is set here alongside them. */
+.emp{display:inline-block;margin-left:var(--s2);padding:1px 8px;
+  border-radius:999px;background:#b06a12;color:#fff;
+  font-size:.6875rem;font-weight:600;letter-spacing:.02em;
+  vertical-align:middle;white-space:nowrap}
+@media (prefers-color-scheme: dark){.emp{background:var(--flag);color:#1b1b1f}}
+:root[data-theme="dark"] .emp{background:var(--flag);color:#1b1b1f}
+
+/* The employment chips are a different question from the working-pattern
+   chips directly above them, and two identical rows of pills read as one
+   wrapped group. A little air, and nothing else. */
+.chips.emps{margin-top:calc(var(--s2) * -1)}
 
 /* The row the reload was for. Fades rather than staying marked, because a
    highlight that never clears becomes part of the furniture. */
@@ -219,7 +238,7 @@ def _status_label(status: str) -> str:
 
 _JS = r"""
 const $=s=>document.querySelector(s), toast=$('#toast');
-let f='all', secs=new Set(), modes=new Set(), statuses=new Set(), country='', city='', anchorUid='';
+let f='all', secs=new Set(), modes=new Set(), statuses=new Set(), emps=new Set(), country='', city='', anchorUid='';
 let compact=false, restoringAnchor=false;
 const STATE_KEY='jobRadar.dashboard.state.v1';
 const RETURN_KEY='jobRadar.dashboard.return.v1';
@@ -232,6 +251,7 @@ function stateFromParams(p){
     secs:splitList(p.get('sector')),
     modes:splitList(p.get('mode')),
     statuses:splitList(p.get('status')),
+    emps:splitList(p.get('employment')),
     country:p.get('country')||'',
     city:p.get('city')||'',
     sort:p.get('sort')||'rank',
@@ -245,7 +265,7 @@ function readState(){
   }catch(e){return null;}}
 function stateNow(){
   const sel=$('#fsort');
-  return {f,secs:[...secs],modes:[...modes],statuses:[...statuses],
+  return {f,secs:[...secs],modes:[...modes],statuses:[...statuses],emps:[...emps],
           country,city,sort:(sel&&sel.value)||'rank',
           compact,anchor:visibleUid()||anchorUid};}
 function writeState(){
@@ -254,6 +274,7 @@ function writeState(){
   if(st.secs.length) p.set('sector',st.secs.join(','));
   if(st.modes.length) p.set('mode',st.modes.join(','));
   if(st.statuses.length) p.set('status',st.statuses.join(','));
+  if(st.emps.length) p.set('employment',st.emps.join(','));
   if(st.country) p.set('country',st.country);
   if(st.city) p.set('city',st.city);
   if(st.sort&&st.sort!=='rank') p.set('sort',st.sort);
@@ -275,13 +296,14 @@ function restoreState(){
   secs=new Set((st.secs||[]).filter(Boolean));
   modes=new Set((st.modes||[]).filter(Boolean));
   statuses=new Set((st.statuses||[]).filter(Boolean));
+  emps=new Set((st.emps||[]).filter(Boolean));
   country=hasOption('#fcountry',st.country)?(st.country||''):'';
   city=hasOption('#fcity',st.city)?(st.city||''):'';
   document.querySelectorAll('.seg button').forEach(b=>
     b.setAttribute('aria-selected',b.dataset.f===f?'true':'false'));
   document.querySelectorAll('.chips button').forEach(b=>{
-    const set=b.dataset.sec?secs:(b.dataset.mode?modes:statuses);
-    const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
+    const set=b.dataset.sec?secs:(b.dataset.mode?modes:(b.dataset.statusFilter?statuses:emps));
+    const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter||b.dataset.emp;
     b.setAttribute('aria-pressed',set.has(key)?'true':'false');});
   const c=$('#fcountry'), y=$('#fcity'), s=$('#fsort');
   if(c) c.value=country;
@@ -329,7 +351,7 @@ addEventListener('scroll',()=>{
 const VIEW_KEY='job-radar:view';
 function saveView(){
   try{ localStorage.setItem(VIEW_KEY, JSON.stringify({
-    f, secs:[...secs], modes:[...modes], country, city,
+    f, secs:[...secs], modes:[...modes], statuses:[...statuses], emps:[...emps], country, city,
     sort:(document.querySelector('#fsort')||{}).value||''})); }catch(e){}}
 function loadView(){
   let v=null;
@@ -348,17 +370,22 @@ function loadView(){
     const s=document.querySelector('#fcity'); if(s) s.value=city; }
   for(const x of (v.secs||[])) secs.add(x);
   for(const x of (v.modes||[])) modes.add(x);
+  for(const x of (v.statuses||[])) statuses.add(x);
+  for(const x of (v.emps||[])) emps.add(x);
   // Only chips that are still on the page. A sector whose last role went
   // settled has no chip this time round, and a set holding a key nothing can
   // clear is a filter the reader cannot see or switch off.
-  const live=new Set(), liveModes=new Set();
+  const live=new Set(), liveModes=new Set(), liveStatuses=new Set(), liveEmps=new Set();
   for(const b of document.querySelectorAll('.chips button')){
-    const key=b.dataset.sec||b.dataset.mode;
-    const set=b.dataset.sec?live:liveModes;
+    const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter||b.dataset.emp;
+    const set=b.dataset.sec?live:(b.dataset.mode?liveModes:(b.dataset.statusFilter?liveStatuses:liveEmps));
     set.add(key);
-    if((b.dataset.sec?secs:modes).has(key)) b.setAttribute('aria-pressed','true'); }
+    const cur=b.dataset.sec?secs:(b.dataset.mode?modes:(b.dataset.statusFilter?statuses:emps));
+    if(cur.has(key)) b.setAttribute('aria-pressed','true'); }
   for(const x of [...secs]) if(!live.has(x)) secs.delete(x);
   for(const x of [...modes]) if(!liveModes.has(x)) modes.delete(x);
+  for(const x of [...statuses]) if(!liveStatuses.has(x)) statuses.delete(x);
+  for(const x of [...emps]) if(!liveEmps.has(x)) emps.delete(x);
   const sort=document.querySelector('#fsort');
   if(sort && v.sort){ const ok=[...sort.options].some(o=>o.value===v.sort);
                       if(ok) sort.value=v.sort; }}
@@ -400,10 +427,10 @@ function statusLabel(s){return STATUS_LABELS[s]||(s||'').replaceAll('_',' ');}
 // Each dimension is counted with its own filter left off, because that is
 // what clicking would do: sector chips are an OR within sectors, so with Tech
 // selected the number on Finance is what adding Finance would bring in.
-function paintCounts(sec,mode,status,ctry,city){
+function paintCounts(sec,mode,status,emp,ctry,city){
   for(const b of document.querySelectorAll('.chips button')){
-    const k=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
-    const counts=b.dataset.sec?sec:(b.dataset.mode?mode:status);
+    const k=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter||b.dataset.emp;
+    const counts=b.dataset.sec?sec:(b.dataset.mode?mode:(b.dataset.statusFilter?status:emp));
     const n=counts[k]||0;
     const el=b.querySelector('.n'); if(el) el.textContent=n;
     b.classList.toggle('none',n===0);}
@@ -413,7 +440,7 @@ function paintCounts(sec,mode,status,ctry,city){
       o.textContent=(o.dataset.label||o.value)+' ('+(m[o.value]||0)+')';}}
 
 function apply(){let n=0;
-  const cSec={},cMode={},cStatus={},cCountry={},cCity={};
+  const cSec={},cMode={},cStatus={},cEmp={},cCountry={},cCity={};
   const bump=(m,k)=>{m[k]=(m[k]||0)+1};
   for(const r of document.querySelectorAll('.row')){
     const st=r.dataset.status;
@@ -427,16 +454,18 @@ function apply(){let n=0;
     const okSec  = secs.size===0  || secs.has(r.dataset.sector);
     const okMode = modes.size===0 || modes.has(r.dataset.mode);
     const okStatus = statuses.size===0 || statuses.has(st);
+    const okEmp  = emps.size===0 || emps.has(r.dataset.emp||'unstated');
     const okCtry = !country || r.dataset.country===country;
     const okCity = !city    || r.dataset.city===city;
-    if(viewOk&&okMode&&okStatus&&okCtry&&okCity) bump(cSec,r.dataset.sector);
-    if(viewOk&&okSec &&okStatus&&okCtry&&okCity) bump(cMode,r.dataset.mode);
-    if(viewOk&&okSec &&okMode&&okCtry&&okCity) bump(cStatus,st);
-    if(viewOk&&okSec &&okMode&&okStatus&&okCity) bump(cCountry,r.dataset.country);
-    if(viewOk&&okSec &&okMode&&okStatus&&okCtry) bump(cCity,r.dataset.city);
-    const ok = viewOk && okSec && okMode && okStatus && okCtry && okCity;
+    if(viewOk&&okMode&&okStatus&&okEmp&&okCtry&&okCity) bump(cSec,r.dataset.sector);
+    if(viewOk&&okSec &&okStatus&&okEmp&&okCtry&&okCity) bump(cMode,r.dataset.mode);
+    if(viewOk&&okSec &&okMode&&okEmp&&okCtry&&okCity) bump(cStatus,st);
+    if(viewOk&&okSec &&okMode&&okStatus&&okCtry&&okCity) bump(cEmp,r.dataset.emp||'unstated');
+    if(viewOk&&okSec &&okMode&&okStatus&&okEmp&&okCity) bump(cCountry,r.dataset.country);
+    if(viewOk&&okSec &&okMode&&okStatus&&okEmp&&okCtry) bump(cCity,r.dataset.city);
+    const ok = viewOk && okSec && okMode && okStatus && okEmp && okCtry && okCity;
     r.hidden=!ok; if(ok)n++;}
-  paintCounts(cSec,cMode,cStatus,cCountry,cCity);
+  paintCounts(cSec,cMode,cStatus,cEmp,cCountry,cCity);
   saveView();
   $('#empty').hidden=n>0; $('#list').hidden=n===0;}
 
@@ -554,8 +583,8 @@ function resort(){
 document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
   const on=b.getAttribute('aria-pressed')==='true';
   b.setAttribute('aria-pressed', on?'false':'true');
-  const set=b.dataset.sec?secs:(b.dataset.mode?modes:statuses);
-  const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter;
+  const set=b.dataset.sec?secs:(b.dataset.mode?modes:(b.dataset.statusFilter?statuses:emps));
+  const key=b.dataset.sec||b.dataset.mode||b.dataset.statusFilter||b.dataset.emp;
   on?set.delete(key):set.add(key); apply(); writeState();});
 // Ranking spends tokens, so the click shows the cost and waits for a yes.
 // Everything else that spends in this tool works the same way.
@@ -1390,6 +1419,10 @@ def render(con, home_currency: str = "") -> str:
     total = len(rows)
     paid = sum(1 for r in rows if r["salary_confirmed"])
     settled = sum(1 for r in rows if r["status"] in store.SETTLED)
+    # Said in the header, not only on the chip. The contract count is the
+    # answer to "is there anything in this market at all today", and a number
+    # that only exists on a facet is a number you have to go looking for.
+    contract_n = sum(1 for r in rows if _emp(r) == employment.CONTRACT)
 
     # "What changed since yesterday" is the whole point of running this daily,
     # and the count was previously only ever a line of stdout that scrolled
@@ -1467,6 +1500,22 @@ def render(con, home_currency: str = "") -> str:
         f'<button aria-pressed="false" data-status-filter="{_h.escape(s, quote=True)}">'
         f'{_h.escape(_status_label(s))}<span class="n">{sc[s]}</span></button>'
         for s in store.STATUSES if sc.get(s))
+    # Employment type, as its own row of chips rather than folded into the
+    # working-pattern one. They are different questions -- remote is where you
+    # sit, contract is what you are -- and a reader who wants six months of
+    # interim work at a day rate is not asking the same thing as a reader who
+    # wants to work from home.
+    #
+    # "Not stated" is a chip in its own right and is deliberately not merged
+    # into Permanent. Most employers say nothing, and folding silence into
+    # "permanent" would hide the larger half of the contract market behind a
+    # label that asserts the opposite of what is known.
+    ec = Counter(_emp(r) for r in rows)
+    emps = "".join(
+        f'<button aria-pressed="false" data-emp="{e}">{_EMP_LABELS[e]}'
+        f'<span class="n">{ec[e]}</span></button>'
+        for e in (employment.CONTRACT, employment.PERMANENT, employment.UNSTATED)
+        if ec.get(e))
     # data-label so the count can be rewritten in the browser against the rows
     # the current tab actually shows, without losing the name.
     cc = Counter((r["country"] or "unknown") for r in rows)
@@ -1529,7 +1578,8 @@ setTimeout(()=>{{const b=document.getElementById('boot'); if(b) b.remove();}},80
 <header>
   <div class="brand">{_MARK}<span>job radar</span></div>
   <h1>{total} roles worth a look</h1>
-  <p class="sub"><b>{paid}</b> with a salary &middot; <b>{settled}</b> settled &middot;
+  <p class="sub"><b>{paid}</b> with a salary &middot; <b>{contract_n}</b> contract or interim
+     &middot; <b>{settled}</b> settled &middot;
      live from the database, so anything you click sticks</p>
 </header>
 <div class="seg" role="tablist" aria-label="Filter roles">
@@ -1556,6 +1606,7 @@ setTimeout(()=>{{const b=document.getElementById('boot'); if(b) b.remove();}},80
 <div class="chips" role="group" aria-label="Filter by sector">{chips}</div>
 <div class="chips" role="group" aria-label="Filter by working pattern">{modes}</div>
 <div class="chips" role="group" aria-label="Filter by status">{statuses}</div>
+<div class="chips emps" role="group" aria-label="Filter by employment type">{emps}</div>
 <div class="selects">
   <label><span>Sort</span><select id="fsort" aria-label="Sort order">
     <option value="rank">Priority</option>
@@ -1583,6 +1634,29 @@ unless you click for it.</footer>
 <script>{prelude}{_js()}</script></body></html>"""
 
 
+# What the row says about employment type, defended against a database made
+# before the column existed.
+#
+# `sqlite3.Row` raises IndexError rather than returning None for a column that
+# is not in the SELECT, and the dashboard is opened against whatever database
+# the reader has. An unknown value is reported as "unstated", which is the one
+# answer that is always true when nothing has classified the role -- never
+# "permanent", which would be this tool inventing a fact about somebody's job.
+_EMP_LABELS = {
+    employment.PERMANENT: "Permanent",
+    employment.CONTRACT: "Contract or interim",
+    employment.UNSTATED: "Not stated",
+}
+
+
+def _emp(row) -> str:
+    try:
+        v = row["employment"]
+    except (IndexError, KeyError, TypeError):
+        return employment.UNSTATED
+    return v if v in employment.VALUES else employment.UNSTATED
+
+
 def _flags(row) -> list:
     """The role's flags, or none of them.
 
@@ -1608,6 +1682,18 @@ def _row(r, arts, job, run=0, eager=True) -> str:
     status_pill = (f'<span class="status {_h.escape(r["status"], quote=True)}">'
                    f'{_h.escape(_status_label(r["status"]))}</span>'
                    if r["status"] != "new" else "")
+
+    # Contract and interim work said on the title line.
+    #
+    # It is the first thing that decides whether a role is worth reading at
+    # all: the money, the notice period and the reason to take it are all
+    # different. A chip filter alone would only say so while the filter was
+    # switched on, and the row would look identical to a permanent one every
+    # other time you scrolled past it. Nothing is shown for permanent or
+    # unstated, because a caption on the other 99% is not information and the
+    # facet above counts them.
+    emp_pill = ('<span class="emp">contract or interim</span>'
+                if _emp(r) == employment.CONTRACT else "")
 
     # Said on the title line, not only in the documents row underneath.
     # Clicking CV on a role whose CV was already written started a second
@@ -1838,6 +1924,7 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         f'data-score="{r["score"] or 0}" '
         f'data-sector="{_h.escape(r["sector"] or "other", quote=True)}" '
         f'data-mode="{_h.escape(r["work_mode"] or "unstated", quote=True)}" '
+        f'data-emp="{_h.escape(_emp(r), quote=True)}" '
         f'data-country="{_h.escape(r["country"] or "unknown", quote=True)}" '
         f'data-city="{_h.escape(r["city"] or "", quote=True)}" '
         # Read by `fillActs` to build this row's buttons when it is first
@@ -1868,7 +1955,7 @@ def _row(r, arts, job, run=0, eager=True) -> str:
         f'aria-label="Select for bulk screening"></div>'
         f'<div><div class="role">'
         f'<a href="{_h.escape(safe_url(r["url"]))}" target="_blank" rel="noopener">{_h.escape(r["title"])}</a>'
-        f'{status_pill}{ready}</div>'
+        f'{emp_pill}{status_pill}{ready}</div>'
         f'<div class="meta">{_h.escape(meta)}</div>'
         f'<div class="compact-meta">{_h.escape(_cap_location(r["location"] or ""))}</div></div>'
         f'<div class="right"><span class="pay{"" if paid else " unk"}">'
