@@ -133,6 +133,11 @@ class Job:
     country: str | None = None
     city: str = ""
     work_mode: str = "unstated"   # remote | hybrid | office | unstated
+    # permanent | contract | unstated, from `employment.classify`. "unstated"
+    # is the honest majority answer and is NOT a synonym for permanent: see
+    # the module docstring for why reading it as one hides the contract
+    # market from the reader.
+    employment: str = "unstated"
     app_status: str = ""          # set from applications.local.yaml, if tracked
     source_id: str = ""
 

@@ -24169,6 +24169,20 @@
    "sector": "technology"
   },
   {
+   "company": "Google",
+   "url": "https://www.google.com/about/careers/applications/jobs/results?location=United+Kingdom",
+   "platform": "google_careers",
+   "sector": "technology",
+   "country": "UK"
+  },
+  {
+   "company": "Google",
+   "url": "https://www.google.com/about/careers/applications/jobs/results?location=United+States",
+   "platform": "google_careers",
+   "sector": "technology",
+   "country": "US"
+  },
+  {
    "company": "1-800 Contacts",
    "url": "https://boards-api.greenhouse.io/v1/boards/1800contacts/jobs?content=true&pay_transparency=true",
    "platform": "greenhouse",
@@ -62594,6 +62608,20 @@
   {
    "company": "LinkedIn",
    "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=United%20Kingdom&f_TPR=r604800&start=0",
+   "platform": "linkedin",
+   "country": "UK",
+   "keyword_template": true
+  },
+  {
+   "company": "LinkedIn contract",
+   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=United%20Kingdom&f_JT=C&f_TPR=r604800&start=0",
+   "platform": "linkedin",
+   "country": "UK",
+   "keyword_template": true
+  },
+  {
+   "company": "LinkedIn temporary",
+   "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=United%20Kingdom&f_JT=T&f_TPR=r604800&start=0",
    "platform": "linkedin",
    "country": "UK",
    "keyword_template": true
@@ -108158,20 +108186,6 @@
    "sector": "healthcare",
    "country": "UK",
    "domain": "ossur.com"
-  },
-  {
-   "company": "Google",
-   "platform": "google_careers",
-   "sector": "technology",
-   "country": "UK",
-   "url": "https://www.google.com/about/careers/applications/jobs/results?location=United+Kingdom"
-  },
-  {
-   "company": "Google",
-   "platform": "google_careers",
-   "sector": "technology",
-   "country": "US",
-   "url": "https://www.google.com/about/careers/applications/jobs/results?location=United+States"
   }
  ]
 }

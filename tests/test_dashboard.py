@@ -90,7 +90,13 @@ def test_the_facet_counts_are_counted_against_the_tab_you_are_in():
     with one skipped public-sector role rendered "Public sector 1", and
     clicking it emptied the list and said "Nothing matches those filters"."""
     assert "function paintCounts(" in SRC
-    assert "paintCounts(cSec,cMode,cCountry,cCity)" in SRC
+    # Every facet the page offers, counted in the browser against the rows the
+    # current tab admits. Named individually rather than matched as one call
+    # string: a new facet used to break this test purely by being added, which
+    # is a failure that says nothing about whether the counts are right.
+    assert "paintCounts(cSec,cMode,cEmp,cCountry,cCity)" in SRC
+    for dim in ("cSec", "cMode", "cEmp", "cCountry", "cCity"):
+        assert f"{dim}={{}}" in SRC.replace(" ", "") or f"{dim}={{}}," in SRC.replace(" ", ""), dim
 
 
 def test_a_word_with_no_spaces_in_it_cannot_run_off_the_edge():

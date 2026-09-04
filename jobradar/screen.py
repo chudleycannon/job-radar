@@ -18,6 +18,7 @@ import itertools
 import re
 import unicodedata
 
+from . import employment
 from .config import Config
 from .models import Job
 from .salary import clears_floor
@@ -1376,6 +1377,17 @@ def enrich(job: Job) -> Job:
     rights = work_rights(job)
     if rights and rights not in job.flags:
         job.flags.append(rights)
+    # Permanent, contract, or the advert did not say. Read here rather than in
+    # an adapter because it needs the description, which several platforms
+    # only supply after `enrich` has fetched the posting itself.
+    #
+    # It never drops a role. Employment type is a fact about the job that the
+    # reader decides what to do with, and a filter that hid contract work
+    # would hide the roles this was built to surface.
+    job.employment, _ev = employment.classify(job.title, job.description)
+    _f = employment.flag(job.employment, _ev)
+    if _f and _f not in job.flags:
+        job.flags.append(_f)
     return job
 
 
